@@ -14,7 +14,7 @@ const EN_US_EXACT: Record<string, string> = {
   "定时任务": "Scheduled Tasks",
   "技能": "Skills",
   "文档": "Docs",
-  "音视频创作": "AV Creation",
+  "音视频创作": "Media Creation",
   "素材": "Assets",
   "应用": "App",
   "主 Agent": "Main Agent",
