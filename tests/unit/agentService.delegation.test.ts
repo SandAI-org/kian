@@ -10,7 +10,9 @@ const state = vi.hoisted(() => ({
   assistantMirrorPushEvent: vi.fn(),
   assistantMirrorFinalize: vi.fn(),
   listProjects: vi.fn(),
+  listMessages: vi.fn(),
   createChatSession: vi.fn(),
+  getChatSession: vi.fn(),
   getProjectById: vi.fn(),
   setChatSessionSdkSessionId: vi.fn(),
   getModel: vi.fn(),
@@ -99,7 +101,9 @@ vi.mock("../../electron/main/services/repositoryService", () => ({
   repositoryService: {
     appendMessage: (...args: unknown[]) => state.appendMessage(...args),
     listProjects: (...args: unknown[]) => state.listProjects(...args),
+    listMessages: (...args: unknown[]) => state.listMessages(...args),
     createChatSession: (...args: unknown[]) => state.createChatSession(...args),
+    getChatSession: (...args: unknown[]) => state.getChatSession(...args),
     getProjectById: (...args: unknown[]) => state.getProjectById(...args),
     setChatSessionSdkSessionId: (...args: unknown[]) =>
       state.setChatSessionSdkSessionId(...args),
@@ -201,9 +205,11 @@ describe("agentService delegation reporting", () => {
       finalize: (...args: unknown[]) => state.assistantMirrorFinalize(...args),
     });
     state.listProjects.mockReset().mockResolvedValue([]);
+    state.listMessages.mockReset().mockResolvedValue([]);
     state.createChatSession.mockReset().mockResolvedValue({
       id: "sub-session-1",
     });
+    state.getChatSession.mockReset().mockResolvedValue(null);
     state.getProjectById.mockReset().mockResolvedValue({
       id: "agent-a",
       name: "Agent A",
@@ -389,6 +395,7 @@ describe("agentService delegation reporting", () => {
 
     let releaseInitialTurn: (() => void) | undefined;
     state.prompt.mockImplementation(async () => {
+      state.sessionListener?.({ type: "turn_start" });
       await new Promise<void>((resolve) => {
         releaseInitialTurn = resolve;
       });
@@ -400,17 +407,31 @@ describe("agentService delegation reporting", () => {
             delta: "主 Agent 初始回复",
           },
         });
-        state.sessionListener?.({ type: "agent_end" });
+        state.sessionListener?.({
+          type: "turn_end",
+          message: {
+            role: "assistant",
+          },
+          toolResults: [],
+        });
       }, 0);
     });
     state.followUp.mockImplementation(async () => {
       setTimeout(() => {
+        state.sessionListener?.({ type: "turn_start" });
         state.sessionListener?.({
           type: "message_update",
           assistantMessageEvent: {
             type: "text_delta",
             delta: "，已合并子智能体 回报",
           },
+        });
+        state.sessionListener?.({
+          type: "turn_end",
+          message: {
+            role: "assistant",
+          },
+          toolResults: [],
         });
         state.sessionListener?.({ type: "agent_end" });
       }, 0);
@@ -548,6 +569,81 @@ describe("agentService delegation reporting", () => {
         projectName: "Agent A",
       }),
     });
+  });
+
+  it("reuses the same delegated sub-agent session within one main session", async () => {
+    state.listProjects.mockResolvedValue([
+      {
+        id: "agent-a",
+        name: "Agent A",
+        updatedAt: "2026-03-09T10:00:00.000Z",
+      },
+    ]);
+    state.listMessages
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "msg-1",
+          sessionId: "main-session",
+          role: "system",
+          content: "已委派给：**Agent A**",
+          metadataJson: JSON.stringify({
+            kind: "delegation_receipt",
+            delegationId: "delegation-1",
+            targetProjectId: "agent-a",
+            targetProjectName: "Agent A",
+            targetSessionId: "sub-session-1",
+          }),
+          createdAt: "2026-03-09T10:00:00.000Z",
+        },
+      ]);
+    state.getChatSession.mockResolvedValue({
+      id: "sub-session-1",
+      scopeType: "project",
+      projectId: "agent-a",
+      module: "docs",
+      title: "Agent A Agent 会话",
+      sdkSessionId: null,
+      createdAt: "2026-03-09T10:00:00.000Z",
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    });
+
+    const { createDelegationTools } =
+      await import("../../electron/main/services/agentService");
+
+    const [tool] = createDelegationTools({
+      scope: { type: "main" },
+      runtime: {
+        chatSessionId: "main-session",
+      },
+    }).filter((item) => item.name === "callSubAgent");
+
+    await tool.handler({
+      agent: "agent-a",
+      module: "docs",
+      task: "第一次委派",
+    });
+    await tool.handler({
+      agent: "agent-a",
+      module: "docs",
+      task: "第二次委派",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(state.createChatSession).toHaveBeenCalledTimes(1);
+    expect(state.getChatSession).toHaveBeenCalledWith(
+      { type: "project", projectId: "agent-a" },
+      "sub-session-1",
+    );
+    expect(state.chatSend).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        scope: { type: "project", projectId: "agent-a" },
+        sessionId: "sub-session-1",
+        message: "第二次委派",
+      }),
+      expect.any(Function),
+    );
   });
 
   it("sends delegated task context as a custom sdk message instead of a user prompt", async () => {

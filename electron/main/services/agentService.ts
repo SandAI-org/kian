@@ -73,6 +73,8 @@ type ActiveAgentRequestState = {
   requestId: string;
   interrupted: boolean;
   pendingTurnCount: number;
+  observedTurnLifecycle: boolean;
+  agentEnded: boolean;
   resolvePromptDone?: () => void;
 };
 
@@ -109,26 +111,19 @@ const EMPTY_AGENT_FINAL_MESSAGE = "已处理请求，但未收到 Agent 文本�
 const SUCCESS_WITHOUT_TEXT_FINAL_MESSAGE = "已处理完成。";
 const nowISO = (): string => new Date().toISOString();
 
-const registerActiveRequestFollowUpTurn = (
+const registerActiveRequestTurnStarted = (
   storeKey: string,
-): (() => void) | null => {
+  requestId: string,
+): boolean => {
   const state = activeAgentRequestStore.get(storeKey);
-  if (!state) return null;
+  if (!state || state.requestId !== requestId) {
+    return false;
+  }
 
-  const requestId = state.requestId;
+  state.observedTurnLifecycle = true;
+  state.agentEnded = false;
   state.pendingTurnCount += 1;
-
-  let reverted = false;
-  return () => {
-    if (reverted) return;
-    reverted = true;
-    const current = activeAgentRequestStore.get(storeKey);
-    if (!current || current.requestId !== requestId) return;
-    current.pendingTurnCount = Math.max(0, current.pendingTurnCount - 1);
-    if (current.pendingTurnCount === 0) {
-      current.resolvePromptDone?.();
-    }
-  };
+  return true;
 };
 
 const markActiveRequestTurnCompleted = (
@@ -141,7 +136,23 @@ const markActiveRequestTurnCompleted = (
   }
 
   state.pendingTurnCount = Math.max(0, state.pendingTurnCount - 1);
-  if (state.pendingTurnCount === 0) {
+  if (state.agentEnded && state.pendingTurnCount === 0) {
+    state.resolvePromptDone?.();
+  }
+  return true;
+};
+
+const markActiveRequestAgentEnded = (
+  storeKey: string,
+  requestId: string,
+): boolean => {
+  const state = activeAgentRequestStore.get(storeKey);
+  if (!state || state.requestId !== requestId) {
+    return false;
+  }
+
+  state.agentEnded = true;
+  if (!state.observedTurnLifecycle || state.pendingTurnCount === 0) {
     state.resolvePromptDone?.();
   }
   return true;
@@ -748,6 +759,21 @@ const describeProject = (projectId: string, projectName: string): string =>
 const buildChatMessageMetadataJson = (metadata: ChatMessageMetadata): string =>
   JSON.stringify(metadata);
 
+const parseChatMessageMetadata = (
+  raw: string | null | undefined,
+): ChatMessageMetadata | null => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as ChatMessageMetadata;
+  } catch {
+    return null;
+  }
+};
+
 const buildDelegationMessageContent = (input: {
   delegationId: string;
   module: ModuleType;
@@ -801,6 +827,42 @@ const resolveDelegationTargetProject = async (
   }
 
   throw new Error(`未找到 Agent：${query}`);
+};
+
+const findReusableDelegatedSession = async (input: {
+  mainSessionId: string;
+  targetProjectId: string;
+}): Promise<{ id: string } | null> => {
+  const mainMessages = await repositoryService.listMessages(
+    { type: "main" },
+    input.mainSessionId,
+  );
+
+  for (let index = mainMessages.length - 1; index >= 0; index -= 1) {
+    const message = mainMessages[index];
+    const metadata = parseChatMessageMetadata(message?.metadataJson);
+    if (metadata?.kind !== "delegation_receipt") {
+      continue;
+    }
+    if (metadata.targetProjectId !== input.targetProjectId) {
+      continue;
+    }
+
+    const targetSessionId = metadata.targetSessionId?.trim();
+    if (!targetSessionId) {
+      continue;
+    }
+
+    const session = await repositoryService.getChatSession(
+      { type: "project", projectId: input.targetProjectId },
+      targetSessionId,
+    );
+    if (session) {
+      return { id: session.id };
+    }
+  }
+
+  return null;
 };
 
 const appendSubAgentReport = async (input: {
@@ -857,13 +919,7 @@ const triggerMainAgentReportProcessing = async (input: {
   const entry = agentSessionStore.get(storeKey);
 
   if (activeRequest && entry) {
-    const revertFollowUpTurn = registerActiveRequestFollowUpTurn(storeKey);
-    try {
-      await entry.session.followUp(reportPrompt);
-    } catch (error) {
-      revertFollowUpTurn?.();
-      throw error;
-    }
+    await entry.session.followUp(reportPrompt);
     return;
   }
 
@@ -1096,11 +1152,17 @@ export const createDelegationTools = (input: {
             type: "project",
             projectId: project.id,
           };
-          const session = await repositoryService.createChatSession({
-            scope: subScope,
-            module,
-            title: `${project.name} Agent 会话`,
+          const reusableSession = await findReusableDelegatedSession({
+            mainSessionId: input.runtime.chatSessionId,
+            targetProjectId: project.id,
           });
+          const session =
+            reusableSession ??
+            (await repositoryService.createChatSession({
+              scope: subScope,
+              module,
+              title: `${project.name} Agent 会话`,
+            }));
 
           await repositoryService.appendMessage({
             scope: subScope,
@@ -1603,7 +1665,9 @@ export const agentService = {
     activeAgentRequestStore.set(storeKey, {
       requestId,
       interrupted: false,
-      pendingTurnCount: 1,
+      pendingTurnCount: 0,
+      observedTurnLifecycle: false,
+      agentEnded: false,
     });
     const delegationReportState: DelegationReportState = { reported: false };
 
@@ -1798,6 +1862,16 @@ export const agentService = {
           return;
         }
 
+        if (event.type === "turn_start") {
+          registerActiveRequestTurnStarted(storeKey, requestId);
+          return;
+        }
+
+        if (event.type === "turn_end") {
+          markActiveRequestTurnCompleted(storeKey, requestId);
+          return;
+        }
+
         // --- message_end: capture final text ---
         if (event.type === "message_end") {
           const msg = event.message;
@@ -1837,7 +1911,7 @@ export const agentService = {
 
         // --- agent_end: final event ---
         if (event.type === "agent_end") {
-          if (!markActiveRequestTurnCompleted(storeKey, requestId)) {
+          if (!markActiveRequestAgentEnded(storeKey, requestId)) {
             resolvePromptDone?.();
           }
           return;
