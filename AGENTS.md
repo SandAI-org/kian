@@ -1,3 +1,3 @@
 - Use `ScrollArea` component consistently across pages for better scrollbar UX; avoid native `overflow` scroll containers.
-- Use English for commit messages, keep them concise and clear, follow git message best practices; they will be shown as Changelog.
+- Use English for commit messages, keep them concise and clear, follow git message best practices, and always start the subject with one of these prefixes: `fix:`, `feat:`, `chore:`, or `refactor:`. Prefer user-friendly wording that clearly describes the user-visible problem fixed, feature added, or value unlocked, so users can understand it as a Changelog entry; avoid technical jargon unless the change is a purely technical refactor or maintenance task.
 - All user-facing text must be internationalized; do not add or modify visible copy without adding corresponding i18n entries and translations.
