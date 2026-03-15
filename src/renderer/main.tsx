@@ -8,6 +8,7 @@ import { HashRouter } from "react-router-dom";
 import "simplebar-react/dist/simplebar.min.css";
 import { AppRouter } from "./app/AppRouter";
 import { AppI18nProvider, useAppI18n } from "./i18n/AppI18nProvider";
+import { initializeChatQueryBridge } from "./modules/chat/chatQueryCache";
 import "./styles/globals.css";
 
 // Monaco Editor worker setup for production builds
@@ -28,6 +29,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+initializeChatQueryBridge(queryClient);
 
 const AppShell = () => {
   const { antdLocale } = useAppI18n();

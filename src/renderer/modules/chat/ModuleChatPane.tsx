@@ -1637,21 +1637,15 @@ export const ModuleChatPane = ({
     const unsubscribe = api.chat.subscribeHistoryUpdated(
       (event: ChatHistoryUpdatedEvent) => {
         if (!isSameScope(event.scope, effectiveScope)) return;
-        void queryClient.invalidateQueries({
-          queryKey: ["chat-sessions", scopeKey],
-        });
         if (!sessionRef.current || event.sessionId !== sessionRef.current)
           return;
         if (event.role === "assistant" && !requestRef.current) {
           clearSessionStream(event.sessionId);
         }
-        void queryClient.invalidateQueries({
-          queryKey: ["chat-messages", scopeKey, sessionRef.current],
-        });
       },
     );
     return unsubscribe;
-  }, [clearSessionStream, effectiveScope, queryClient, scopeKey]);
+  }, [clearSessionStream, effectiveScope]);
 
   // ---------------------------------------------------------------------------
   // Session bootstrap

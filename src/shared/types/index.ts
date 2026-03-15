@@ -296,6 +296,8 @@ export interface ChatHistoryUpdatedEvent {
   messageId: string;
   role: 'user' | 'assistant' | 'tool' | 'system';
   createdAt: string;
+  sessionTitle?: string;
+  sessionUpdatedAt?: string;
 }
 
 export type AppOperationEvent =

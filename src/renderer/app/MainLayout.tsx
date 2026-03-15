@@ -133,7 +133,12 @@ export const MainLayout = () => {
   const isSkillsEntrySelected = selectedKey === '/skills';
   const isSettingsEntrySelected = selectedKey === '/settings';
   const isMainAgentEntrySelected = selectedKey === '/main-agent';
-  const project = projectQuery.data;
+  const project = useMemo(
+    () =>
+      projectQuery.data ??
+      (projectsQuery.data ?? []).find((item) => item.id === projectId),
+    [projectId, projectQuery.data, projectsQuery.data]
+  );
   const activeProjectModule = useMemo(() => {
     const searchParams = new URLSearchParams(location.search);
     return resolveProjectModule(searchParams.get('module'));

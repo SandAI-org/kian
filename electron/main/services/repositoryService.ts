@@ -2934,9 +2934,20 @@ export const repositoryService = {
     if (!session) {
       return;
     }
-    session.title = input.title;
-    session.updatedAt = nowISO();
+    const title = input.title.trim();
+    const updatedAt = nowISO();
+    session.title = title;
+    session.updatedAt = updatedAt;
     await writeJson(getChatSessionsPathByScope(input.scope), rows);
+    chatEvents.emitHistoryUpdated({
+      scope: input.scope,
+      sessionId: input.sessionId,
+      messageId: "",
+      role: "system",
+      createdAt: updatedAt,
+      sessionTitle: title,
+      sessionUpdatedAt: updatedAt,
+    });
   },
 
   async listMessages(
@@ -2987,11 +2998,8 @@ export const repositoryService = {
       rows,
     );
 
-    await updateChatSessionTimestamp(
-      input.scope,
-      input.sessionId,
-      nowISO(),
-    );
+    const sessionUpdatedAt = nowISO();
+    await updateChatSessionTimestamp(input.scope, input.sessionId, sessionUpdatedAt);
     if (input.scope.type === "project") {
       await touchProject(input.scope.projectId);
     }
@@ -3001,6 +3009,7 @@ export const repositoryService = {
       messageId: next.id,
       role: next.role,
       createdAt: next.createdAt,
+      sessionUpdatedAt,
     });
 
     return next;

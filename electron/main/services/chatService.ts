@@ -359,13 +359,6 @@ const generateSessionTitle = async (
       title: nextTitle,
     });
 
-    chatEvents.emitHistoryUpdated({
-      scope: payload.scope,
-      sessionId: payload.sessionId,
-      messageId: "",
-      role: "system",
-      createdAt: new Date().toISOString(),
-    });
   } catch (error) {
     logger.warn("Auto title generation failed", {
       sessionId: payload.sessionId,

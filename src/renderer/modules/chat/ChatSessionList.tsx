@@ -3,6 +3,10 @@ import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
+import {
+  getChatSessionsQueryKey,
+  patchChatSessionList,
+} from "@renderer/modules/chat/chatQueryCache";
 import type {
   ChatModuleType,
   ChatScope,
@@ -84,23 +88,6 @@ export const ChatSessionList = ({
     }
   }, [editingSessionId, sessions]);
 
-  // Subscribe to history updates to keep list fresh
-  useEffect(() => {
-    const unsubscribe = api.chat.subscribeHistoryUpdated((event) => {
-      if (
-        (scope.type === "main" && event.scope.type === "main") ||
-        (scope.type === "project" &&
-          event.scope.type === "project" &&
-          scope.projectId === event.scope.projectId)
-      ) {
-        void queryClient.invalidateQueries({
-          queryKey: ["chat-sessions", scopeKey],
-        });
-      }
-    });
-    return unsubscribe;
-  }, [queryClient, scope, scopeKey]);
-
   const handleDelete = useCallback(
     async (e: React.MouseEvent, sessionId: string) => {
       e.stopPropagation();
@@ -171,14 +158,33 @@ export const ChatSessionList = ({
     }
 
     setIsSavingTitle(true);
+    const sessionsQueryKey = getChatSessionsQueryKey(scopeKey);
+    const previousSessions =
+      queryClient.getQueryData<ChatSessionDTO[]>(sessionsQueryKey);
+    const optimisticUpdatedAt = new Date().toISOString();
+    patchChatSessionList(queryClient, scope, editingSessionId, (currentItem) => {
+      if (
+        currentItem.title === nextTitle &&
+        currentItem.updatedAt === optimisticUpdatedAt
+      ) {
+        return currentItem;
+      }
+
+      return {
+        ...currentItem,
+        title: nextTitle,
+        updatedAt: optimisticUpdatedAt,
+      };
+    });
+    setEditingSessionId(null);
+    setTitleDraft("");
+
     try {
       await api.chat.updateSessionTitle(scope, editingSessionId, nextTitle);
-      setEditingSessionId(null);
-      setTitleDraft("");
-      await queryClient.invalidateQueries({
-        queryKey: ["chat-sessions", scopeKey],
-      });
     } catch {
+      if (previousSessions) {
+        queryClient.setQueryData(sessionsQueryKey, previousSessions);
+      }
       message.error(t("修改对话名称失败"));
     } finally {
       setIsSavingTitle(false);
