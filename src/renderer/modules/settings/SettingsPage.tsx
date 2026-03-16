@@ -123,29 +123,6 @@ const isSameBroadcastChannelDraft = (
     );
   });
 
-const getUpdateStageLabel = (
-  stage: AppUpdateStatusDTO["stage"] | undefined,
-): string => {
-  switch (stage) {
-    case "checking":
-      return "正在检查更新";
-    case "available":
-      return "发现新版本";
-    case "downloading":
-      return "正在下载更新";
-    case "verifying":
-      return "正在校验更新包";
-    case "downloaded":
-      return "更新已下载，可安装";
-    case "upToDate":
-      return "当前已是最新版本";
-    case "failed":
-      return "更新失败";
-    default:
-      return "未检查更新";
-  }
-};
-
 type ClaudeFormValues = {
   provider: string;
   enabled: boolean;
@@ -659,11 +636,6 @@ export const SettingsPage = () => {
   }, [broadcastChannelsQuery.data]);
 
   useEffect(() => {
-    if (!updateStatusQuery.data) return;
-    setUpdateStatus(updateStatusQuery.data);
-  }, [updateStatusQuery.data]);
-
-  useEffect(() => {
     const unsubscribe = api.update.subscribeStatus((status) => {
       setUpdateStatus(status);
     });
@@ -804,9 +776,9 @@ export const SettingsPage = () => {
     feishuDirty ||
     broadcastDirty;
   const resolvedUpdateStatus = updateStatus ?? updateStatusQuery.data ?? null;
-  const updateStatusLabel = getUpdateStageLabel(resolvedUpdateStatus?.stage);
   const {
     canInstallUpdate,
+    label: updateStatusLabel,
     isUpdateChecking: isUpdateCheckingByStage,
     isUpdateInFlight,
     progressPercent: updateProgressPercent,
@@ -2281,9 +2253,11 @@ export const SettingsPage = () => {
                         </Button>
                       </div>
 
-                      <div className="mb-2 text-sm text-slate-700">
-                        {updateStatusLabel}
-                      </div>
+                      {updateStatusLabel ? (
+                        <div className="mb-2 text-sm text-slate-700">
+                          {updateStatusLabel}
+                        </div>
+                      ) : null}
 
                       {showLatestVersion ? (
                         <div className="mb-2 text-xs text-slate-500">

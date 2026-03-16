@@ -26,6 +26,39 @@ describe("getAboutUpdatePresentation", () => {
     expect(presentation.progressPercent).toBe(0);
   });
 
+  it("infers an available update when idle state already has a newer latest version", () => {
+    const presentation = getAboutUpdatePresentation(
+      createStatus({
+        stage: "idle",
+        currentVersion: "0.1.1",
+        latestVersion: "0.1.2",
+      }),
+    );
+
+    expect(presentation.label).toBe("发现新版本");
+    expect(presentation.isUpdateInFlight).toBe(false);
+    expect(presentation.showLatestVersion).toBe(true);
+    expect(presentation.showProgress).toBe(false);
+  });
+
+  it("infers a verifying update when stale idle state still reports completed progress", () => {
+    const presentation = getAboutUpdatePresentation(
+      createStatus({
+        stage: "idle",
+        currentVersion: "0.1.1",
+        latestVersion: "0.1.2",
+        progressPercent: 100,
+        message: "正在校验更新包签名…",
+      }),
+    );
+
+    expect(presentation.label).toBeNull();
+    expect(presentation.isUpdateInFlight).toBe(true);
+    expect(presentation.showLatestVersion).toBe(true);
+    expect(presentation.showProgress).toBe(true);
+    expect(presentation.progressPercent).toBe(100);
+  });
+
   it("shows a full progress state after the update package is downloaded", () => {
     const presentation = getAboutUpdatePresentation(
       createStatus({
@@ -36,6 +69,7 @@ describe("getAboutUpdatePresentation", () => {
     );
 
     expect(presentation.canInstallUpdate).toBe(true);
+    expect(presentation.label).toBe("更新已下载，可安装");
     expect(presentation.showProgress).toBe(true);
     expect(presentation.showLatestVersion).toBe(true);
     expect(presentation.progressPercent).toBe(100);

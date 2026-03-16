@@ -195,7 +195,7 @@ class UpdateService {
         downloadedVersion: undefined,
         downloadedFilePath,
         progressPercent: 100,
-        message: "正在校验更新包签名…",
+        message: undefined,
       });
       this.downloadValidationPromise = validateDownloadedMacUpdate(
         downloadedFilePath,
