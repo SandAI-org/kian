@@ -126,6 +126,14 @@ describe("settingsService.getAgentSystemPrompt", () => {
         altKey: false,
         shiftKey: false,
       },
+      quickLauncher: {
+        code: "KeyK",
+        key: "k",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: true,
+      },
     };
 
     await settingsService.saveShortcutConfig(customShortcutConfig);
@@ -227,6 +235,7 @@ describe("settingsService.getAgentSystemPrompt", () => {
       },
       openSettingsPage: DEFAULT_SHORTCUT_CONFIG.openSettingsPage,
       newChatSession: DEFAULT_SHORTCUT_CONFIG.newChatSession,
+      quickLauncher: DEFAULT_SHORTCUT_CONFIG.quickLauncher,
     });
   });
 

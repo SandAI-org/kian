@@ -182,7 +182,8 @@ export const saveShortcutConfigSchema = z.object({
   insertNewline: keyboardShortcutSchema,
   focusMainAgentInput: keyboardShortcutSchema,
   openSettingsPage: keyboardShortcutSchema,
-  newChatSession: keyboardShortcutSchema
+  newChatSession: keyboardShortcutSchema,
+  quickLauncher: keyboardShortcutSchema
 });
 
 export const saveGeneralConfigSchema = z.object({

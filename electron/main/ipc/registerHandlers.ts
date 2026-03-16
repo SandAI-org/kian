@@ -64,6 +64,10 @@ import { appPreviewWindowService } from '../services/appPreviewWindowService';
 import { agentService } from '../services/agentService';
 import { linkOpenService } from '../services/linkOpenService';
 
+interface RegisterHandlersOptions {
+  onShortcutConfigSaved?: () => Promise<void> | void;
+}
+
 const UPLOAD_DIALOG_EXTENSIONS = [
   'pdf', 'docx', 'csv', 'xlsx',
   'txt', 'json', 'yaml', 'yml', 'js', 'jsx', 'ts', 'tsx', 'md', 'markdown',
@@ -137,7 +141,7 @@ const resolveFileTargetPath = (input: {
   return targetPath;
 };
 
-export const registerHandlers = (): void => {
+export const registerHandlers = (options?: RegisterHandlersOptions): void => {
   const refreshChatChannel = async (): Promise<void> => {
     await chatChannelService.refresh();
   };
@@ -374,6 +378,7 @@ export const registerHandlers = (): void => {
   );
   handle('settings:saveShortcutConfig', saveShortcutConfigSchema, async (input) => {
     await settingsService.saveShortcutConfig(input);
+    await options?.onShortcutConfigSaved?.();
     return true;
   });
   handle('settings:getClaudeSecret', z.object({ provider: z.string().min(1) }), async (input) =>

@@ -54,12 +54,22 @@ export const DEFAULT_NEW_CHAT_SESSION_SHORTCUT: KeyboardShortcutDTO = {
   shiftKey: false,
 };
 
+export const DEFAULT_QUICK_LAUNCHER_SHORTCUT: KeyboardShortcutDTO = {
+  code: "KeyK",
+  key: "k",
+  metaKey: true,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: true,
+};
+
 export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfigDTO = {
   sendMessage: DEFAULT_SEND_MESSAGE_SHORTCUT,
   insertNewline: DEFAULT_INSERT_NEWLINE_SHORTCUT,
   focusMainAgentInput: DEFAULT_FOCUS_MAIN_AGENT_INPUT_SHORTCUT,
   openSettingsPage: DEFAULT_OPEN_SETTINGS_PAGE_SHORTCUT,
   newChatSession: DEFAULT_NEW_CHAT_SESSION_SHORTCUT,
+  quickLauncher: DEFAULT_QUICK_LAUNCHER_SHORTCUT,
 };
 
 export const normalizeKeyboardShortcut = (
@@ -89,6 +99,7 @@ export const normalizeShortcutConfig = (value: unknown): ShortcutConfigDTO => {
       focusMainAgentInput: { ...DEFAULT_FOCUS_MAIN_AGENT_INPUT_SHORTCUT },
       openSettingsPage: { ...DEFAULT_OPEN_SETTINGS_PAGE_SHORTCUT },
       newChatSession: { ...DEFAULT_NEW_CHAT_SESSION_SHORTCUT },
+      quickLauncher: { ...DEFAULT_QUICK_LAUNCHER_SHORTCUT },
     };
   }
 
@@ -114,6 +125,10 @@ export const normalizeShortcutConfig = (value: unknown): ShortcutConfigDTO => {
       raw.newChatSession,
       DEFAULT_NEW_CHAT_SESSION_SHORTCUT,
     ),
+    quickLauncher: normalizeKeyboardShortcut(
+      raw.quickLauncher,
+      DEFAULT_QUICK_LAUNCHER_SHORTCUT,
+    ),
   };
 };
 
@@ -138,4 +153,92 @@ export const shortcutConfigToSignature = (
     keyboardShortcutToSignature(config.focusMainAgentInput),
     keyboardShortcutToSignature(config.openSettingsPage),
     keyboardShortcutToSignature(config.newChatSession),
+    keyboardShortcutToSignature(config.quickLauncher),
   ].join("|");
+
+const ACCELERATOR_KEY_MAP: Record<string, string> = {
+  Enter: "Enter",
+  NumpadEnter: "Enter",
+  Escape: "Esc",
+  Space: "Space",
+  Tab: "Tab",
+  Backspace: "Backspace",
+  Delete: "Delete",
+  Insert: "Insert",
+  Home: "Home",
+  End: "End",
+  PageUp: "PageUp",
+  PageDown: "PageDown",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  NumpadAdd: "numadd",
+  NumpadSubtract: "numsub",
+  NumpadMultiply: "nummult",
+  NumpadDivide: "numdiv",
+  NumpadDecimal: "numdec",
+};
+
+const getAcceleratorKey = (shortcut: KeyboardShortcutDTO): string | null => {
+  if (ACCELERATOR_KEY_MAP[shortcut.code]) {
+    return ACCELERATOR_KEY_MAP[shortcut.code];
+  }
+  if (/^Key[A-Z]$/.test(shortcut.code)) {
+    return shortcut.code.slice(3);
+  }
+  if (/^Digit[0-9]$/.test(shortcut.code)) {
+    return shortcut.code.slice(5);
+  }
+  if (/^Numpad[0-9]$/.test(shortcut.code)) {
+    return `num${shortcut.code.slice(6)}`;
+  }
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(shortcut.code)) {
+    return shortcut.code;
+  }
+  return null;
+};
+
+export const keyboardShortcutToElectronAccelerator = (
+  shortcut: KeyboardShortcutDTO,
+  platform: string,
+  options?: { preferCommandOrControl?: boolean },
+): string | null => {
+  const key = getAcceleratorKey(shortcut);
+  if (!key) {
+    return null;
+  }
+
+  const parts: string[] = [];
+
+  if (shortcut.metaKey) {
+    if (options?.preferCommandOrControl && !shortcut.ctrlKey) {
+      parts.push("CommandOrControl");
+    } else {
+      parts.push(platform === "darwin" ? "Command" : "Super");
+    }
+  }
+  if (shortcut.ctrlKey) {
+    parts.push("Control");
+  }
+  if (shortcut.altKey) {
+    parts.push("Alt");
+  }
+  if (shortcut.shiftKey) {
+    parts.push("Shift");
+  }
+
+  parts.push(key);
+  return parts.join("+");
+};

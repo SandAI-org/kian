@@ -12,6 +12,10 @@ import {
   type MenuItemConstructorOptions
 } from 'electron';
 import type { AppLanguage } from '@shared/i18n';
+import {
+  DEFAULT_SHORTCUT_CONFIG,
+  keyboardShortcutToElectronAccelerator
+} from '@shared/utils/shortcuts';
 import fixPathImport from 'fix-path';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,11 +47,16 @@ const APP_DISPLAY_NAME = 'Kian';
 const LOCAL_MEDIA_SCHEME = 'kian-local';
 const FOCUS_MAIN_AGENT_SHORTCUT_CHANNEL = 'window:focus-main-agent-shortcut';
 const OPEN_MAIN_AGENT_SESSION_CHANNEL = 'window:open-main-agent-session';
-const QUICK_LAUNCHER_SHORTCUT = 'CommandOrControl+Shift+K';
 const QUICK_LAUNCHER_ROUTE = '/quick-launcher';
 const QUICK_LAUNCHER_WIDTH = 520;
 const QUICK_LAUNCHER_MIN_HEIGHT = 132;
 const QUICK_LAUNCHER_MAX_HEIGHT = 680;
+const DEFAULT_QUICK_LAUNCHER_ACCELERATOR =
+  keyboardShortcutToElectronAccelerator(
+    DEFAULT_SHORTCUT_CONFIG.quickLauncher,
+    process.platform,
+    { preferCommandOrControl: true }
+  ) ?? 'CommandOrControl+Shift+K';
 const resolvedFixPath =
   typeof fixPathImport === 'function'
     ? fixPathImport
@@ -64,6 +73,7 @@ let mainWindow: BrowserWindow | null = null;
 let quickLauncherWindow: BrowserWindow | null = null;
 let suppressMainWindowActivationUntil = 0;
 let quickLauncherShouldHideAppOnClose = false;
+let registeredQuickLauncherAccelerator: string | null = null;
 
 const NATIVE_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   'zh-CN': {},
@@ -959,6 +969,63 @@ const showQuickLauncherWindow = (): void => {
   focusQuickLauncherWindow();
 };
 
+const applyQuickLauncherShortcutRegistration = (accelerator: string): boolean => {
+  if (
+    registeredQuickLauncherAccelerator === accelerator &&
+    globalShortcut.isRegistered(accelerator)
+  ) {
+    return true;
+  }
+
+  if (registeredQuickLauncherAccelerator) {
+    globalShortcut.unregister(registeredQuickLauncherAccelerator);
+    registeredQuickLauncherAccelerator = null;
+  }
+
+  if (!globalShortcut.register(accelerator, showQuickLauncherWindow)) {
+    return false;
+  }
+
+  registeredQuickLauncherAccelerator = accelerator;
+  return true;
+};
+
+const refreshQuickLauncherShortcutRegistration = async (): Promise<void> => {
+  const shortcutConfig = await settingsService
+    .getShortcutConfig()
+    .catch(() => DEFAULT_SHORTCUT_CONFIG);
+  const configuredAccelerator = keyboardShortcutToElectronAccelerator(
+    shortcutConfig.quickLauncher,
+    process.platform,
+    { preferCommandOrControl: true }
+  );
+  const accelerator = configuredAccelerator ?? DEFAULT_QUICK_LAUNCHER_ACCELERATOR;
+
+  if (!configuredAccelerator) {
+    logger.warn('Quick launcher shortcut is not supported, falling back to default', {
+      shortcut: shortcutConfig.quickLauncher,
+      fallback: DEFAULT_QUICK_LAUNCHER_ACCELERATOR
+    });
+  }
+
+  if (applyQuickLauncherShortcutRegistration(accelerator)) {
+    return;
+  }
+
+  logger.warn('Failed to register quick launcher global shortcut', {
+    shortcut: accelerator
+  });
+
+  if (
+    accelerator !== DEFAULT_QUICK_LAUNCHER_ACCELERATOR &&
+    applyQuickLauncherShortcutRegistration(DEFAULT_QUICK_LAUNCHER_ACCELERATOR)
+  ) {
+    logger.warn('Quick launcher global shortcut fell back to default shortcut', {
+      shortcut: DEFAULT_QUICK_LAUNCHER_ACCELERATOR
+    });
+  }
+};
+
 const openMainAgentSession = (sessionId: string): void => {
   const win = ensureMainWindow();
   focusWindow(win);
@@ -1020,7 +1087,13 @@ app
 
     registerLocalMediaProtocol();
     registerAppPreviewPermissionService();
-    registerHandlers();
+    registerHandlers({
+      onShortcutConfigSaved: async () => {
+        await refreshQuickLauncherShortcutRegistration().catch((error) => {
+          logger.error('Failed to refresh quick launcher shortcut after settings save', error);
+        });
+      }
+    });
     await skillService.syncBuiltinSkillsOnStartup().catch((error) => {
       logger.error('Failed to sync builtin skills on startup', error);
     });
@@ -1133,12 +1206,7 @@ app
       return { ok: true, data: true };
     });
     createMainWindow();
-
-    if (!globalShortcut.register(QUICK_LAUNCHER_SHORTCUT, showQuickLauncherWindow)) {
-      logger.warn('Failed to register quick launcher global shortcut', {
-        shortcut: QUICK_LAUNCHER_SHORTCUT
-      });
-    }
+    await refreshQuickLauncherShortcutRegistration();
 
     // Non-blocking: initialize chat channels after window is visible
     chatChannelService.refresh().catch((error) => {

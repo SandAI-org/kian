@@ -262,16 +262,22 @@ const ModelSwitchGrid = ({
 const ShortcutCaptureInput = ({
   value,
   onChange,
+  capturePlaceholder,
+  recordingLabel,
+  idleLabel,
 }: {
   value: KeyboardShortcutDTO;
   onChange: (value: KeyboardShortcutDTO) => void;
+  capturePlaceholder: string;
+  recordingLabel: string;
+  idleLabel: string;
 }) => {
   const [isCapturing, setIsCapturing] = useState(false);
 
   return (
     <Input
       readOnly
-      value={isCapturing ? "按下快捷键组合" : formatKeyboardShortcut(value)}
+      value={isCapturing ? capturePlaceholder : formatKeyboardShortcut(value)}
       onFocus={() => setIsCapturing(true)}
       onBlur={() => setIsCapturing(false)}
       onKeyDown={(event) => {
@@ -303,7 +309,7 @@ const ShortcutCaptureInput = ({
       }}
       suffix={
         <span className="text-[11px] text-slate-400">
-          {isCapturing ? "录制中" : "点击后录制"}
+          {isCapturing ? recordingLabel : idleLabel}
         </span>
       }
       className="font-mono"
@@ -1235,6 +1241,42 @@ export const SettingsPage = () => {
     };
   }, [setHeaderActions, settingsHeaderActions]);
 
+  const shortcutItems = useMemo(
+    () => [
+      {
+        key: "sendMessage" as const,
+        title: "发送消息",
+        description: "聚焦消息发送窗口时触发发送。",
+      },
+      {
+        key: "insertNewline" as const,
+        title: "输入换行",
+        description: "聚焦消息发送窗口时插入换行。",
+      },
+      {
+        key: "focusMainAgentInput" as const,
+        title: "聚焦主 Agent 输入框",
+        description: "任意页面下跳转并聚焦主 Agent 输入框。",
+      },
+      {
+        key: "openSettingsPage" as const,
+        title: "打开设置页面",
+        description: "任意页面下跳转到设置页面。",
+      },
+      {
+        key: "newChatSession" as const,
+        title: "新建对话",
+        description: "新建当前智能体的对话",
+      },
+      {
+        key: "quickLauncher" as const,
+        title: "打开快速启动器",
+        description: "任意页面下打开快速启动器。",
+      },
+    ],
+    [],
+  );
+
   return (
     <div className="h-full">
       <div className="h-full w-full">
@@ -1317,47 +1359,20 @@ export const SettingsPage = () => {
                 <ScrollArea className="h-full">
                   <div className="px-5 pb-5">
                     <Typography.Title level={4} className="!text-slate-900">
-                      快捷键
+                      {t("快捷键")}
                     </Typography.Title>
                     <div className="mb-4 rounded-xl border border-[#dbe5f5] bg-[#f7faff] px-4 py-3 text-xs text-slate-600">
-                      点击输入框后按下新的组合键即可录制，按{" "}
-                      <strong>Esc</strong> 退出录制。
+                      {t("点击输入框后按下新的组合键即可录制，按")}{" "}
+                      <strong>Esc</strong> {t("退出录制。")}
                     </div>
 
                     {shortcutConfigQuery.isLoading ? (
                       <Typography.Text type="secondary">
-                        正在加载快捷键配置...
+                        {t("正在加载快捷键配置...")}
                       </Typography.Text>
                     ) : (
                       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                        {[
-                          {
-                            key: "sendMessage" as const,
-                            title: "发送消息",
-                            description: "聚焦消息发送窗口时触发发送。",
-                          },
-                          {
-                            key: "insertNewline" as const,
-                            title: "输入换行",
-                            description: "聚焦消息发送窗口时插入换行。",
-                          },
-                          {
-                            key: "focusMainAgentInput" as const,
-                            title: "聚焦主 Agent 输入框",
-                            description:
-                              "任意页面下跳转并聚焦主 Agent 输入框。",
-                          },
-                          {
-                            key: "openSettingsPage" as const,
-                            title: "打开设置页面",
-                            description: "任意页面下跳转到设置页面。",
-                          },
-                          {
-                            key: "newChatSession" as const,
-                            title: "新建对话",
-                            description: "新建当前智能体的对话",
-                          },
-                        ].map((item) => (
+                        {shortcutItems.map((item) => (
                           <div
                             key={item.key}
                             className="rounded-xl border border-slate-200 bg-white p-4"
@@ -1368,10 +1383,10 @@ export const SettingsPage = () => {
                                   strong
                                   className="text-slate-900"
                                 >
-                                  {item.title}
+                                  {t(item.title)}
                                 </Typography.Text>
                                 <div className="mt-1 text-xs text-slate-500">
-                                  {item.description}
+                                  {t(item.description)}
                                 </div>
                               </div>
                               <Button
@@ -1380,7 +1395,7 @@ export const SettingsPage = () => {
                                 className="!rounded-full !border-slate-200 !px-2.5 !text-[12px] !leading-none !text-slate-500 [&>span]:!text-[12px] hover:!border-slate-300 hover:!text-slate-700"
                                 onClick={() => handleShortcutReset(item.key)}
                               >
-                                恢复默认
+                                {t("恢复默认")}
                               </Button>
                             </div>
 
@@ -1389,6 +1404,9 @@ export const SettingsPage = () => {
                               onChange={(value) =>
                                 handleShortcutChange(item.key, value)
                               }
+                              capturePlaceholder={t("按下快捷键组合")}
+                              recordingLabel={t("录制中")}
+                              idleLabel={t("点击后录制")}
                             />
                           </div>
                         ))}

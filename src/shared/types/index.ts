@@ -232,6 +232,7 @@ export interface ShortcutConfigDTO {
   focusMainAgentInput: KeyboardShortcutDTO;
   openSettingsPage: KeyboardShortcutDTO;
   newChatSession: KeyboardShortcutDTO;
+  quickLauncher: KeyboardShortcutDTO;
 }
 
 export interface ChatSendPayload {
