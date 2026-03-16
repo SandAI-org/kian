@@ -250,7 +250,7 @@ export const ChatSessionList = ({
                   </div>
                 ) : (
                   <div
-                    className={`h-5 truncate text-sm font-medium leading-5 ${
+                    className={`i18n-no-translate h-5 truncate text-sm font-medium leading-5 ${
                       isActive ? "text-[#1f4fcc]" : "text-slate-800 group-hover:text-[#1f4fcc]"
                     }`}
                     onDoubleClick={(event) => beginTitleEditing(event, session)}

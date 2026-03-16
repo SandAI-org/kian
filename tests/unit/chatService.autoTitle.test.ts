@@ -120,6 +120,17 @@ describe("chatService auto title", () => {
   });
 
   it("uses payload.model when lastSelectedModel is not persisted", async () => {
+    state.getChatSession
+      .mockReset()
+      .mockResolvedValueOnce({
+        id: "session-1",
+        title: "",
+      })
+      .mockResolvedValueOnce({
+        id: "session-1",
+        title: "帮我整理一下这次迭代要做的任务",
+      });
+
     const { chatService } = await import("../../electron/main/services/chatService");
 
     await chatService.send({
@@ -132,7 +143,7 @@ describe("chatService auto title", () => {
     });
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (state.updateChatSessionTitle.mock.calls.length > 0) {
+      if (state.updateChatSessionTitle.mock.calls.length >= 2) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -155,12 +166,27 @@ describe("chatService auto title", () => {
     expect(state.updateChatSessionTitle).toHaveBeenCalledWith({
       scope: { type: "main" },
       sessionId: "session-1",
+      title: "帮我整理一下这次迭代要做的任务",
+    });
+    expect(state.updateChatSessionTitle).toHaveBeenCalledWith({
+      scope: { type: "main" },
+      sessionId: "session-1",
       title: "自动标题",
     });
   });
 
   it("skips title update when title generation fails", async () => {
     state.completeSimple.mockReset().mockRejectedValue(new Error("rate limited"));
+    state.getChatSession
+      .mockReset()
+      .mockResolvedValueOnce({
+        id: "session-1",
+        title: "",
+      })
+      .mockResolvedValueOnce({
+        id: "session-1",
+        title: "给我讲一个冷笑话",
+      });
 
     const { chatService } = await import("../../electron/main/services/chatService");
 
@@ -175,6 +201,11 @@ describe("chatService auto title", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(state.updateChatSessionTitle).not.toHaveBeenCalled();
+    expect(state.updateChatSessionTitle).toHaveBeenCalledTimes(1);
+    expect(state.updateChatSessionTitle).toHaveBeenCalledWith({
+      scope: { type: "main" },
+      sessionId: "session-1",
+      title: "给我讲一个冷笑话",
+    });
   });
 });

@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -41,6 +42,12 @@ import { settingsService } from './services/settingsService';
 const APP_DISPLAY_NAME = 'Kian';
 const LOCAL_MEDIA_SCHEME = 'kian-local';
 const FOCUS_MAIN_AGENT_SHORTCUT_CHANNEL = 'window:focus-main-agent-shortcut';
+const OPEN_MAIN_AGENT_SESSION_CHANNEL = 'window:open-main-agent-session';
+const QUICK_LAUNCHER_SHORTCUT = 'CommandOrControl+Shift+K';
+const QUICK_LAUNCHER_ROUTE = '/quick-launcher';
+const QUICK_LAUNCHER_WIDTH = 520;
+const QUICK_LAUNCHER_MIN_HEIGHT = 132;
+const QUICK_LAUNCHER_MAX_HEIGHT = 680;
 const resolvedFixPath =
   typeof fixPathImport === 'function'
     ? fixPathImport
@@ -53,6 +60,10 @@ app.setName(APP_DISPLAY_NAME);
 
 let quitConfirmed = false;
 let quitInProgress = false;
+let mainWindow: BrowserWindow | null = null;
+let quickLauncherWindow: BrowserWindow | null = null;
+let suppressMainWindowActivationUntil = 0;
+let quickLauncherShouldHideAppOnClose = false;
 
 const NATIVE_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   'zh-CN': {},
@@ -276,6 +287,46 @@ const buildMainWindowOptions = (
       sandbox: false
     }
   };
+};
+
+const buildQuickLauncherWindowOptions = (
+  icon: Electron.NativeImage | undefined
+): BrowserWindowConstructorOptions => {
+  return {
+    width: QUICK_LAUNCHER_WIDTH,
+    height: QUICK_LAUNCHER_MIN_HEIGHT,
+    minWidth: QUICK_LAUNCHER_WIDTH,
+    maxWidth: QUICK_LAUNCHER_WIDTH,
+    minHeight: QUICK_LAUNCHER_MIN_HEIGHT,
+    maxHeight: QUICK_LAUNCHER_MAX_HEIGHT,
+    useContentSize: true,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    title: `${APP_DISPLAY_NAME} Quick Launcher`,
+    icon,
+    show: false,
+    backgroundColor: '#eef2f7',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false
+    }
+  };
+};
+
+const buildRendererRouteUrl = (route: string): string => {
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
+  if (!rendererUrl) {
+    throw new Error('Renderer URL is only available in development.');
+  }
+  return `${rendererUrl.replace(/#.*$/, '')}#${route}`;
 };
 
 const showWindowLoadFailure = async (
@@ -564,6 +615,88 @@ const shouldDelegateExternalNavigation = (
   return true;
 };
 
+const focusWindow = (window: BrowserWindow): void => {
+  if (window.isDestroyed()) {
+    return;
+  }
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  if (!window.isVisible()) {
+    window.show();
+  }
+  window.focus();
+};
+
+const focusQuickLauncherWindow = (): void => {
+  const win = ensureQuickLauncherWindow();
+  if (mainWindow && !mainWindow.isDestroyed() && quickLauncherShouldHideAppOnClose) {
+    mainWindow.hide();
+  }
+  if (win.isMinimized()) {
+    win.restore();
+  }
+  if (!win.isVisible()) {
+    win.show();
+  }
+  win.focus();
+};
+
+const hideQuickLauncherWindow = (window: BrowserWindow): boolean => {
+  if (window.isDestroyed()) {
+    return false;
+  }
+
+  suppressMainWindowActivationUntil = Date.now() + 1000;
+  if (window.isVisible()) {
+    window.hide();
+  }
+
+  if (process.platform === 'darwin' && quickLauncherShouldHideAppOnClose) {
+    app.hide();
+    return true;
+  }
+
+  return true;
+};
+
+const dismissQuickLauncherWindow = (window: BrowserWindow): boolean => {
+  if (window.isDestroyed()) {
+    return false;
+  }
+
+  suppressMainWindowActivationUntil = Date.now() + 1000;
+  if (window.isVisible()) {
+    window.hide();
+  }
+
+  return true;
+};
+
+const loadRendererRoute = async (
+  window: BrowserWindow,
+  route: string
+): Promise<void> => {
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    await window.loadURL(buildRendererRouteUrl(route));
+    return;
+  }
+
+  const rendererPath = path.join(__dirname, '../renderer/index.html');
+  await window.loadFile(rendererPath, { hash: route });
+};
+
+const sendToMainWindow = (channel: string, payload?: string): void => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (payload === undefined) {
+    mainWindow.webContents.send(channel);
+    return;
+  }
+  mainWindow.webContents.send(channel, payload);
+};
+
 const stopBackgroundServices = (): void => {
   cronjobService.stop();
   chatChannelService.stop();
@@ -632,10 +765,11 @@ const requestApplicationQuit = async (preferredWindow?: BrowserWindow | null): P
   }
 };
 
-const createWindow = (): void => {
+const createMainWindow = (): BrowserWindow => {
   const appIconImage = loadAppIconImage();
   const win = new BrowserWindow(buildMainWindowOptions(appIconImage));
   let displayedFallback = false;
+  mainWindow = win;
 
   win.on('close', (event) => {
     if (quitConfirmed || process.platform === 'darwin') {
@@ -649,6 +783,12 @@ const createWindow = (): void => {
   win.once('ready-to-show', () => {
     if (!win.isDestroyed()) {
       win.show();
+    }
+  });
+
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
     }
   });
 
@@ -714,7 +854,7 @@ const createWindow = (): void => {
   }
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL']).catch((error) => {
+    void loadRendererRoute(win, '/').catch((error) => {
       logger.error('Failed to load renderer URL', error);
       if (displayedFallback || win.isDestroyed()) return;
       displayedFallback = true;
@@ -730,7 +870,7 @@ const createWindow = (): void => {
     });
   } else {
     const rendererPath = path.join(__dirname, '../renderer/index.html');
-    void win.loadFile(rendererPath).catch((error) => {
+    void loadRendererRoute(win, '/').catch((error) => {
       logger.error('Failed to load renderer entry file', {
         rendererPath,
         error
@@ -751,6 +891,87 @@ const createWindow = (): void => {
       });
     });
   }
+
+  return win;
+};
+
+const ensureMainWindow = (): BrowserWindow => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  return createMainWindow();
+};
+
+const createQuickLauncherWindow = (): BrowserWindow => {
+  const appIconImage = loadAppIconImage();
+  const win = new BrowserWindow(buildQuickLauncherWindowOptions(appIconImage));
+  quickLauncherWindow = win;
+
+  win.on('closed', () => {
+    if (quickLauncherWindow === win) {
+      quickLauncherWindow = null;
+    }
+  });
+
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) {
+      win.show();
+    }
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (shouldDelegateExternalNavigation(url, win.webContents.getURL())) {
+      void linkOpenService.open(url);
+      return { action: 'deny' };
+    }
+
+    return { action: 'allow' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!shouldDelegateExternalNavigation(url, win.webContents.getURL())) {
+      return;
+    }
+
+    event.preventDefault();
+    void linkOpenService.open(url);
+  });
+
+  void loadRendererRoute(win, QUICK_LAUNCHER_ROUTE).catch((error) => {
+    logger.error('Failed to load quick launcher route', error);
+    win.close();
+  });
+
+  return win;
+};
+
+const ensureQuickLauncherWindow = (): BrowserWindow => {
+  if (quickLauncherWindow && !quickLauncherWindow.isDestroyed()) {
+    return quickLauncherWindow;
+  }
+  return createQuickLauncherWindow();
+};
+
+const showQuickLauncherWindow = (): void => {
+  suppressMainWindowActivationUntil = Date.now() + 1000;
+  quickLauncherShouldHideAppOnClose =
+    BrowserWindow.getFocusedWindow() !== mainWindow;
+  focusQuickLauncherWindow();
+};
+
+const openMainAgentSession = (sessionId: string): void => {
+  const win = ensureMainWindow();
+  focusWindow(win);
+  const dispatch = () => {
+    sendToMainWindow(OPEN_MAIN_AGENT_SESSION_CHANNEL, sessionId);
+  };
+
+  if (win.webContents.isLoadingMainFrame()) {
+    win.webContents.once('did-finish-load', dispatch);
+    return;
+  }
+
+  dispatch();
 };
 
 app
@@ -808,7 +1029,29 @@ app
     updateService.start();
     ipcMain.handle('window:close', (event) => {
       const win = BrowserWindow.fromWebContents(event.sender);
+      if (win && quickLauncherWindow === win && !win.isDestroyed()) {
+        hideQuickLauncherWindow(win);
+        return { ok: true, data: true };
+      }
       win?.close();
+      return { ok: true, data: true };
+    });
+    ipcMain.handle('window:hide', (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win && quickLauncherWindow === win && !win.isDestroyed()) {
+        hideQuickLauncherWindow(win);
+        return { ok: true, data: true };
+      }
+      win?.hide();
+      return { ok: true, data: true };
+    });
+    ipcMain.handle('window:dismissQuickLauncher', (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win && quickLauncherWindow === win && !win.isDestroyed()) {
+        dismissQuickLauncherWindow(win);
+        return { ok: true, data: true };
+      }
+      win?.hide();
       return { ok: true, data: true };
     });
     ipcMain.handle('window:toggleMaximize', (event) => {
@@ -823,7 +1066,79 @@ app
       }
       return { ok: true, data: true };
     });
-    createWindow();
+    ipcMain.handle('window:openMainAgentSession', async (_event, payload) => {
+      const sessionId =
+        typeof payload === 'object' &&
+        payload &&
+        'sessionId' in payload &&
+        typeof payload.sessionId === 'string'
+          ? payload.sessionId.trim()
+          : '';
+      if (!sessionId) {
+        return { ok: false, error: { code: 'VALIDATION_ERROR', message: 'sessionId is required' } };
+      }
+      openMainAgentSession(sessionId);
+      return { ok: true, data: true };
+    });
+    ipcMain.handle('window:resizeQuickLauncher', (event, payload) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || win.isDestroyed()) {
+        return { ok: true, data: false };
+      }
+
+      const requestedHeight =
+        typeof payload === 'object' &&
+        payload &&
+        'height' in payload &&
+        typeof payload.height === 'number'
+          ? payload.height
+          : NaN;
+      if (!Number.isFinite(requestedHeight)) {
+        return { ok: false, error: { code: 'VALIDATION_ERROR', message: 'height must be a number' } };
+      }
+
+      const nextHeight = Math.max(
+        QUICK_LAUNCHER_MIN_HEIGHT,
+        Math.min(QUICK_LAUNCHER_MAX_HEIGHT, Math.round(requestedHeight))
+      );
+      const [contentWidth, contentHeight] = win.getContentSize();
+      if (contentHeight !== nextHeight) {
+        win.setContentSize(contentWidth, nextHeight, true);
+      }
+      return { ok: true, data: true };
+    });
+    ipcMain.handle('window:setQuickLauncherResizable', (event, payload) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || win.isDestroyed()) {
+        return { ok: true, data: false };
+      }
+
+      const resizable =
+        typeof payload === 'object' &&
+        payload &&
+        'resizable' in payload &&
+        typeof payload.resizable === 'boolean'
+          ? payload.resizable
+          : null;
+      if (resizable === null) {
+        return {
+          ok: false,
+          error: { code: 'VALIDATION_ERROR', message: 'resizable must be a boolean' }
+        };
+      }
+
+      if (win.isResizable() !== resizable) {
+        win.setResizable(resizable);
+      }
+      return { ok: true, data: true };
+    });
+    createMainWindow();
+
+    if (!globalShortcut.register(QUICK_LAUNCHER_SHORTCUT, showQuickLauncherWindow)) {
+      logger.warn('Failed to register quick launcher global shortcut', {
+        shortcut: QUICK_LAUNCHER_SHORTCUT
+      });
+    }
 
     // Non-blocking: initialize chat channels after window is visible
     chatChannelService.refresh().catch((error) => {
@@ -831,14 +1146,23 @@ app
     });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+      if (Date.now() < suppressMainWindowActivationUntil) {
+        return;
       }
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        createMainWindow();
+        return;
+      }
+      focusWindow(mainWindow);
     });
   })
   .catch((error) => {
     logger.error('App initialization failed', error);
   });
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 app.on('before-quit', (event) => {
   if (quitConfirmed) {

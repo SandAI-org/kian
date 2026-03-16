@@ -5,6 +5,7 @@ import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { DEFAULT_APP_LANGUAGE, type AppLanguage } from "@shared/i18n";
+import { getAboutUpdatePresentation } from "@renderer/modules/settings/updatePresentation";
 import {
   formatKeyboardShortcut,
   keyboardShortcutFromEvent,
@@ -798,14 +799,16 @@ export const SettingsPage = () => {
     broadcastDirty;
   const resolvedUpdateStatus = updateStatus ?? updateStatusQuery.data ?? null;
   const updateStatusLabel = getUpdateStageLabel(resolvedUpdateStatus?.stage);
-  const updateProgressPercent = Math.max(
-    0,
-    Math.min(100, Math.floor(resolvedUpdateStatus?.progressPercent ?? 0)),
-  );
-  const canInstallUpdate = resolvedUpdateStatus?.stage === "downloaded";
+  const {
+    canInstallUpdate,
+    isUpdateChecking: isUpdateCheckingByStage,
+    isUpdateInFlight,
+    progressPercent: updateProgressPercent,
+    showLatestVersion,
+    showProgress,
+  } = getAboutUpdatePresentation(resolvedUpdateStatus);
   const isUpdateChecking =
-    resolvedUpdateStatus?.stage === "checking" || checkUpdateMutation.isPending;
-  const isUpdateDownloading = resolvedUpdateStatus?.stage === "downloading";
+    isUpdateCheckingByStage || checkUpdateMutation.isPending;
   const isSavingAny =
     saveGeneralMutation.isPending ||
     saveShortcutConfigMutation.isPending ||
@@ -2254,7 +2257,7 @@ export const SettingsPage = () => {
                             void handleCheckUpdate();
                           }}
                           loading={isUpdateChecking}
-                          disabled={isUpdateDownloading}
+                          disabled={isUpdateInFlight}
                         >
                           检查更新
                         </Button>
@@ -2264,18 +2267,16 @@ export const SettingsPage = () => {
                         {updateStatusLabel}
                       </div>
 
-                      {resolvedUpdateStatus?.latestVersion ? (
+                      {showLatestVersion ? (
                         <div className="mb-2 text-xs text-slate-500">
-                          最新版本：{resolvedUpdateStatus.latestVersion}
+                          最新版本：{resolvedUpdateStatus?.latestVersion ?? "-"}
                         </div>
                       ) : null}
 
-                      {isUpdateDownloading || canInstallUpdate ? (
+                      {showProgress ? (
                         <div className="mb-3">
                           <Progress
-                            percent={
-                              canInstallUpdate ? 100 : updateProgressPercent
-                            }
+                            percent={updateProgressPercent}
                             size="small"
                             status={canInstallUpdate ? "success" : "active"}
                           />

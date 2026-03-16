@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   workspaceRoot: "",
   systemPrompt: "# test prompt\n",
+  emitHistoryUpdated: vi.fn(),
 }));
 
 vi.mock("../../electron/main/services/workspacePaths", () => ({
@@ -29,6 +30,12 @@ vi.mock("../../electron/main/services/settingsService", () => ({
   },
 }));
 
+vi.mock("../../electron/main/services/chatEvents", () => ({
+  chatEvents: {
+    emitHistoryUpdated: (...args: unknown[]) => state.emitHistoryUpdated(...args),
+  },
+}));
+
 const formatDay = (date: Date): string => {
   const pad2 = (value: number): string => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
@@ -41,6 +48,7 @@ describe("repositoryService project management", () => {
     vi.resetModules();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-05T09:30:00.000Z"));
+    state.emitHistoryUpdated.mockReset();
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kian-project-repo-"));
     state.workspaceRoot = tempRoot;
   });
@@ -286,5 +294,37 @@ describe("repositoryService project management", () => {
         "utf8",
       ),
     ).resolves.toBe("喜欢清晰直接的答案。\n");
+  });
+
+  it("emits session module when updating a chat title", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const session = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "",
+    });
+
+    state.emitHistoryUpdated.mockClear();
+    vi.setSystemTime(new Date("2026-03-05T09:31:00.000Z"));
+
+    await repositoryService.updateChatSessionTitle({
+      scope: { type: "main" },
+      sessionId: session.id,
+      title: "自动标题",
+    });
+
+    expect(state.emitHistoryUpdated).toHaveBeenCalledWith({
+      scope: { type: "main" },
+      sessionId: session.id,
+      messageId: "",
+      role: "system",
+      createdAt: "2026-03-05T09:31:00.000Z",
+      sessionTitle: "自动标题",
+      sessionUpdatedAt: "2026-03-05T09:31:00.000Z",
+      sessionModule: "main",
+    });
   });
 });

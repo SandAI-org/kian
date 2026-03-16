@@ -3,7 +3,7 @@ import type { DropdownProps } from 'antd';
 import type { ReactNode } from 'react';
 
 /** Shared CSS class names for consistent dropdown styling */
-export const COMPACT_DROPDOWN_OVERLAY = 'compact-dropdown-overlay';
+export const COMPACT_DROPDOWN_OVERLAY = 'compact-dropdown-overlay no-drag';
 export const COMPACT_DROPDOWN_MENU = 'compact-dropdown-menu';
 
 export interface CompactDropdownProps extends Omit<DropdownProps, 'overlayClassName'> {

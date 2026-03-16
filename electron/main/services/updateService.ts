@@ -5,7 +5,7 @@ import { autoUpdater } from "electron-updater";
 import { logger } from "./logger";
 import { updateEvents } from "./updateEvents";
 import { validateDownloadedMacUpdate } from "./updatePackageValidator";
-import { normalizeVersion } from "./updateVersion";
+import { compareVersions, normalizeVersion } from "./updateVersion";
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const INITIAL_CHECK_DELAY_MS = 15 * 1000;
@@ -243,7 +243,30 @@ class UpdateService {
 
   private async performCheck(force: boolean): Promise<AppUpdateStatusDTO> {
     const result = await autoUpdater.checkForUpdates();
-    await result?.downloadPromise;
+    const nextVersion = result?.updateInfo?.version
+      ? normalizeVersion(result.updateInfo.version)
+      : null;
+    const currentVersion = normalizeVersion(app.getVersion());
+    const shouldTreatAsNewerVersion = Boolean(
+      nextVersion && compareVersions(nextVersion, currentVersion) > 0,
+    );
+
+    if (shouldTreatAsNewerVersion && this.status.stage === "upToDate") {
+      this.setStatus({
+        stage: "available",
+        latestVersion: nextVersion ?? undefined,
+        downloadedVersion: undefined,
+        downloadedFilePath: undefined,
+        progressPercent: 0,
+        message: undefined,
+      });
+    }
+
+    const downloadPromise =
+      result?.downloadPromise ??
+      (shouldTreatAsNewerVersion ? autoUpdater.downloadUpdate() : undefined);
+
+    await downloadPromise;
     await this.downloadValidationPromise;
     if (force && this.status.stage === "downloaded") {
       this.setStatus({

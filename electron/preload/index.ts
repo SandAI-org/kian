@@ -48,6 +48,7 @@ import { clipboard, contextBridge, ipcRenderer, webUtils } from "electron";
 const invoke = <T>(channel: string, payload?: unknown): Promise<Result<T>> =>
   ipcRenderer.invoke(channel, payload ?? {});
 const FOCUS_MAIN_AGENT_SHORTCUT_CHANNEL = "window:focus-main-agent-shortcut";
+const OPEN_MAIN_AGENT_SESSION_CHANNEL = "window:open-main-agent-session";
 
 const api = {
   cronjob: {
@@ -374,10 +375,18 @@ const api = {
   },
   window: {
     close: () => invoke<boolean>("window:close"),
+    hide: () => invoke<boolean>("window:hide"),
+    dismissQuickLauncher: () => invoke<boolean>("window:dismissQuickLauncher"),
     toggleMaximize: () => invoke<boolean>("window:toggleMaximize"),
     openUrl: (url: string) => invoke<boolean>("window:openUrl", { url }),
+    openMainAgentSession: (sessionId: string) =>
+      invoke<boolean>("window:openMainAgentSession", { sessionId }),
     openAppPreview: (payload: OpenAppPreviewWindowPayload) =>
       invoke<boolean>("window:openAppPreview", payload),
+    resizeQuickLauncher: (height: number) =>
+      invoke<boolean>("window:resizeQuickLauncher", { height }),
+    setQuickLauncherResizable: (resizable: boolean) =>
+      invoke<boolean>("window:setQuickLauncherResizable", { resizable }),
     subscribeFocusMainAgentShortcut: (handler: () => void) => {
       const listener = (): void => {
         handler();
@@ -385,6 +394,18 @@ const api = {
       ipcRenderer.on(FOCUS_MAIN_AGENT_SHORTCUT_CHANNEL, listener);
       return (): void => {
         ipcRenderer.removeListener(FOCUS_MAIN_AGENT_SHORTCUT_CHANNEL, listener);
+      };
+    },
+    subscribeOpenMainAgentSession: (handler: (sessionId: string) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        sessionId: string,
+      ): void => {
+        handler(sessionId);
+      };
+      ipcRenderer.on(OPEN_MAIN_AGENT_SESSION_CHANNEL, listener);
+      return (): void => {
+        ipcRenderer.removeListener(OPEN_MAIN_AGENT_SESSION_CHANNEL, listener);
       };
     },
   },

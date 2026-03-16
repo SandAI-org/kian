@@ -298,6 +298,7 @@ export interface ChatHistoryUpdatedEvent {
   createdAt: string;
   sessionTitle?: string;
   sessionUpdatedAt?: string;
+  sessionModule?: ChatModuleType;
 }
 
 export type AppOperationEvent =

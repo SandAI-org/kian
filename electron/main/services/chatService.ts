@@ -4,6 +4,10 @@ import type {
   ChatSendResponse,
   ChatStreamEvent,
 } from "@shared/types";
+import {
+  deriveOptimisticChatSessionTitle,
+  normalizeChatSessionTitleCandidate,
+} from "@shared/utils/chatSessionTitle";
 import { buildUserRequestMetadataJson } from "@shared/utils/chatPendingMessage";
 import { agentService } from "./agentService";
 import { chatEvents } from "./chatEvents";
@@ -76,22 +80,6 @@ const normalizeToolInput = (input: string | undefined): string | undefined => {
   return trimmed ? trimmed : undefined;
 };
 
-const normalizeTitleCandidate = (value: string): string => {
-  const compact = value
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
-    .replace(/\[[^\]]*]\([^)]*\)/g, " ")
-    .replace(/[#>*_\-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return compact
-    .replace(/["""''「」『』【】]/g, "")
-    .replace(/[.,!?;:，。！？；：]+$/g, "")
-    .trim();
-};
-
 const buildAutoTitlePromptInput = async (
   payload: ChatSendPayload,
 ): Promise<{
@@ -125,6 +113,46 @@ const buildAutoTitlePromptInput = async (
     userMessage,
     assistantMessage,
   };
+};
+
+const maybeSetOptimisticSessionTitle = async (
+  payload: ChatSendPayload,
+): Promise<string | undefined> => {
+  const optimisticTitle = deriveOptimisticChatSessionTitle(payload.message);
+  if (!optimisticTitle) {
+    return undefined;
+  }
+
+  const session = await repositoryService.getChatSession(
+    payload.scope,
+    payload.sessionId,
+  );
+  if (!session) {
+    logger.debug("Optimistic title skipped: session not found", {
+      sessionId: payload.sessionId,
+      scope: payload.scope,
+    });
+    return undefined;
+  }
+
+  const currentTitle = session.title.trim();
+  if (currentTitle) {
+    return currentTitle;
+  }
+
+  await repositoryService.updateChatSessionTitle({
+    scope: payload.scope,
+    sessionId: payload.sessionId,
+    title: optimisticTitle,
+  });
+
+  logger.debug("Optimistic title applied", {
+    sessionId: payload.sessionId,
+    scope: payload.scope,
+    title: optimisticTitle,
+  });
+
+  return optimisticTitle;
 };
 
 const appendAssistantDelta = (
@@ -230,6 +258,7 @@ const generateSessionTitle = async (
   payload: ChatSendPayload,
 ): Promise<void> => {
   try {
+    const optimisticTitle = deriveOptimisticChatSessionTitle(payload.message);
     const session = await repositoryService.getChatSession(
       payload.scope,
       payload.sessionId,
@@ -241,11 +270,12 @@ const generateSessionTitle = async (
       });
       return;
     }
-    if (session.title.trim()) {
+    const currentTitle = session.title.trim();
+    if (currentTitle && currentTitle !== optimisticTitle) {
       logger.debug("Auto title skipped: session already has title", {
         sessionId: payload.sessionId,
         scope: payload.scope,
-        currentTitle: session.title,
+        currentTitle,
       });
       return;
     }
@@ -336,7 +366,9 @@ const generateSessionTitle = async (
       .join("")
       .trim();
 
-    const nextTitle = normalizeTitleCandidate(titleText).slice(0, 30);
+    const nextTitle = normalizeChatSessionTitleCandidate(titleText)
+      .slice(0, 30)
+      .trim();
     if (!nextTitle) {
       logger.debug("Auto title skipped: model returned empty title", {
         sessionId: payload.sessionId,
@@ -384,6 +416,8 @@ export const chatService = {
           : undefined,
       });
     }
+
+    await maybeSetOptimisticSessionTitle(payload);
 
     const timeline: TimelineStep[] = [];
     const toolStepByUseId = new Map<

@@ -278,11 +278,21 @@ export const api = {
   },
   window: {
     close: async () => unwrap(await window.api.window.close()),
+    hide: async () => unwrap(await window.api.window.hide()),
+    dismissQuickLauncher: async () => unwrap(await window.api.window.dismissQuickLauncher()),
     toggleMaximize: async (): Promise<boolean> => unwrap(await window.api.window.toggleMaximize()),
     openUrl: async (url: string): Promise<boolean> => unwrap(await window.api.window.openUrl(url)),
+    openMainAgentSession: async (sessionId: string): Promise<boolean> =>
+      unwrap(await window.api.window.openMainAgentSession(sessionId)),
     openAppPreview: async (payload: OpenAppPreviewWindowPayload): Promise<boolean> =>
       unwrap(await window.api.window.openAppPreview(payload)),
+    resizeQuickLauncher: async (height: number): Promise<boolean> =>
+      unwrap(await window.api.window.resizeQuickLauncher(height)),
+    setQuickLauncherResizable: async (resizable: boolean): Promise<boolean> =>
+      unwrap(await window.api.window.setQuickLauncherResizable(resizable)),
     subscribeFocusMainAgentShortcut: (handler: () => void) =>
-      window.api.window.subscribeFocusMainAgentShortcut(handler)
+      window.api.window.subscribeFocusMainAgentShortcut(handler),
+    subscribeOpenMainAgentSession: (handler: (sessionId: string) => void) =>
+      window.api.window.subscribeOpenMainAgentSession(handler)
   }
 };

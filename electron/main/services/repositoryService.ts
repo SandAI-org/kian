@@ -2842,6 +2842,16 @@ export const repositoryService = {
     if (input.scope.type === "project") {
       await touchProject(input.scope.projectId);
     }
+    chatEvents.emitHistoryUpdated({
+      scope: input.scope,
+      sessionId: next.id,
+      messageId: "",
+      role: "system",
+      createdAt: timestamp,
+      sessionTitle: next.title,
+      sessionUpdatedAt: timestamp,
+      sessionModule: input.module,
+    });
 
     return next;
   },
@@ -2947,6 +2957,7 @@ export const repositoryService = {
       createdAt: updatedAt,
       sessionTitle: title,
       sessionUpdatedAt: updatedAt,
+      sessionModule: session.module,
     });
   },
 

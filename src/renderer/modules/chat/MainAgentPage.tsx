@@ -6,10 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { api } from "@renderer/lib/api";
+import { MAIN_AGENT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
 import { toggleWindowMaximizeFromChrome } from "@renderer/lib/windowChrome";
 import { ChatSessionList } from "@renderer/modules/chat/ChatSessionList";
 import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
 import { Button } from "antd";
+import { useSearchParams } from "react-router-dom";
 
 const MAIN_AGENT_SCOPE_ID = "main-agent";
 const MAIN_SCOPE: ChatScope = { type: "main" };
@@ -24,6 +26,8 @@ const MODES: { key: AgentMode; label: string }[] = [
 export const NEW_CURRENT_AGENT_SESSION_EVENT = "main-agent:new-session";
 
 export const MainAgentPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
   const [mode, setMode] = useState<AgentMode>("chat");
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(
     undefined,
@@ -94,6 +98,38 @@ export const MainAgentPage = () => {
     return () =>
       window.removeEventListener(NEW_CURRENT_AGENT_SESSION_EVENT, handler);
   }, [handleNewSession]);
+
+  useEffect(() => {
+    if (!pendingRouteSessionId) {
+      return;
+    }
+
+    setCurrentSessionId(pendingRouteSessionId);
+    void queryClient.invalidateQueries({
+      queryKey: ["chat-sessions", "main"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["chat-messages", "main", pendingRouteSessionId],
+    });
+    if (mode !== "chat") {
+      setMode("chat");
+    }
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event(MAIN_AGENT_INPUT_FOCUS_EVENT));
+    });
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("session");
+    nextParams.delete("source");
+    nextParams.delete("stamp");
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    mode,
+    pendingRouteSessionId,
+    queryClient,
+    searchParams,
+    setSearchParams,
+  ]);
 
   return (
     <div className="flex h-full min-h-0 flex-col px-5 pt-3 pb-5">

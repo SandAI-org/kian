@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   quit: vi.fn(),
   listeners: new Map<string, Array<(...args: any[]) => void>>(),
   checkForUpdates: vi.fn<() => Promise<unknown>>(),
+  downloadUpdate: vi.fn<() => Promise<unknown>>(),
   quitAndInstall: vi.fn()
 }));
 const loggerState = vi.hoisted(() => ({
@@ -37,6 +38,7 @@ vi.mock('electron-updater', () => ({
       return true;
     },
     checkForUpdates: (...args: []) => state.checkForUpdates(...args),
+    downloadUpdate: (...args: []) => state.downloadUpdate(...args),
     quitAndInstall: (...args: [boolean?, boolean?]) => state.quitAndInstall(...args)
   }
 }));
@@ -59,10 +61,12 @@ describe('updateService', () => {
     state.quit.mockReset();
     state.listeners.clear();
     state.checkForUpdates.mockReset();
+    state.downloadUpdate.mockReset();
     state.quitAndInstall.mockReset();
     loggerState.error.mockReset();
     validatorState.validateDownloadedMacUpdate.mockReset();
     validatorState.validateDownloadedMacUpdate.mockResolvedValue();
+    state.downloadUpdate.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -109,6 +113,29 @@ describe('updateService', () => {
     expect(status.progressPercent).toBe(100);
     expect(status.message).toContain('已准备好安装');
     expect(status.downloadedFilePath).toBe('/tmp/Kian-1.2.3.zip');
+  });
+
+  it('does not report up to date when updater returns a newer version in updateInfo', async () => {
+    state.appVersion = '1.2.2';
+    state.downloadUpdate.mockImplementation(async () => {
+      emitUpdaterEvent('download-progress', { percent: 56.4 });
+      emitUpdaterEvent('update-downloaded', {
+        version: '1.2.3',
+        downloadedFile: '/tmp/Kian-1.2.3.zip'
+      });
+    });
+    state.checkForUpdates.mockImplementation(async () => {
+      emitUpdaterEvent('checking-for-update');
+      emitUpdaterEvent('update-not-available', { version: '1.2.3' });
+      return { updateInfo: { version: '1.2.3' } };
+    });
+
+    const { updateService } = await import('../../electron/main/services/updateService');
+    const status = await updateService.checkForUpdates({ force: true });
+
+    expect(state.downloadUpdate).toHaveBeenCalledTimes(1);
+    expect(status.stage).toBe('downloaded');
+    expect(status.latestVersion).toBe('1.2.3');
   });
 
   it('fails update check when updater throws', async () => {

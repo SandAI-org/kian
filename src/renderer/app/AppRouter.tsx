@@ -9,6 +9,7 @@ import { TasksPage } from '@renderer/modules/tasks/TasksPage';
 import { GuidePage } from '@renderer/modules/guide/GuidePage';
 import { McpPage } from '@renderer/modules/mcp/McpPage';
 import { MainAgentPage } from '@renderer/modules/chat/MainAgentPage';
+import { QuickLauncherPage } from '@renderer/modules/quick-launcher/QuickLauncherPage';
 
 export const AppRouter = () => {
   return (
@@ -25,6 +26,7 @@ export const AppRouter = () => {
         <Route path="/guide" element={<GuidePage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
+      <Route path="/quick-launcher" element={<QuickLauncherPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

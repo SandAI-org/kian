@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   appendMessage: vi.fn(),
+  getChatSession: vi.fn(),
+  updateChatSessionTitle: vi.fn(),
   agentSend: vi.fn(),
 }));
 
 vi.mock("../../electron/main/services/repositoryService", () => ({
   repositoryService: {
     appendMessage: (...args: unknown[]) => state.appendMessage(...args),
+    getChatSession: (...args: unknown[]) => state.getChatSession(...args),
+    updateChatSessionTitle: (...args: unknown[]) =>
+      state.updateChatSessionTitle(...args),
   },
 }));
 
@@ -37,6 +42,11 @@ describe("chatService timeline persistence", () => {
   beforeEach(() => {
     vi.resetModules();
     state.appendMessage.mockReset().mockResolvedValue(undefined);
+    state.getChatSession.mockReset().mockResolvedValue({
+      id: "session-1",
+      title: "",
+    });
+    state.updateChatSessionTitle.mockReset().mockResolvedValue(undefined);
     state.agentSend.mockReset().mockImplementation(async (_payload, onStream) => {
       onStream?.({
         requestId: "req-1",

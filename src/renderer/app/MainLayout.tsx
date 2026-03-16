@@ -229,6 +229,24 @@ export const MainLayout = () => {
     return unsubscribe;
   }, [isMainAgentPage, navigate]);
 
+  useEffect(
+    () =>
+      api.window.subscribeOpenMainAgentSession((sessionId) => {
+        const params = new URLSearchParams();
+        params.set('session', sessionId);
+        params.set('source', 'quick-launcher');
+        params.set('stamp', String(Date.now()));
+        navigate(
+          {
+            pathname: '/main-agent',
+            search: `?${params.toString()}`
+          },
+          { replace: false }
+        );
+      }),
+    [navigate]
+  );
+
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
       if (!matchesKeyboardShortcut(event, shortcutConfig.openSettingsPage)) {

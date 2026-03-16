@@ -1,5 +1,5 @@
 import { CheckOutlined, DownOutlined } from '@ant-design/icons';
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CompactDropdown } from './CompactDropdown';
 
 export interface CompactSelectOption {
@@ -21,6 +21,7 @@ export interface CompactSelectProps {
   className?: string;
   /** Min width of the dropdown popup */
   popupMinWidth?: number;
+  disabled?: boolean;
 }
 
 export const CompactSelect = ({
@@ -31,8 +32,22 @@ export const CompactSelect = ({
   placeholder = '请选择',
   className = '',
   popupMinWidth = 160,
+  disabled = false,
 }: CompactSelectProps) => {
-  const selectedOption = options.find((o) => o.value === value);
+  const [open, setOpen] = useState(false);
+  const [optimisticValue, setOptimisticValue] = useState<string | undefined>(value);
+  const optionsSignature = useMemo(
+    () => options.map((option) => option.value).join('||'),
+    [options],
+  );
+
+  useEffect(() => {
+    setOptimisticValue(value);
+  }, [value, optionsSignature]);
+
+  const resolvedValue = optimisticValue;
+  const selectedOption = options.find((o) => o.value === resolvedValue);
+  const dropdownInstanceKey = `${resolvedValue ?? '__empty__'}::${optionsSignature}`;
   const menuItems = [
     ...(menuHeader
       ? [
@@ -55,7 +70,7 @@ export const CompactSelect = ({
               <span className="shrink-0 text-[11px] text-slate-400">{opt.description}</span>
             )}
           </div>
-          {opt.value === value && (
+          {opt.value === resolvedValue && (
             <CheckOutlined className="shrink-0 text-[11px] text-[#2f6ff7]" />
           )}
         </div>
@@ -65,26 +80,42 @@ export const CompactSelect = ({
 
   return (
     <CompactDropdown
+      key={dropdownInstanceKey}
+      destroyOnHidden
+      open={disabled ? false : open}
+      onOpenChange={(nextOpen) => {
+        if (disabled) return;
+        setOpen(nextOpen);
+      }}
       trigger={['click']}
       overlayStyle={{ minWidth: popupMinWidth }}
       menu={{
         selectable: true,
-        selectedKeys: value ? [value] : [],
+        selectedKeys: resolvedValue ? [resolvedValue] : [],
         items: menuItems,
         onClick: (info) => {
+          if (disabled) return;
           if (info.key === '__compact-select-header__') return;
-          onChange?.(info.key);
+          const nextValue = String(info.key);
+          setOptimisticValue(nextValue);
+          setOpen(false);
+          onChange?.(nextValue);
         },
       }}
     >
       <button
         type="button"
-        className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] leading-normal text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 ${className}`}
+        disabled={disabled}
+        className={`compact-select-trigger no-drag inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] leading-normal text-slate-500 transition-colors ${
+          disabled
+            ? "cursor-default opacity-75"
+            : "hover:bg-slate-100 hover:text-slate-700"
+        } ${className}`}
       >
         <span className="max-w-[200px] truncate">
-          {selectedOption?.label ?? placeholder}
+          {selectedOption?.label ?? resolvedValue ?? placeholder}
         </span>
-        <DownOutlined className="text-[9px]" />
+        <DownOutlined className={`text-[9px] ${disabled ? "opacity-40" : ""}`} />
       </button>
     </CompactDropdown>
   );

@@ -19,6 +19,5 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/renderer", "src/shared", "electron/preload"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src/renderer", "src/shared", "electron/preload"]
 }

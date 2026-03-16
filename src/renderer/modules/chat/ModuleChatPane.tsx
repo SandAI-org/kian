@@ -2,15 +2,19 @@ import {
   ArrowUpOutlined,
   CheckCircleOutlined,
   FileOutlined,
-  FileTextOutlined,
   FolderOpenOutlined,
   LoadingOutlined,
-  PlusOutlined,
   PushpinOutlined,
 } from "@ant-design/icons";
-import { CompactSelect } from "@renderer/components/CompactSelect";
+import {
+  CHAT_THINKING_LEVEL_VALUES,
+  ChatComposer,
+  type LocalChatFile,
+} from "@renderer/modules/chat/ChatComposer";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { ScrollArea } from "@renderer/components/ScrollArea";
+import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
+import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
 import {
@@ -34,12 +38,11 @@ import {
 } from "@shared/utils/chatPendingMessage";
 import { DEFAULT_SHORTCUT_CONFIG } from "@shared/utils/shortcuts";
 import {
-  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Button, Input, Tooltip, message } from "antd";
+import { message } from "antd";
 import {
   ChangeEvent,
   isValidElement,
@@ -77,6 +80,11 @@ interface ModuleChatPaneProps {
   hideBorder?: boolean;
   sessionId?: string;
   onSessionCreated?: (sessionId: string) => void;
+  layoutMode?: "fill" | "auto";
+  emptyStateMode?: "default" | "hidden";
+  timelineMaxHeight?: number;
+  composerVariant?: "default" | "embedded";
+  sessionBootstrapMode?: "default" | "lazy-new";
 }
 
 interface SendPayload {
@@ -88,16 +96,6 @@ interface SendPayload {
 
 interface QueuedSendPayload extends SendPayload {
   pendingMessage: ChatMessageDTO;
-}
-
-interface LocalChatFile {
-  key: string;
-  name: string;
-  sourcePath: string;
-  size: number;
-  mimeType?: string;
-  extension: string;
-  previewUrl?: string;
 }
 
 type MessageBlock =
@@ -144,12 +142,6 @@ type TimelineItem =
     };
 
 const TOOL_OUTPUT_PREVIEW_MAX_LINES = 10;
-
-const StopSquareIcon = (): ReactNode => (
-  <span className="inline-flex h-[12px] w-[12px] items-center justify-center">
-    <span className="inline-block h-[9px] w-[9px] rounded-[1px] bg-current" />
-  </span>
-);
 
 const SUPPORTED_FILE_ACCEPT = [
   ".pdf",
@@ -256,15 +248,6 @@ const TEXT_PREVIEW_MAX_CHARS = 6_000;
 const TEXT_PREVIEW_MAX_LINES = 80;
 const LEGACY_CHAT_INPUT_SHORTCUT_TIP_DISMISSED_STORAGE_KEY =
   "kian.chat.input-shortcut-tip.dismissed";
-const CHAT_THINKING_LEVEL_OPTIONS: Array<{
-  label: string;
-  value: ChatThinkingLevel;
-}> = [
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-];
-
 type MarkdownMediaKind = "image" | "video" | "audio";
 type ExtendedMarkdownKind = MarkdownMediaKind | "file" | "attachment";
 
@@ -1383,7 +1366,17 @@ export const ModuleChatPane = ({
   hideBorder = false,
   sessionId: externalSessionId,
   onSessionCreated,
+  layoutMode = "fill",
+  emptyStateMode = "default",
+  timelineMaxHeight,
+  composerVariant = "default",
+  sessionBootstrapMode = "default",
 }: ModuleChatPaneProps) => {
+  const { language } = useAppI18n();
+  const t = useCallback(
+    (value: string) => translateUiText(language, value),
+    [language],
+  );
   const effectiveScope = useMemo<ChatScope>(
     () =>
       scope ??
@@ -1429,6 +1422,16 @@ export const ModuleChatPane = ({
   const [queuedSendPayloads, setQueuedSendPayloads] = useState<
     QueuedSendPayload[]
   >([]);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const thinkingLevelOptions = useMemo(
+    () =>
+      CHAT_THINKING_LEVEL_VALUES.map((value) => ({
+        value,
+        label:
+          value === "low" ? t("低") : value === "medium" ? t("中") : t("高"),
+      })),
+    [t],
+  );
 
   const sessionRef = useRef<string | undefined>(undefined);
   const chatInputContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1576,6 +1579,7 @@ export const ModuleChatPane = ({
     setIsComposing(false);
     setPendingUserMessages([]);
     setQueuedSendPayloads([]);
+    setIsCreatingSession(false);
     setPendingFiles((prev) => {
       revokePreviewUrls(prev);
       return [];
@@ -1660,6 +1664,7 @@ export const ModuleChatPane = ({
   useEffect(() => {
     // When externally controlled, skip auto-bootstrap
     if (externalSessionId) return;
+    if (sessionBootstrapMode === "lazy-new") return;
 
     const bootstrap = async (): Promise<void> => {
       if (!scopeKey) return;
@@ -1684,6 +1689,7 @@ export const ModuleChatPane = ({
     externalSessionId,
     module,
     queryClient,
+    sessionBootstrapMode,
     scopeKey,
     setCurrentSessionId,
     sessionsQuery.data,
@@ -1701,7 +1707,6 @@ export const ModuleChatPane = ({
     enabled: Boolean(currentSessionId),
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 10,
-    placeholderData: keepPreviousData,
   });
 
   const sendMutation = useMutation({
@@ -2160,57 +2165,87 @@ export const ModuleChatPane = ({
   ]);
 
   const handleSend = (): void => {
-    const text = input.trim();
-    const files = [...pendingFiles];
-    const sessionId = currentSessionId;
-    if (
-      (!text && files.length === 0) ||
-      !sessionId ||
-      !hasHydratedSelectedModel
-    )
-      return;
-    const requestId = globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}`;
-    setInput("");
-    setPendingFiles((prev) => {
-      revokePreviewUrls(prev);
-      return [];
-    });
-    const nextPayload: QueuedSendPayload = {
-      sessionId,
-      text,
-      requestId,
-      files: files.map(({ previewUrl: _previewUrl, ...file }) => file),
-      pendingMessage: {
-        id: `pending-user-${requestId}`,
-        sessionId,
-        role: "user",
-        content: formatDraftMessage(text, files),
-        metadataJson: buildUserRequestMetadataJson(requestId),
-        createdAt: new Date().toISOString(),
-      },
-    };
-    setPendingUserMessages((prev) => [...prev, nextPayload.pendingMessage]);
-
-    const hasActiveProcessing =
-      sendMutation.isPending || streamingInProgress || Boolean(activeRequestId);
-    if (hasActiveProcessing || interruptMutation.isPending) {
-      setQueuedSendPayloads((prev) => [...prev, nextPayload]);
-      const currentRequestId = requestRef.current ?? activeRequestId;
-      if (currentRequestId && !interruptMutation.isPending) {
-        interruptMutation.mutate({
-          sessionId,
-          requestId: currentRequestId,
-        });
+    void (async () => {
+      const text = input.trim();
+      const files = [...pendingFiles];
+      if (
+        (!text && files.length === 0) ||
+        !hasHydratedSelectedModel ||
+        isCreatingSession
+      ) {
+        return;
       }
-      return;
-    }
 
-    startSend({
-      sessionId,
-      text,
-      requestId,
-      files: nextPayload.files,
-    });
+      let sessionId = currentSessionId;
+      if (!sessionId) {
+        try {
+          setIsCreatingSession(true);
+          const created = await api.chat.createSession({
+            scope: effectiveScope,
+            module,
+            title: "",
+          });
+          sessionId = created.id;
+          setCurrentSessionId(created.id);
+          void queryClient.invalidateQueries({
+            queryKey: ["chat-sessions", scopeKey],
+          });
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : t("发送失败"));
+          return;
+        } finally {
+          setIsCreatingSession(false);
+        }
+      }
+
+      if (!sessionId) {
+        return;
+      }
+
+      const requestId =
+        globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}`;
+      setInput("");
+      setPendingFiles((prev) => {
+        revokePreviewUrls(prev);
+        return [];
+      });
+      const nextPayload: QueuedSendPayload = {
+        sessionId,
+        text,
+        requestId,
+        files: files.map(({ previewUrl: _previewUrl, ...file }) => file),
+        pendingMessage: {
+          id: `pending-user-${requestId}`,
+          sessionId,
+          role: "user",
+          content: formatDraftMessage(text, files),
+          metadataJson: buildUserRequestMetadataJson(requestId),
+          createdAt: new Date().toISOString(),
+        },
+      };
+      setPendingUserMessages((prev) => [...prev, nextPayload.pendingMessage]);
+
+      const hasActiveProcessing =
+        sendMutation.isPending || streamingInProgress || Boolean(activeRequestId);
+      if (hasActiveProcessing || interruptMutation.isPending) {
+        setQueuedSendPayloads((prev) => [...prev, nextPayload]);
+        const currentRequestId = requestRef.current ?? activeRequestId;
+        if (currentRequestId && !interruptMutation.isPending) {
+          interruptMutation.mutate({
+            sessionId,
+            requestId: currentRequestId,
+          });
+        }
+        return;
+      }
+
+      startSend({
+        sessionId,
+        text,
+        requestId,
+        files: nextPayload.files,
+      });
+    })();
   };
 
   const handleInterrupt = (): void => {
@@ -2254,7 +2289,9 @@ export const ModuleChatPane = ({
         queryClient.setQueryData(["settings", "general"], previousConfig);
       }
       message.error(
-        error instanceof Error ? error.message : "快捷键提示关闭状态保存失败",
+        error instanceof Error
+          ? error.message
+          : t("快捷键提示关闭状态保存失败"),
       );
     });
   };
@@ -2303,9 +2340,10 @@ export const ModuleChatPane = ({
   }, []);
 
   const canSend =
-    Boolean(currentSessionId) &&
+    (sessionBootstrapMode === "lazy-new" || Boolean(currentSessionId)) &&
     (input.trim().length > 0 || pendingFiles.length > 0) &&
-    hasHydratedSelectedModel;
+    hasHydratedSelectedModel &&
+    !isCreatingSession;
   const canInterrupt =
     Boolean(currentSessionId) &&
     (sendMutation.isPending ||
@@ -2315,181 +2353,97 @@ export const ModuleChatPane = ({
     !interruptMutation.isPending;
   const showStreamingPanel =
     sendMutation.isPending || streamingInProgress || hasPendingAssistantReply;
-  const chatContainerClassName = "w-full";
-  const timelineContainerClassName = hideBorder
-    ? "min-h-0 flex-1 p-3 pb-0"
-    : "min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0";
+  const isAutoLayout = layoutMode === "auto";
+  const rootClassName = isAutoLayout
+    ? "flex min-h-0 justify-center"
+    : "flex h-full min-h-0 justify-center";
+  const chatContainerBaseClassName = isAutoLayout
+    ? "w-full flex min-h-0 flex-col"
+    : "w-full flex h-full min-h-0 flex-col";
+  const timelineContainerClassName = isAutoLayout
+    ? hideBorder
+      ? "p-3 pb-0"
+      : "rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0"
+    : hideBorder
+      ? "min-h-0 flex-1 p-3 pb-0"
+      : "min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0";
 
   const composer = (
-    <div className="rounded-xl border border-[#dbe5f5] bg-white px-3 py-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)]">
-      {pendingFiles.length > 0 ? (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {pendingFiles.map((file) => (
-            <div key={file.key} className="relative h-14 w-14">
-              <div className="h-full w-full overflow-hidden rounded-md border border-[#d8e2f2]">
-                {file.previewUrl ? (
-                  <img
-                    src={file.previewUrl}
-                    alt={file.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center bg-[#f3f6fb] text-slate-500">
-                    <FileTextOutlined className="text-sm" />
-                    <span className="max-w-[48px] truncate text-[10px] leading-none">
-                      {(file.extension || "file")
-                        .replace(".", "")
-                        .toUpperCase()}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleRemovePendingFile(file.key)}
-                className="absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/78 pb-[1px] text-[13px] font-semibold leading-none text-white shadow-sm transition-colors hover:cursor-pointer hover:bg-slate-900"
-                aria-label={`移除文件 ${file.name}`}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
+    <ChatComposer
+      variant={composerVariant}
+      pendingFiles={pendingFiles}
+      onRemovePendingFile={handleRemovePendingFile}
+      showInputShortcutTip={showInputShortcutTip}
+      chatInputShortcutHint={chatInputShortcutHint}
+      onDismissInputShortcutTip={handleDismissInputShortcutTip}
+      dismissShortcutTipLabel={t("不再提示")}
+      inputContainerRef={chatInputContainerRef}
+      input={input}
+      isComposing={isComposing}
+      onInputChange={setInput}
+      onCompositionStart={() => setIsComposing(true)}
+      onCompositionEnd={(value) => {
+        setIsComposing(false);
+        setInput(value);
+      }}
+      onInputKeyDown={(event) => {
+        if ((event.nativeEvent as KeyboardEvent).isComposing || isComposing) {
+          return;
+        }
 
-      {showInputShortcutTip ? (
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#dbe5f5] bg-[#f7faff] px-3 py-2 text-[12px] text-slate-600">
-          <span>{chatInputShortcutHint}</span>
-          <Button
-            type="link"
-            size="small"
-            onClick={handleDismissInputShortcutTip}
-            className="!h-auto !p-0 !text-[12px] !text-slate-500 hover:!text-slate-700"
-          >
-            不再提示
-          </Button>
-        </div>
-      ) : null}
+        if (
+          matchesKeyboardShortcut(event.nativeEvent, shortcutConfig.sendMessage)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSend();
+          return;
+        }
 
-      <div ref={chatInputContainerRef} className="min-h-[84px]">
-        <Input.TextArea
-          autoSize={{ minRows: 2, maxRows: 6 }}
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onCompositionStart={() => setIsComposing(true)}
-          onCompositionEnd={(event) => {
-            setIsComposing(false);
-            setInput(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (
-              (event.nativeEvent as KeyboardEvent).isComposing ||
-              isComposing
-            ) {
-              return;
-            }
-
-            if (
-              matchesKeyboardShortcut(
-                event.nativeEvent,
-                shortcutConfig.sendMessage,
-              )
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-              handleSend();
-              return;
-            }
-
-            if (
-              matchesKeyboardShortcut(
-                event.nativeEvent,
-                shortcutConfig.insertNewline,
-              )
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-              insertNewlineAtCursor(event.currentTarget);
-            }
-          }}
-          className="!border-0 !bg-transparent !px-0 !py-0 !shadow-none"
-          placeholder={
-            canInterrupt ? "继续发送消息修正我的行为..." : "有什么吩咐..."
-          }
-        />
-      </div>
-
-      <div className="mt-3 flex items-center justify-between pt-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center justify-center text-[15px] leading-none text-slate-400 hover:cursor-pointer hover:text-slate-600"
-            aria-label="添加文件"
-          >
-            <PlusOutlined />
-          </button>
-          {enabledModels.length > 1 ? (
-            <CompactSelect
-              value={selectedModel}
-              onChange={(value: string) => {
-                setSelectedModel(value);
-                api.settings.setLastSelectedModel(value).catch(() => {});
-              }}
-              options={enabledModels.map((m) => ({
-                label: stripProviderPrefixFromModelName(m.modelName),
-                value: `${m.provider}:${m.modelId}`,
-              }))}
-              popupMinWidth={200}
-            />
-          ) : null}
-          <CompactSelect
-            value={selectedThinkingLevel}
-            onChange={(value: string) => {
-              if (!isChatThinkingLevel(value)) return;
-              setSelectedThinkingLevel(value);
-              api.settings.setLastSelectedThinkingLevel(value).catch(() => {});
-            }}
-            options={CHAT_THINKING_LEVEL_OPTIONS}
-            menuHeader="思考等级"
-            popupMinWidth={132}
-          />
-        </div>
-        <Tooltip title={chatInputShortcutHint} placement="left">
-          <span className="inline-flex">
-            {canInterrupt ? (
-              <Button
-                type="primary"
-                shape="circle"
-                icon={<StopSquareIcon />}
-                loading={interruptMutation.isPending}
-                onClick={handleInterrupt}
-                className="!inline-flex !h-8 !w-8 !min-w-8 !items-center !justify-center !border-[#f97316] !bg-[#f97316] !p-0 !text-[13px] !text-white transition-all duration-200 enabled:hover:!cursor-pointer enabled:hover:!border-[#ea580c] enabled:hover:!bg-[#ea580c] enabled:hover:!shadow-[0_0_0_4px_rgba(249,115,22,0.18)] motion-safe:animate-pulse disabled:!cursor-not-allowed"
-              />
-            ) : (
-              <Button
-                type="primary"
-                shape="circle"
-                icon={<ArrowUpOutlined />}
-                loading={sendMutation.isPending}
-                onClick={handleSend}
-                disabled={!canSend}
-                className="!inline-flex !h-8 !w-8 !min-w-8 !items-center !justify-center !p-0 !text-[14px] transition-all duration-200 enabled:hover:!cursor-pointer enabled:hover:!shadow-[0_0_0_4px_rgba(37,99,235,0.15)] enabled:hover:!scale-[1.04] enabled:active:!scale-[0.96] disabled:!cursor-not-allowed"
-              />
-            )}
-          </span>
-        </Tooltip>
-      </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        multiple
-        accept={SUPPORTED_FILE_ACCEPT}
-        onChange={handleSelectFiles}
-      />
-    </div>
+        if (
+          matchesKeyboardShortcut(
+            event.nativeEvent,
+            shortcutConfig.insertNewline,
+          )
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          insertNewlineAtCursor(event.currentTarget);
+        }
+      }}
+      placeholder={
+        canInterrupt
+          ? t("继续发送消息修正我的行为...")
+          : t("有什么吩咐...")
+      }
+      fileInputRef={fileInputRef}
+      onSelectFiles={handleSelectFiles}
+      fileAccept={SUPPORTED_FILE_ACCEPT}
+      addFileLabel={t("添加文件")}
+      removeFileLabel={(fileName) => t(`移除文件 ${fileName}`)}
+      selectedModel={selectedModel}
+      modelOptions={enabledModels.map((m) => ({
+        label: stripProviderPrefixFromModelName(m.modelName),
+        value: `${m.provider}:${m.modelId}`,
+      }))}
+      onModelChange={(value) => {
+        setSelectedModel(value);
+        api.settings.setLastSelectedModel(value).catch(() => {});
+      }}
+      selectedThinkingLevel={selectedThinkingLevel}
+      onThinkingLevelChange={(value) => {
+        setSelectedThinkingLevel(value);
+        api.settings.setLastSelectedThinkingLevel(value).catch(() => {});
+      }}
+      thinkingLevelOptions={thinkingLevelOptions}
+      thinkingLevelMenuHeader={t("思考等级")}
+      canInterrupt={canInterrupt}
+      interruptLoading={interruptMutation.isPending}
+      onInterrupt={handleInterrupt}
+      sendLoading={sendMutation.isPending || isCreatingSession}
+      onSend={handleSend}
+      canSend={canSend}
+    />
   );
 
   // ---------------------------------------------------------------------------
@@ -2497,11 +2451,21 @@ export const ModuleChatPane = ({
   // ---------------------------------------------------------------------------
 
   const isEmpty = timelineBlocks.length === 0 && !showStreamingPanel;
+  const showEmptyState = emptyStateMode === "default" && isEmpty;
+  const chatContainerClassName =
+    !isAutoLayout && emptyStateMode === "hidden" && isEmpty
+      ? `${chatContainerBaseClassName} justify-end`
+      : chatContainerBaseClassName;
+  const timelineStyle = isAutoLayout
+    ? timelineMaxHeight
+      ? { maxHeight: timelineMaxHeight }
+      : undefined
+    : undefined;
 
   return (
-    <div className="flex h-full min-h-0 justify-center">
-      <div className={`${chatContainerClassName} flex h-full min-h-0 flex-col`}>
-        {isEmpty ? (
+    <div className={rootClassName}>
+      <div className={chatContainerClassName}>
+        {showEmptyState ? (
           <div
             className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3 select-none ${hideBorder ? "" : "rounded-lg border border-[#e2e8f5] bg-white"}`}
           >
@@ -2573,8 +2537,11 @@ export const ModuleChatPane = ({
               有什么可以帮你的吗？
             </span>
           </div>
-        ) : (
-          <ScrollArea className={timelineContainerClassName}>
+        ) : !isEmpty ? (
+          <ScrollArea
+            className={timelineContainerClassName}
+            style={timelineStyle}
+          >
             <ChatTimeline
               projectId={mediaProjectId}
               timelineBlocks={timelineBlocks}
@@ -2583,7 +2550,7 @@ export const ModuleChatPane = ({
               messageBottomRef={messageBottomRef}
             />
           </ScrollArea>
-        )}
+        ) : null}
 
         <div className="z-10 mt-2">{composer}</div>
       </div>

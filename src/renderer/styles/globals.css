@@ -142,6 +142,16 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.compact-select-trigger,
+.compact-select-trigger * {
+  -webkit-app-region: no-drag;
+}
+
+.compact-dropdown-overlay,
+.compact-dropdown-overlay * {
+  -webkit-app-region: no-drag;
+}
+
 .upgrade-ready-badge {
   position: relative;
   margin-bottom: 12px;

@@ -1,6 +1,8 @@
 import type { KeyboardShortcutDTO } from "@shared/types";
 
 export const MAIN_AGENT_INPUT_FOCUS_EVENT = "kian:focus-main-agent-input";
+export const QUICK_LAUNCHER_NEW_SESSION_EVENT =
+  "kian:quick-launcher-new-session";
 
 const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"]);
 const CODE_LABELS: Record<string, string> = {
