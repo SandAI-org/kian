@@ -80,6 +80,8 @@ export const api = {
       unwrap(await window.api.docs.create(payload)),
     createFolder: async (payload: { projectId: string; path: string }) =>
       unwrap(await window.api.docs.createFolder(payload)),
+    renameFile: async (payload: { projectId: string; path: string; name: string }) =>
+      unwrap(await window.api.docs.renameFile(payload)),
     renameFolder: async (payload: { projectId: string; path: string; name: string }) =>
       unwrap(await window.api.docs.renameFolder(payload)),
     deleteFolder: async (payload: { projectId: string; path: string }) =>
@@ -157,10 +159,18 @@ export const api = {
     getPathForFile: (file: File): string => window.api.file.getPathForFile(file),
     pickForUpload: async (): Promise<ChatUploadFilePayload[]> =>
       unwrap(await window.api.file.pickForUpload()),
-    showInFinder: async (filePath: string, projectId?: string): Promise<boolean> =>
-      unwrap(await window.api.file.showInFinder(filePath, projectId)),
-    open: async (filePath: string, projectId?: string): Promise<boolean> =>
-      unwrap(await window.api.file.open(filePath, projectId))
+    showInFinder: async (
+      filePath: string,
+      projectId?: string,
+      documentPath?: string,
+    ): Promise<boolean> =>
+      unwrap(await window.api.file.showInFinder(filePath, projectId, documentPath)),
+    open: async (
+      filePath: string,
+      projectId?: string,
+      documentPath?: string,
+    ): Promise<boolean> =>
+      unwrap(await window.api.file.open(filePath, projectId, documentPath))
   },
   clipboard: {
     writeText: async (text: string): Promise<boolean> => window.api.clipboard.writeText(text)

@@ -401,7 +401,11 @@ const registerLocalMediaProtocol = (): void => {
       }
 
       const projectId = parsed.searchParams.get('projectId')?.trim() || undefined;
-      const resolvedPath = resolveLocalMediaPath(encodedPath, { projectId });
+      const documentPath = parsed.searchParams.get('documentPath')?.trim() || undefined;
+      const resolvedPath = resolveLocalMediaPath(encodedPath, {
+        projectId,
+        documentPath,
+      });
       if (!resolvedPath) {
         return new Response('Bad Request', { status: 400 });
       }

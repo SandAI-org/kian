@@ -1,6 +1,13 @@
 import { EditOutlined, ReadOutlined } from "@ant-design/icons";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
+import { RevealableImage } from "@renderer/components/RevealableImage";
+import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
+import {
+  detectDocMediaKind,
+  isDocPassthroughUrl,
+  resolveDocLocalUrl,
+} from "@renderer/modules/docs/docMedia";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { Button, Typography } from "antd";
@@ -17,64 +24,6 @@ import {
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-
-/* ── local media helpers (mirrors chat module logic) ── */
-
-const LOCAL_MEDIA_SCHEME_PREFIX = "kian-local://local/";
-const WINDOWS_ABS = /^[a-zA-Z]:[\\/]/;
-const UNSAFE_URL = /^(?:javascript|vbscript):/i;
-
-const IMAGE_EXTS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".svg",
-  ".heic",
-  ".heif",
-]);
-const VIDEO_EXTS = new Set([
-  ".mp4",
-  ".mov",
-  ".m4v",
-  ".webm",
-  ".avi",
-  ".mkv",
-  ".flv",
-  ".wmv",
-  ".m3u8",
-]);
-const AUDIO_EXTS = new Set([
-  ".mp3",
-  ".wav",
-  ".m4a",
-  ".aac",
-  ".flac",
-  ".ogg",
-  ".opus",
-]);
-
-const toLocalMediaUrl = (p: string, projectId?: string): string => {
-  const base = `${LOCAL_MEDIA_SCHEME_PREFIX}${encodeURIComponent(p)}`;
-  const normalizedProjectId = projectId?.trim();
-  if (!normalizedProjectId) return base;
-  return `${base}?projectId=${encodeURIComponent(normalizedProjectId)}`;
-};
-
-const resolveUrl = (url: string, projectId?: string): string => {
-  const s = url.trim();
-  if (!s) return "";
-  if (UNSAFE_URL.test(s)) return "";
-  if (/^(?:https?|file|data|blob|kian-local):/i.test(s)) return s;
-  if (s.startsWith("/") || WINDOWS_ABS.test(s) || s.startsWith("\\\\"))
-    return toLocalMediaUrl(s);
-  if (projectId?.trim()) {
-    return toLocalMediaUrl(s, projectId);
-  }
-  return s;
-};
 
 const parseSizeFromAlt = (
   alt: string,
@@ -115,17 +64,6 @@ const preprocessExtendedMedia = (content: string): string =>
       return `![${kind}${sizeSuffix}](${path.trim()})`;
     },
   );
-
-type MediaKind = "image" | "video" | "audio" | null;
-const detectKind = (src: string): MediaKind => {
-  const dot = src.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const ext = src.slice(dot).toLowerCase().replace(/\?.*$/, "");
-  if (IMAGE_EXTS.has(ext)) return "image";
-  if (VIDEO_EXTS.has(ext)) return "video";
-  if (AUDIO_EXTS.has(ext)) return "audio";
-  return null;
-};
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 const LANGUAGE_BY_EXTENSION = new Map<string, string>([
@@ -234,6 +172,7 @@ const inferDocumentLanguage = (filePath: string): string => {
 
 interface MarkdownEditorProps {
   projectId: string;
+  documentPath: string;
   title: string;
   statusText?: string;
   value: string;
@@ -242,6 +181,7 @@ interface MarkdownEditorProps {
 
 export const MarkdownEditor = ({
   projectId,
+  documentPath,
   title,
   statusText,
   value,
@@ -455,7 +395,10 @@ export const MarkdownEditor = ({
                     img: ({ src, alt }) => {
                       const raw = String(src ?? "");
                       if (!raw) return null;
-                      const resolved = resolveUrl(raw, projectId);
+                      const resolved = resolveDocLocalUrl(raw, {
+                        projectId,
+                        documentPath,
+                      });
                       if (!resolved) return null;
                       const { cleanAlt, width, height } = parseSizeFromAlt(
                         String(alt ?? ""),
@@ -464,7 +407,7 @@ export const MarkdownEditor = ({
                       const kind =
                         altKind === "video" || altKind === "audio"
                           ? altKind
-                          : (detectKind(raw) ?? "image");
+                          : (detectDocMediaKind(raw) ?? "image");
                       if (kind === "video") {
                         return (
                           <video
@@ -487,18 +430,41 @@ export const MarkdownEditor = ({
                         );
                       }
                       return (
-                        <img
+                        <RevealableImage
                           src={resolved}
                           alt={cleanAlt || "image"}
+                          filePath={raw}
+                          projectId={projectId}
+                          documentPath={documentPath}
                           className="chat-markdown__media chat-markdown__media--image"
+                          imageClassName="chat-markdown__media-image"
                           style={sizeStyle(width, height)}
-                          loading="lazy"
                         />
                       );
                     },
                     a: ({ children, href }) => {
                       const raw = String(href ?? "");
-                      const resolved = resolveUrl(raw, projectId);
+                      if (!raw.trim()) {
+                        return <span>{children}</span>;
+                      }
+                      if (isDocPassthroughUrl(raw)) {
+                        return (
+                          <a
+                            href={raw}
+                            className="text-blue-600 underline underline-offset-2 hover:text-blue-500"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void openUrl(raw);
+                            }}
+                          >
+                            {children}
+                          </a>
+                        );
+                      }
+                      const resolved = resolveDocLocalUrl(raw, {
+                        projectId,
+                        documentPath,
+                      });
                       if (!resolved) return <span>{children}</span>;
                       return (
                         <a
@@ -506,7 +472,7 @@ export const MarkdownEditor = ({
                           className="text-blue-600 underline underline-offset-2 hover:text-blue-500"
                           onClick={(event) => {
                             event.preventDefault();
-                            void openUrl(resolved);
+                            void api.file.open(raw, projectId, documentPath);
                           }}
                         >
                           {children}

@@ -13,6 +13,7 @@ import {
 } from "@renderer/modules/chat/ChatComposer";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { ScrollArea } from "@renderer/components/ScrollArea";
+import { RevealableImage } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
@@ -453,6 +454,24 @@ const resolveRenderableUrl = (url: string, projectId?: string): string => {
   return normalized;
 };
 
+const resolveRevealableImagePath = (url: string): string | null => {
+  const normalized = url.trim();
+  if (!normalized) return null;
+  if (UNSAFE_URL_PATTERN.test(normalized.toLowerCase())) return null;
+  if (/^(?:https?|file|data|blob|mailto|tel|kian-local):/i.test(normalized)) {
+    return null;
+  }
+  const hashIndex = normalized.indexOf("#");
+  const queryIndex = normalized.indexOf("?");
+  const suffixIndex =
+    hashIndex < 0
+      ? queryIndex
+      : queryIndex < 0
+        ? hashIndex
+        : Math.min(hashIndex, queryIndex);
+  return suffixIndex < 0 ? normalized : normalized.slice(0, suffixIndex);
+};
+
 const parseSizeFromAlt = (
   alt: string,
 ): { cleanAlt: string; width?: number; height?: number } => {
@@ -811,12 +830,14 @@ const MarkdownMessage = memo(
                   ? cleanAlt
                   : "image";
               return (
-                <img
+                <RevealableImage
                   src={resolvedSource}
                   alt={normalizedAlt}
+                  filePath={resolveRevealableImagePath(rawSourcePath)}
+                  projectId={projectId}
                   className="chat-markdown__media chat-markdown__media--image"
+                  imageClassName="chat-markdown__media-image"
                   style={mediaSizeStyle(width, height)}
-                  loading="lazy"
                 />
               );
             },

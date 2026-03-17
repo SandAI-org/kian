@@ -101,6 +101,8 @@ const api = {
       invoke<DocumentDTO>("docs:create", payload),
     createFolder: (payload: { projectId: string; path: string }) =>
       invoke<DocExplorerEntryDTO>("docs:createFolder", payload),
+    renameFile: (payload: { projectId: string; path: string; name: string }) =>
+      invoke<DocExplorerEntryDTO>("docs:renameFile", payload),
     renameFolder: (payload: { projectId: string; path: string; name: string }) =>
       invoke<DocExplorerEntryDTO>("docs:renameFolder", payload),
     deleteFolder: (payload: { projectId: string; path: string }) =>
@@ -243,10 +245,16 @@ const api = {
   file: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
     pickForUpload: () => invoke<ChatUploadFilePayload[]>("file:pickForUpload"),
-    showInFinder: (filePath: string, projectId?: string) =>
-      invoke<boolean>("file:showInFinder", { filePath, projectId }),
-    open: (filePath: string, projectId?: string) =>
-      invoke<boolean>("file:open", { filePath, projectId }),
+    showInFinder: (
+      filePath: string,
+      projectId?: string,
+      documentPath?: string,
+    ) => invoke<boolean>("file:showInFinder", { filePath, projectId, documentPath }),
+    open: (
+      filePath: string,
+      projectId?: string,
+      documentPath?: string,
+    ) => invoke<boolean>("file:open", { filePath, projectId, documentPath }),
   },
   clipboard: {
     writeText: (text: string) => {

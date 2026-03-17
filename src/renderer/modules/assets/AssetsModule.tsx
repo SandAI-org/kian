@@ -5,6 +5,7 @@ import { SearchOutlined } from '@ant-design/icons';
 import type { AssetDTO } from '@shared/types';
 import { api } from '@renderer/lib/api';
 import { ScrollArea } from '@renderer/components/ScrollArea';
+import { RevealableImage } from '@renderer/components/RevealableImage';
 
 interface AssetsModuleProps {
   projectId: string;
@@ -182,11 +183,12 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
                     title="点击使用系统预览打开"
                   >
                     {previewUrl ? (
-                      <img
+                      <RevealableImage
                         src={previewUrl}
                         alt={asset.name}
-                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                        loading="lazy"
+                        filePath={asset.absolutePath ?? undefined}
+                        className="absolute inset-0 h-full w-full"
+                        imageClassName="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">

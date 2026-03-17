@@ -78,4 +78,71 @@ describe('resolveLocalMediaPath', () => {
     const resolved = resolveLocalMediaPath(encoded, { projectId: 'demo-project' });
     expect(resolved).toBeNull();
   });
+
+  it('prefers the current document directory for bare paths', () => {
+    const projectRoot = createTempDir();
+    const documentLocal = path.join(projectRoot, 'docs', 'nested', 'notes', 'image.png');
+    const docsRoot = path.join(projectRoot, 'docs', 'image.png');
+    const projectRootFile = path.join(projectRoot, 'image.png');
+    fs.mkdirSync(path.dirname(documentLocal), { recursive: true });
+    fs.mkdirSync(path.dirname(docsRoot), { recursive: true });
+    fs.writeFileSync(documentLocal, 'doc-local');
+    fs.writeFileSync(docsRoot, 'docs-root');
+    fs.writeFileSync(projectRootFile, 'project-root');
+
+    const resolved = resolveLocalMediaPath(encodeURIComponent('image.png'), {
+      documentPath: 'nested/notes/demo.md',
+      projectRootOverride: projectRoot,
+    });
+
+    expect(resolved).toBe(path.normalize(documentLocal));
+  });
+
+  it('falls back to docs root before project root for bare paths', () => {
+    const projectRoot = createTempDir();
+    const docsRoot = path.join(projectRoot, 'docs', 'shared', 'clip.mp4');
+    const projectRootFile = path.join(projectRoot, 'shared', 'clip.mp4');
+    fs.mkdirSync(path.dirname(docsRoot), { recursive: true });
+    fs.mkdirSync(path.dirname(projectRootFile), { recursive: true });
+    fs.writeFileSync(docsRoot, 'docs-root');
+    fs.writeFileSync(projectRootFile, 'project-root');
+
+    const resolved = resolveLocalMediaPath(encodeURIComponent('shared/clip.mp4'), {
+      documentPath: 'nested/notes/demo.md',
+      projectRootOverride: projectRoot,
+    });
+
+    expect(resolved).toBe(path.normalize(docsRoot));
+  });
+
+  it('keeps explicit workspace-root prefixes stable when document context exists', () => {
+    const projectRoot = createTempDir();
+    const assetPath = path.join(projectRoot, 'assets', 'generated', 'demo.png');
+    fs.mkdirSync(path.dirname(assetPath), { recursive: true });
+    fs.writeFileSync(assetPath, 'asset');
+
+    const resolved = resolveLocalMediaPath(
+      encodeURIComponent('assets/generated/demo.png'),
+      {
+        documentPath: 'nested/notes/demo.md',
+        projectRootOverride: projectRoot,
+      },
+    );
+
+    expect(resolved).toBe(path.normalize(assetPath));
+  });
+
+  it('resolves explicit document-relative paths inside docs root', () => {
+    const projectRoot = createTempDir();
+    const target = path.join(projectRoot, 'docs', 'nested', 'poster.jpg');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'poster');
+
+    const resolved = resolveLocalMediaPath(encodeURIComponent('../poster.jpg'), {
+      documentPath: 'nested/notes/demo.md',
+      projectRootOverride: projectRoot,
+    });
+
+    expect(resolved).toBe(path.normalize(target));
+  });
 });

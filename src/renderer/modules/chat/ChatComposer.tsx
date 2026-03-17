@@ -3,6 +3,7 @@ import {
   FileTextOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
+import { RevealableImage } from "@renderer/components/RevealableImage";
 import { CompactSelect } from "@renderer/components/CompactSelect";
 import type { ChatThinkingLevel } from "@shared/types";
 import { Button, Input, Tooltip } from "antd";
@@ -119,10 +120,12 @@ export const ChatComposer = ({
             <div key={file.key} className="relative h-14 w-14">
               <div className="h-full w-full overflow-hidden rounded-md border border-[#d8e2f2]">
                 {file.previewUrl ? (
-                  <img
+                  <RevealableImage
                     src={file.previewUrl}
                     alt={file.name}
-                    className="h-full w-full object-cover"
+                    filePath={file.sourcePath}
+                    className="h-full w-full"
+                    imageClassName="h-full w-full object-cover"
                   />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center bg-[#f3f6fb] text-slate-500">

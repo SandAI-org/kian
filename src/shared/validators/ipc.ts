@@ -44,6 +44,12 @@ export const docRenameFolderSchema = z.object({
   name: z.string().min(1).max(120)
 });
 
+export const docRenameFileSchema = z.object({
+  projectId: z.string().min(1),
+  path: z.string().min(1).max(240),
+  name: z.string().min(1).max(120)
+});
+
 export const docDeleteFolderSchema = z.object({
   projectId: z.string().min(1),
   path: z.string().min(1).max(240)
@@ -127,12 +133,14 @@ export const chatUploadFilesSchema = z.object({
 
 export const fileShowInFinderSchema = z.object({
   filePath: z.string().min(1),
-  projectId: z.string().min(1).optional()
+  projectId: z.string().min(1).optional(),
+  documentPath: z.string().min(1).max(240).optional()
 });
 
 export const fileOpenSchema = z.object({
   filePath: z.string().min(1),
-  projectId: z.string().min(1).optional()
+  projectId: z.string().min(1).optional(),
+  documentPath: z.string().min(1).max(240).optional()
 });
 
 export const filePickForUploadSchema = z.object({}).optional();

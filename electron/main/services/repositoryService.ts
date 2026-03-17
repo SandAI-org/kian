@@ -730,6 +730,16 @@ const sanitizeUploadFileName = (input: string, fallback: string): string => {
   return baseName || fallback;
 };
 
+const sanitizeExistingFileName = (input: string, fallback: string): string => {
+  const sanitized = sanitizeUploadFileName(input, fallback);
+  if (path.extname(sanitized)) {
+    return sanitized;
+  }
+
+  const fallbackExt = path.extname(fallback);
+  return fallbackExt ? `${sanitized}${fallbackExt}` : sanitized;
+};
+
 const isSupportedUserFile = (fileName: string, mimeType?: string): boolean => {
   const extension = path.extname(fileName).toLowerCase();
   if (SUPPORTED_FILE_EXTENSIONS.has(extension)) {
@@ -1080,6 +1090,27 @@ const buildDocumentPathCandidate = (
   return { absolutePath, relativePath };
 };
 
+const buildDocsFilePathCandidate = (
+  rootDir: string,
+  normalizedDocumentId: string,
+): { absolutePath: string; relativePath: string } | null => {
+  const absolutePath = path.resolve(rootDir, normalizedDocumentId);
+  if (!isWithinDirectory(absolutePath, rootDir)) {
+    return null;
+  }
+
+  const relativePath = toPosixPath(path.relative(rootDir, absolutePath));
+  if (
+    !relativePath ||
+    relativePath === "." ||
+    relativePath.startsWith("../")
+  ) {
+    return null;
+  }
+
+  return { absolutePath, relativePath };
+};
+
 const resolveDocumentPath = (
   projectId: string,
   documentId: string,
@@ -1098,6 +1129,28 @@ const resolveDocumentPath = (
     docsDir,
     normalizedDocumentId,
   );
+  if (!docsCandidate) {
+    throw new Error("文档路径非法");
+  }
+
+  return docsCandidate;
+};
+
+const resolveDocsFilePath = (
+  projectId: string,
+  documentId: string,
+): { absolutePath: string; relativePath: string } => {
+  const docsDir = getDocsDir(projectId);
+  const normalizedDocumentId = normalizeDocumentId(documentId);
+  if (
+    !normalizedDocumentId ||
+    normalizedDocumentId === "." ||
+    normalizedDocumentId.startsWith("../")
+  ) {
+    throw new Error("文档路径非法");
+  }
+
+  const docsCandidate = buildDocsFilePathCandidate(docsDir, normalizedDocumentId);
   if (!docsCandidate) {
     throw new Error("文档路径非法");
   }
@@ -2431,12 +2484,70 @@ export const repositoryService = {
     };
   },
 
+  async renameDocumentFile(input: {
+    projectId: string;
+    path: string;
+    name: string;
+  }): Promise<DocExplorerEntryDTO> {
+    await ensureDocsOwnerStructure(input.projectId);
+
+    const docsDir = getDocsDir(input.projectId);
+    const { absolutePath, relativePath } = resolveDocsFilePath(
+      input.projectId,
+      input.path,
+    );
+    const currentStats = await fs.stat(absolutePath).catch(() => null);
+    if (!currentStats || !currentStats.isFile()) {
+      throw new Error("文件不存在");
+    }
+
+    const currentName = path.basename(relativePath);
+    const nextName = sanitizeExistingFileName(input.name, currentName);
+    if (!nextName || nextName === currentName) {
+      return {
+        path: relativePath,
+        name: currentName,
+        kind: "file",
+        isEditableText: isEditableTextDocument(relativePath),
+        isMarkdown: isMarkdownFile(relativePath),
+      };
+    }
+
+    const targetRelativePath = toPosixPath(
+      path.join(path.dirname(relativePath), nextName),
+    );
+    const targetAbsolutePath = await resolveUniqueFilePath(
+      docsDir,
+      targetRelativePath,
+      absolutePath,
+    );
+    if (targetAbsolutePath !== absolutePath) {
+      await fs.rename(absolutePath, targetAbsolutePath);
+    }
+    await touchProject(input.projectId);
+
+    const finalRelativePath = toPosixPath(
+      path.relative(docsDir, targetAbsolutePath),
+    );
+    return {
+      path: finalRelativePath,
+      name: path.basename(finalRelativePath),
+      kind: "file",
+      isEditableText: isEditableTextDocument(finalRelativePath),
+      isMarkdown: isMarkdownFile(finalRelativePath),
+    };
+  },
+
   async deleteDocument(projectId: string, id: string): Promise<void> {
     await ensureDocsOwnerStructure(projectId);
 
-    const { absolutePath } = resolveDocumentPath(projectId, id);
-    if (!(await pathExists(absolutePath))) {
+    const { absolutePath } = resolveDocsFilePath(projectId, id);
+    const currentStats = await fs.stat(absolutePath).catch(() => null);
+    if (!currentStats) {
       return;
+    }
+    if (!currentStats.isFile()) {
+      throw new Error("文件不存在");
     }
 
     await fs.rm(absolutePath, { force: true });

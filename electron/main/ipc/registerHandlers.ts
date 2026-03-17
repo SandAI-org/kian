@@ -14,6 +14,7 @@ import {
   docCreateSchema,
   docCreateFolderSchema,
   docDeleteFolderSchema,
+  docRenameFileSchema,
   docRenameFolderSchema,
   docUpdateSchema,
   fileOpenSchema,
@@ -59,10 +60,10 @@ import { logger } from '../services/logger';
 import { taskService } from '../services/taskService';
 import { onboardingService } from '../services/onboardingService';
 import { updateService } from '../services/updateService';
-import { INTERNAL_ROOT, WORKSPACE_ROOT } from '../services/workspacePaths';
 import { appPreviewWindowService } from '../services/appPreviewWindowService';
 import { agentService } from '../services/agentService';
 import { linkOpenService } from '../services/linkOpenService';
+import { resolveLocalMediaPath } from '../services/localMediaPath';
 
 interface RegisterHandlersOptions {
   onShortcutConfigSaved?: () => Promise<void> | void;
@@ -75,8 +76,6 @@ const UPLOAD_DIALOG_EXTENSIONS = [
   'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus',
   'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', 'flv', 'wmv', 'm3u8'
 ];
-const MAIN_AGENT_SCOPE_ID = 'main-agent';
-
 const translateDialogText = (
   language: import('@shared/i18n').AppLanguage,
   value: string,
@@ -108,37 +107,24 @@ const translateDialogText = (
   }
 };
 
-const isWithinDirectory = (targetPath: string, rootDir: string): boolean => {
-  const relative = path.relative(rootDir, targetPath);
-  return (
-    relative === '' ||
-    (!relative.startsWith('..') && !path.isAbsolute(relative))
-  );
-};
-
 const resolveFileTargetPath = (input: {
   filePath: string;
   projectId?: string;
+  documentPath?: string;
 }): string => {
-  const normalizedInput = path.normalize(input.filePath.trim());
-  if (path.isAbsolute(normalizedInput)) {
-    return normalizedInput;
+  const trimmedInput = input.filePath.trim();
+  if (!trimmedInput) {
+    throw new Error('文件路径不能为空');
   }
 
-  const projectId = input.projectId?.trim();
-  if (!projectId) {
-    throw new Error('相对路径必须提供 projectId');
-  }
-
-  const projectDir =
-    projectId === MAIN_AGENT_SCOPE_ID
-      ? path.join(INTERNAL_ROOT, MAIN_AGENT_SCOPE_ID)
-      : path.join(WORKSPACE_ROOT, projectId);
-  const targetPath = path.resolve(projectDir, normalizedInput);
-  if (!isWithinDirectory(targetPath, projectDir)) {
+  const resolved = resolveLocalMediaPath(encodeURIComponent(trimmedInput), {
+    projectId: input.projectId,
+    documentPath: input.documentPath,
+  });
+  if (!resolved) {
     throw new Error('路径超出 Agent 工作区目录范围');
   }
-  return targetPath;
+  return resolved;
 };
 
 export const registerHandlers = (options?: RegisterHandlersOptions): void => {
@@ -200,6 +186,9 @@ export const registerHandlers = (options?: RegisterHandlersOptions): void => {
   handle('docs:create', docCreateSchema, async (input) => repositoryService.createDocument(input));
   handle('docs:createFolder', docCreateFolderSchema, async (input) =>
     repositoryService.createDocumentDirectory(input)
+  );
+  handle('docs:renameFile', docRenameFileSchema, async (input) =>
+    repositoryService.renameDocumentFile(input)
   );
   handle('docs:renameFolder', docRenameFolderSchema, async (input) =>
     repositoryService.renameDocumentDirectory(input)

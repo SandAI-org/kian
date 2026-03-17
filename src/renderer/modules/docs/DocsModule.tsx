@@ -1,20 +1,24 @@
 import {
+  AudioOutlined,
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   EllipsisOutlined,
+  FileImageOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
+  VideoCameraOutlined,
 } from "@ant-design/icons";
 import { CompactDropdown } from "@renderer/components/CompactDropdown";
 import {
   IllustrationEmptyEditor,
   IllustrationEmptyFiles,
 } from "@renderer/components/EmptyIllustrations";
+import { RevealableImage } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { ScrollArea } from "@renderer/components/ScrollArea";
@@ -24,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Typography, message, type MenuProps } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatSessionList } from "@renderer/modules/chat/ChatSessionList";
+import { detectDocMediaKind, resolveDocLocalUrl } from "./docMedia";
 import { MarkdownEditor } from "./MarkdownEditor";
 
 interface DocsModuleProps {
@@ -45,8 +50,6 @@ interface RenameState {
   value: string;
 }
 
-const normalizeWhitespace = (text: string): string =>
-  text.replace(/\s+/g, " ").trim();
 const docSortOptions: Intl.CollatorOptions = {
   numeric: true,
   sensitivity: "base",
@@ -67,6 +70,7 @@ interface FileTreeNode {
   path: string;
   isEditableText: boolean;
   isMarkdown: boolean;
+  mediaKind: "image" | "video" | "audio" | null;
   doc?: DocumentDTO;
 }
 
@@ -255,6 +259,7 @@ const buildDocTree = (
       path: leafPath,
       isEditableText: rawEntry.isEditableText,
       isMarkdown: rawEntry.isMarkdown,
+      mediaKind: detectDocMediaKind(leafPath),
       doc: rawEntry.isEditableText ? docsByPath.get(leafPath) : undefined,
     });
   }
@@ -344,6 +349,71 @@ const buildDuplicateTargetPath = (
   return [...segments, duplicateFileName].join("/");
 };
 
+interface MediaPreviewPanelProps {
+  projectId: string;
+  filePath: string;
+  title: string;
+  typeLabel: string;
+  mediaKind: "image" | "video" | "audio";
+}
+
+const MediaPreviewPanel = ({
+  projectId,
+  filePath,
+  title,
+  typeLabel,
+  mediaKind,
+}: MediaPreviewPanelProps) => {
+  const previewSrc = resolveDocLocalUrl(`docs/${stripDocsPrefix(filePath)}`, {
+    projectId,
+  });
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white">
+      <div className="flex items-center justify-between px-3 py-2">
+        <Typography.Text
+          className="!mb-0 !font-semibold !text-slate-900"
+          ellipsis
+        >
+          {title}
+        </Typography.Text>
+        <Typography.Text className="!text-xs !text-slate-500">
+          {typeLabel}
+        </Typography.Text>
+      </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        {mediaKind === "audio" ? (
+          <div className="flex h-full min-h-0 items-center justify-center px-6 py-8">
+            <audio controls preload="metadata" className="w-full max-w-xl" src={previewSrc} />
+          </div>
+        ) : (
+          <ScrollArea className="h-full">
+            <div className="flex min-h-full items-center justify-center p-4">
+              {mediaKind === "video" ? (
+                <video
+                  controls
+                  preload="metadata"
+                  className="max-h-full w-full rounded-xl bg-slate-950"
+                  src={previewSrc}
+                />
+              ) : (
+                <RevealableImage
+                  src={previewSrc}
+                  alt={title}
+                  filePath={`docs/${stripDocsPrefix(filePath)}`}
+                  projectId={projectId}
+                  className="inline-block max-h-full max-w-full rounded-xl"
+                  imageClassName="max-h-full max-w-full object-contain"
+                />
+              )}
+            </div>
+          </ScrollArea>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const DocsModule = ({
   projectId,
   requestedDocumentId,
@@ -357,7 +427,7 @@ export const DocsModule = ({
   const { language } = useAppI18n();
   const t = (value: string): string => translateUiText(language, value);
   const queryClient = useQueryClient();
-  const [activeDocId, setActiveDocId] = useState<string>();
+  const [activeEntryPath, setActiveEntryPath] = useState<string>();
   const [editorValue, setEditorValue] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(
@@ -428,13 +498,31 @@ export const DocsModule = ({
         ? t("保存失败")
         : t("已自动保存");
 
+  const fallbackDocPath = docs[0] ? stripDocsPrefix(docs[0].id) : undefined;
+  const resolvedActivePath = activeEntryPath ?? fallbackDocPath;
+  const activeExplorerEntry = useMemo(
+    () =>
+      resolvedActivePath
+        ? effectiveExplorerEntries.find(
+            (entry) => stripDocsPrefix(entry.path) === resolvedActivePath,
+          )
+        : undefined,
+    [effectiveExplorerEntries, resolvedActivePath],
+  );
   const activeDoc = useMemo(
-    () => docs.find((item) => item.id === activeDocId) ?? docs[0],
-    [activeDocId, docs],
+    () => (resolvedActivePath ? docsByPath.get(resolvedActivePath) : undefined),
+    [docsByPath, resolvedActivePath],
+  );
+  const activeMediaKind = useMemo(
+    () =>
+      activeExplorerEntry && !activeDoc
+        ? detectDocMediaKind(activeExplorerEntry.path)
+        : null,
+    [activeDoc, activeExplorerEntry],
   );
   const activeDirectoryPaths = useMemo(
-    () => (activeDoc ? getAncestorDirectoryPaths(activeDoc.id) : []),
-    [activeDoc?.id],
+    () => (resolvedActivePath ? getAncestorDirectoryPaths(resolvedActivePath) : []),
+    [resolvedActivePath],
   );
 
   useEffect(() => {
@@ -442,10 +530,25 @@ export const DocsModule = ({
     if (!target) {
       return;
     }
-    setActiveDocId((previous) =>
-      previous === target.id ? previous : target.id,
-    );
+    setActiveEntryPath((previous) => {
+      const nextPath = stripDocsPrefix(target.id);
+      return previous === nextPath ? previous : nextPath;
+    });
   }, [docs, requestedDocumentId]);
+
+  useEffect(() => {
+    if (!activeEntryPath) {
+      return;
+    }
+    if (
+      effectiveExplorerEntries.some(
+        (entry) => stripDocsPrefix(entry.path) === activeEntryPath,
+      )
+    ) {
+      return;
+    }
+    setActiveEntryPath(undefined);
+  }, [activeEntryPath, effectiveExplorerEntries]);
 
   useEffect(() => {
     hasInitializedExpansionRef.current = false;
@@ -492,18 +595,15 @@ export const DocsModule = ({
       return;
     }
     setEditorValue(activeDoc.content);
-    setActiveDocId(activeDoc.id);
   }, [activeDoc?.id, activeDoc?.content]);
 
   useEffect(() => {
     onContextChange?.({
-      activeDocId: activeDoc?.id,
-      activeDocTitle: activeDoc
-        ? toDocPath(activeDoc.id) || toDocPath(activeDoc.title)
-        : undefined,
+      activeDocId: activeDoc?.id ?? resolvedActivePath,
+      activeDocTitle: resolvedActivePath,
       docCount: docs.length,
     });
-  }, [activeDoc?.id, activeDoc?.title, docs.length, onContextChange]);
+  }, [activeDoc?.id, docs.length, onContextChange, resolvedActivePath]);
 
   const invalidateDocQueries = async (): Promise<void> => {
     await Promise.all([
@@ -608,7 +708,7 @@ export const DocsModule = ({
       }),
     onSuccess: async (created) => {
       await invalidateDocQueries();
-      setActiveDocId(created.id);
+      setActiveEntryPath(stripDocsPrefix(created.id));
       message.success(t("已生成副本"));
     },
     onError: (error) => {
@@ -635,8 +735,8 @@ export const DocsModule = ({
           ),
       );
       await invalidateDocQueries();
-      if (activeDocId && stripDocsPrefix(activeDocId) === deletedDocumentPath) {
-        setActiveDocId(undefined);
+      if (resolvedActivePath === deletedDocumentPath) {
+        setActiveEntryPath(undefined);
       }
       message.success(t("文件已删除"));
     },
@@ -650,8 +750,11 @@ export const DocsModule = ({
       api.docs.deleteFolder({ projectId, path: directoryPath }),
     onSuccess: async (_, deletedDirectoryPath) => {
       await invalidateDocQueries();
-      if (activeDocId?.startsWith(`${deletedDirectoryPath}/`)) {
-        setActiveDocId(undefined);
+      if (
+        resolvedActivePath === deletedDirectoryPath ||
+        resolvedActivePath?.startsWith(`${deletedDirectoryPath}/`)
+      ) {
+        setActiveEntryPath(undefined);
       }
       setExpandedDirectories((previous) => {
         const next = new Set<string>();
@@ -680,6 +783,21 @@ export const DocsModule = ({
         projectId,
         id: payload.id,
         title: payload.title,
+      });
+      await invalidateDocQueries();
+      return updated;
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : t("重命名文件失败"));
+    },
+  });
+
+  const renameAssetLikeFileMutation = useMutation({
+    mutationFn: async (payload: { path: string; name: string }) => {
+      const updated = await api.docs.renameFile({
+        projectId,
+        path: payload.path,
+        name: payload.name,
       });
       await invalidateDocQueries();
       return updated;
@@ -786,7 +904,7 @@ export const DocsModule = ({
     const targetPath = getNewFileName(language);
     try {
       const created = await createFileMutation.mutateAsync(targetPath);
-      setActiveDocId(created.id);
+      setActiveEntryPath(stripDocsPrefix(created.id));
       beginRename({
         kind: "file",
         path: stripDocsPrefix(created.id),
@@ -808,7 +926,7 @@ export const DocsModule = ({
           ? previous
           : new Set(previous).add(normalizedDirectoryPath),
       );
-      setActiveDocId(created.id);
+      setActiveEntryPath(stripDocsPrefix(created.id));
       beginRename({
         kind: "file",
         path: stripDocsPrefix(created.id),
@@ -836,7 +954,13 @@ export const DocsModule = ({
 
   const handleCommitRename = async (): Promise<void> => {
     if (!renaming) return;
-    if (renameFileMutation.isPending || renameFolderMutation.isPending) return;
+    if (
+      renameFileMutation.isPending ||
+      renameAssetLikeFileMutation.isPending ||
+      renameFolderMutation.isPending
+    ) {
+      return;
+    }
 
     const nextName = renaming.value.trim();
     const currentName = getPathBaseName(renaming.path);
@@ -849,6 +973,13 @@ export const DocsModule = ({
       if (renaming.kind === "file") {
         const doc = docsByPath.get(renaming.path);
         if (!doc) {
+          const updated = await renameAssetLikeFileMutation.mutateAsync({
+            path: renaming.path,
+            name: nextName,
+          });
+          if (activeEntryPath === renaming.path) {
+            setActiveEntryPath(stripDocsPrefix(updated.path));
+          }
           setRenaming(null);
           return;
         }
@@ -857,8 +988,8 @@ export const DocsModule = ({
           id: doc.id,
           title: nextName,
         });
-        if (activeDocId === doc.id) {
-          setActiveDocId(updated.id);
+        if (activeEntryPath === renaming.path) {
+          setActiveEntryPath(stripDocsPrefix(updated.id));
         }
         setRenaming(null);
         return;
@@ -869,8 +1000,14 @@ export const DocsModule = ({
         name: nextName,
       });
       const nextPath = stripDocsPrefix(updated.path);
-      if (activeDocId?.startsWith(`${renaming.path}/`)) {
-        setActiveDocId(`${nextPath}${activeDocId.slice(renaming.path.length)}`);
+      const currentActivePath = activeEntryPath ?? renaming.path;
+      if (
+        currentActivePath === renaming.path ||
+        currentActivePath.startsWith(`${renaming.path}/`)
+      ) {
+        setActiveEntryPath(
+          `${nextPath}${currentActivePath.slice(renaming.path.length)}`,
+        );
       }
       remapExpandedDirectories(renaming.path, nextPath);
       setRenaming(null);
@@ -893,7 +1030,6 @@ export const DocsModule = ({
   };
 
   const handleDeleteFile = (node: FileTreeNode): void => {
-    if (!node.doc) return;
     const targetPath = stripDocsPrefix(node.path);
     deleteMutation.mutate(targetPath);
   };
@@ -983,6 +1119,7 @@ export const DocsModule = ({
                 createFileMutation.isPending ||
                 renameFolderMutation.isPending ||
                 renameFileMutation.isPending ||
+                renameAssetLikeFileMutation.isPending ||
                 deleteFolderMutation.isPending,
             },
             {
@@ -992,6 +1129,7 @@ export const DocsModule = ({
               disabled:
                 renameFolderMutation.isPending ||
                 renameFileMutation.isPending ||
+                renameAssetLikeFileMutation.isPending ||
                 deleteFolderMutation.isPending,
             },
             {
@@ -1002,6 +1140,7 @@ export const DocsModule = ({
               disabled:
                 renameFolderMutation.isPending ||
                 renameFileMutation.isPending ||
+                renameAssetLikeFileMutation.isPending ||
                 deleteFolderMutation.isPending,
             },
           ],
@@ -1094,45 +1233,52 @@ export const DocsModule = ({
         );
       }
 
-      const active = Boolean(node.doc) && activeDoc?.id === node.doc?.id;
-      const selectable = node.isEditableText && Boolean(node.doc);
+      const active = resolvedActivePath === node.path;
+      const selectable = Boolean(node.doc) || Boolean(node.mediaKind);
+      const actionable = selectable;
       const renamingFile =
         renaming?.kind === "file" && renaming.path === node.path;
+      const fileMenuItems: NonNullable<MenuProps["items"]> = [
+        {
+          key: "rename",
+          label: t("重命名"),
+          icon: <EditOutlined />,
+          disabled:
+            !actionable ||
+            renameFileMutation.isPending ||
+            renameAssetLikeFileMutation.isPending ||
+            renameFolderMutation.isPending ||
+            deleteFolderMutation.isPending,
+        },
+        ...(node.doc
+          ? [
+              {
+                key: "duplicate",
+                label: t("复制"),
+                icon: <CopyOutlined />,
+                disabled:
+                  !actionable ||
+                  duplicateMutation.isPending ||
+                  deleteFolderMutation.isPending,
+              },
+            ]
+          : []),
+        {
+          key: "delete",
+          label: t("删除"),
+          icon: <DeleteOutlined />,
+          danger: true,
+          disabled:
+            !actionable ||
+            deleteMutation.isPending ||
+            deleteFolderMutation.isPending,
+        },
+      ];
       const fileMenu: MenuProps = {
-        items: [
-          {
-            key: "rename",
-            label: t("重命名"),
-            icon: <EditOutlined />,
-            disabled:
-              !selectable ||
-              renameFileMutation.isPending ||
-              renameFolderMutation.isPending ||
-              deleteFolderMutation.isPending,
-          },
-          {
-            key: "duplicate",
-            label: t("复制"),
-            icon: <CopyOutlined />,
-            disabled:
-              !selectable ||
-              duplicateMutation.isPending ||
-              deleteFolderMutation.isPending,
-          },
-          {
-            key: "delete",
-            label: t("删除"),
-            icon: <DeleteOutlined />,
-            danger: true,
-            disabled:
-              !selectable ||
-              deleteMutation.isPending ||
-              deleteFolderMutation.isPending,
-          },
-        ],
+        items: fileMenuItems,
         onClick: ({ key, domEvent }) => {
           domEvent.stopPropagation();
-          if (!selectable) return;
+          if (!actionable) return;
 
           if (key === "rename") {
             beginRename({
@@ -1159,12 +1305,10 @@ export const DocsModule = ({
             disabled={!selectable}
             onClick={() => {
               if (renamingFile) return;
-              if (node.doc) {
-                setActiveDocId(node.doc.id);
-              }
+              setActiveEntryPath(node.path);
             }}
             onDoubleClick={(event) => {
-              if (!selectable) return;
+              if (!actionable) return;
               event.preventDefault();
               event.stopPropagation();
               beginRename({
@@ -1183,15 +1327,47 @@ export const DocsModule = ({
             }`}
             style={{ paddingLeft }}
           >
-            <FileTextOutlined
-              className={
-                selectable
-                  ? active
-                    ? "text-[#2f6ff7]"
-                    : "text-slate-400 group-hover:text-slate-500"
-                  : "text-slate-300"
-              }
-            />
+            {node.mediaKind === "image" ? (
+              <FileImageOutlined
+                className={
+                  selectable
+                    ? active
+                      ? "text-[#2f6ff7]"
+                      : "text-slate-400 group-hover:text-slate-500"
+                    : "text-slate-300"
+                }
+              />
+            ) : node.mediaKind === "video" ? (
+              <VideoCameraOutlined
+                className={
+                  selectable
+                    ? active
+                      ? "text-[#2f6ff7]"
+                      : "text-slate-400 group-hover:text-slate-500"
+                    : "text-slate-300"
+                }
+              />
+            ) : node.mediaKind === "audio" ? (
+              <AudioOutlined
+                className={
+                  selectable
+                    ? active
+                      ? "text-[#2f6ff7]"
+                      : "text-slate-400 group-hover:text-slate-500"
+                    : "text-slate-300"
+                }
+              />
+            ) : (
+              <FileTextOutlined
+                className={
+                  selectable
+                    ? active
+                      ? "text-[#2f6ff7]"
+                      : "text-slate-400 group-hover:text-slate-500"
+                    : "text-slate-300"
+                }
+              />
+            )}
             {renamingFile ? (
               <div className="min-w-0 flex-1">
                 {renderRenameInput("file", node.path, t("输入文件名称"))}
@@ -1212,7 +1388,7 @@ export const DocsModule = ({
             )}
           </button>
 
-          {selectable && !renamingFile ? (
+          {actionable && !renamingFile ? (
             <CompactDropdown
               menu={fileMenu}
               trigger={["click"]}
@@ -1350,6 +1526,7 @@ export const DocsModule = ({
               <MarkdownEditor
                 key={activeDoc.id}
                 projectId={projectId}
+                documentPath={stripDocsPrefix(activeDoc.id)}
                 title={toDocPath(activeDoc.id) || toDocPath(activeDoc.title)}
                 statusText={saveStatusText}
                 value={editorValue}
@@ -1357,6 +1534,20 @@ export const DocsModule = ({
               />
             </div>
           </div>
+        ) : activeExplorerEntry && activeMediaKind ? (
+          <MediaPreviewPanel
+            projectId={projectId}
+            filePath={resolvedActivePath ?? activeExplorerEntry.path}
+            title={toDocPath(activeExplorerEntry.path)}
+            typeLabel={
+              activeMediaKind === "image"
+                ? t("图片")
+                : activeMediaKind === "video"
+                  ? t("视频")
+                  : t("音频")
+            }
+            mediaKind={activeMediaKind}
+          />
         ) : (
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)]">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2">

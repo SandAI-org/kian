@@ -854,6 +854,11 @@ body {
   height: auto;
 }
 
+.chat-markdown__media-image {
+  width: 100%;
+  height: auto;
+}
+
 .chat-markdown__media--video {
   max-height: 420px;
 }
