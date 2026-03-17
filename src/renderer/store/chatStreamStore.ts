@@ -1,16 +1,20 @@
 import { api } from "@renderer/lib/api";
 import {
   appendStreamingAssistantDelta,
+  appendStreamingThinkingDelta,
   ensureStreamingAssistantDone,
+  ensureStreamingThinkingDone,
   upsertStreamingTool,
   type StreamingBlock,
 } from "@renderer/modules/chat/streamingState";
+import { ChatStreamSmoother } from "@renderer/store/chatStreamSmoother";
 import type { ChatHistoryUpdatedEvent, ChatStreamEvent } from "@shared/types";
 import { create } from "zustand";
 
 interface SessionStreamState {
   streamingBlocks: StreamingBlock[];
   streamingInProgress: boolean;
+  streamingThinkingActive: boolean;
   streamError?: string;
   activeRequestId?: string;
   blockCounter: number;
@@ -28,6 +32,7 @@ interface ChatStreamStoreState {
 const createEmptySessionState = (): SessionStreamState => ({
   streamingBlocks: [],
   streamingInProgress: false,
+  streamingThinkingActive: false,
   streamError: undefined,
   activeRequestId: undefined,
   blockCounter: 0,
@@ -64,6 +69,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
         return {
           streamingBlocks: [],
           streamingInProgress: true,
+          streamingThinkingActive: false,
           streamError: undefined,
           activeRequestId: requestId,
           blockCounter: 0,
@@ -123,6 +129,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
 
           let nextBlocks = current.streamingBlocks;
           let nextInProgress = current.streamingInProgress;
+          let nextThinkingActive = current.streamingThinkingActive;
           let nextError = current.streamError;
           let nextRequestId = current.activeRequestId;
           let nextCounter = current.blockCounter;
@@ -134,6 +141,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
 
           if (event.type === "assistant_delta") {
             nextInProgress = true;
+            nextThinkingActive = false;
             nextError = undefined;
             nextBlocks = appendStreamingAssistantDelta(
               nextBlocks,
@@ -141,8 +149,33 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
               eventCreatedAt,
               createStreamingBlockKey,
             );
+          } else if (event.type === "thinking_start") {
+            nextInProgress = true;
+            nextThinkingActive = true;
+            nextError = undefined;
+          } else if (event.type === "thinking_delta") {
+            nextInProgress = true;
+            nextThinkingActive = true;
+            nextError = undefined;
+            nextBlocks = appendStreamingThinkingDelta(
+              nextBlocks,
+              event.delta ?? "",
+              eventCreatedAt,
+              createStreamingBlockKey,
+            );
+          } else if (event.type === "thinking_end") {
+            nextInProgress = true;
+            nextThinkingActive = false;
+            nextError = undefined;
+            nextBlocks = ensureStreamingThinkingDone(
+              nextBlocks,
+              event.thinking,
+              eventCreatedAt,
+              createStreamingBlockKey,
+            );
           } else if (event.type === "assistant_done") {
             nextInProgress = false;
+            nextThinkingActive = false;
             nextError = undefined;
             nextRequestId = undefined;
             nextBlocks = ensureStreamingAssistantDone(
@@ -155,6 +188,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
             const toolUseId = event.toolUseId?.trim();
             if (!toolUseId) return current;
             nextInProgress = true;
+            nextThinkingActive = false;
             nextError = undefined;
             nextBlocks = upsertStreamingTool(
               nextBlocks,
@@ -171,6 +205,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
             const toolUseId = event.toolUseId?.trim();
             if (!toolUseId) return current;
             nextInProgress = true;
+            nextThinkingActive = false;
             nextError = undefined;
             nextBlocks = upsertStreamingTool(
               nextBlocks,
@@ -187,6 +222,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
             const toolUseId = event.toolUseId?.trim();
             if (!toolUseId) return current;
             nextInProgress = true;
+            nextThinkingActive = false;
             nextError = undefined;
             nextBlocks = upsertStreamingTool(
               nextBlocks,
@@ -201,6 +237,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
             );
           } else if (event.type === "error") {
             nextInProgress = false;
+            nextThinkingActive = false;
             nextRequestId = undefined;
             nextError = event.error ?? "流式输出失败";
           } else {
@@ -210,6 +247,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
           if (
             nextBlocks === current.streamingBlocks &&
             nextInProgress === current.streamingInProgress &&
+            nextThinkingActive === current.streamingThinkingActive &&
             nextError === current.streamError &&
             nextRequestId === current.activeRequestId &&
             nextCounter === current.blockCounter
@@ -221,6 +259,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
             ...current,
             streamingBlocks: nextBlocks,
             streamingInProgress: nextInProgress,
+            streamingThinkingActive: nextThinkingActive,
             streamError: nextError,
             activeRequestId: nextRequestId,
             blockCounter: nextCounter,
@@ -243,6 +282,7 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
         if (
           current.streamingBlocks.length === 0 &&
           !current.streamingInProgress &&
+          !current.streamingThinkingActive &&
           !current.streamError &&
           current.blockCounter === 0
         ) {
@@ -256,6 +296,8 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
   },
 }));
 
+const chatStreamSmoother = new ChatStreamSmoother();
+
 const initializeChatStreamBridge = (): void => {
   if (typeof window === "undefined") return;
   const bridgeFlagStore = globalThis as typeof globalThis & {
@@ -265,9 +307,14 @@ const initializeChatStreamBridge = (): void => {
   bridgeFlagStore.__kianChatStreamBridgeInitialized__ = true;
 
   api.chat.subscribeStream((event) => {
-    useChatStreamStore.getState().ingestStreamEvent(event);
+    chatStreamSmoother.push(event, (smoothedEvent) => {
+      useChatStreamStore.getState().ingestStreamEvent(smoothedEvent);
+    });
   });
   api.chat.subscribeHistoryUpdated((event) => {
+    chatStreamSmoother.flushSession(event.sessionId, (smoothedEvent) => {
+      useChatStreamStore.getState().ingestStreamEvent(smoothedEvent);
+    });
     useChatStreamStore.getState().ingestHistoryUpdated(event);
   });
 };

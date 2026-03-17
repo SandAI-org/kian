@@ -16,6 +16,12 @@ export type StreamingBlock =
       createdAt: string;
     }
   | {
+      kind: "thinking";
+      key: string;
+      content: string;
+      createdAt: string;
+    }
+  | {
       kind: "tool";
       key: string;
       createdAt: string;
@@ -61,55 +67,150 @@ const mergeToolDetailText = (
   return `${current}\n${next}`;
 };
 
-export const appendStreamingAssistantDelta = (
+const findLastBlockIndexByKind = (
+  blocks: StreamingBlock[],
+  kind: StreamingBlock["kind"],
+): number => {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index]?.kind === kind) {
+      return index;
+    }
+  }
+  return -1;
+};
+
+const appendStreamingTextDelta = (
   blocks: StreamingBlock[],
   delta: string,
   createdAt: string,
   createKey: (prefix: string) => string,
+  kind: "assistant" | "thinking",
 ): StreamingBlock[] => {
   if (!delta) return blocks;
-  const last = blocks[blocks.length - 1];
-  if (last?.kind === "assistant") {
+  const targetIndex =
+    kind === "thinking"
+      ? findLastBlockIndexByKind(blocks, kind)
+      : blocks.length - 1;
+  const target =
+    targetIndex >= 0 && targetIndex < blocks.length ? blocks[targetIndex] : undefined;
+
+  if (target?.kind === kind) {
     const next = [...blocks];
-    next[next.length - 1] = {
-      ...last,
-      content: `${last.content}${delta}`,
+    next[targetIndex] = {
+      ...target,
+      content: `${target.content}${delta}`,
     };
     return next;
   }
   return [
     ...blocks,
     {
-      kind: "assistant",
-      key: createKey("stream-assistant"),
+      kind,
+      key: createKey(kind === "assistant" ? "stream-assistant" : "stream-thinking"),
       content: delta,
       createdAt,
     },
   ];
 };
 
-export const ensureStreamingAssistantDone = (
+const ensureStreamingTextDone = (
   blocks: StreamingBlock[],
   fullText: string | undefined,
   createdAt: string,
   createKey: (prefix: string) => string,
+  kind: "assistant" | "thinking",
 ): StreamingBlock[] => {
   const text = fullText?.trim();
   if (!text) return blocks;
-  const hasAssistant = blocks.some(
-    (block) => block.kind === "assistant" && block.content.trim().length > 0,
-  );
-  if (hasAssistant) return blocks;
+  const targetIndex =
+    kind === "thinking"
+      ? findLastBlockIndexByKind(blocks, kind)
+      : blocks.findIndex(
+          (block) => block.kind === kind && block.content.trim().length > 0,
+        );
+
+  if (targetIndex >= 0) {
+    const target = blocks[targetIndex];
+    if (target?.kind === kind) {
+      if (target.content.trim() === text || target.content.includes(text)) {
+        return blocks;
+      }
+
+      const next = [...blocks];
+      next[targetIndex] = {
+        ...target,
+        content: text.includes(target.content) ? text : `${target.content}${text}`,
+      };
+      return next;
+    }
+  }
+
   return [
     ...blocks,
     {
-      kind: "assistant",
-      key: createKey("stream-assistant"),
+      kind,
+      key: createKey(kind === "assistant" ? "stream-assistant" : "stream-thinking"),
       content: text,
       createdAt,
     },
   ];
 };
+
+export const appendStreamingAssistantDelta = (
+  blocks: StreamingBlock[],
+  delta: string,
+  createdAt: string,
+  createKey: (prefix: string) => string,
+): StreamingBlock[] =>
+  appendStreamingTextDelta(
+    blocks,
+    delta,
+    createdAt,
+    createKey,
+    "assistant",
+  );
+
+export const appendStreamingThinkingDelta = (
+  blocks: StreamingBlock[],
+  delta: string,
+  createdAt: string,
+  createKey: (prefix: string) => string,
+): StreamingBlock[] =>
+  appendStreamingTextDelta(
+    blocks,
+    delta,
+    createdAt,
+    createKey,
+    "thinking",
+  );
+
+export const ensureStreamingAssistantDone = (
+  blocks: StreamingBlock[],
+  fullText: string | undefined,
+  createdAt: string,
+  createKey: (prefix: string) => string,
+): StreamingBlock[] =>
+  ensureStreamingTextDone(
+    blocks,
+    fullText,
+    createdAt,
+    createKey,
+    "assistant",
+  );
+
+export const ensureStreamingThinkingDone = (
+  blocks: StreamingBlock[],
+  fullText: string | undefined,
+  createdAt: string,
+  createKey: (prefix: string) => string,
+): StreamingBlock[] =>
+  ensureStreamingTextDone(
+    blocks,
+    fullText,
+    createdAt,
+    createKey,
+    "thinking",
+  );
 
 export const upsertStreamingTool = (
   blocks: StreamingBlock[],

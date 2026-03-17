@@ -26,7 +26,7 @@ describe("getAboutUpdatePresentation", () => {
     expect(presentation.progressPercent).toBe(0);
   });
 
-  it("infers an available update when idle state already has a newer latest version", () => {
+  it("keeps idle state as not checked even if stale version fields exist", () => {
     const presentation = getAboutUpdatePresentation(
       createStatus({
         stage: "idle",
@@ -35,16 +35,16 @@ describe("getAboutUpdatePresentation", () => {
       }),
     );
 
-    expect(presentation.label).toBe("发现新版本");
+    expect(presentation.label).toBe("未检查更新");
     expect(presentation.isUpdateInFlight).toBe(false);
-    expect(presentation.showLatestVersion).toBe(true);
+    expect(presentation.showLatestVersion).toBe(false);
     expect(presentation.showProgress).toBe(false);
   });
 
-  it("infers a verifying update when stale idle state still reports completed progress", () => {
+  it("shows verifying state only when the main process explicitly reports verifying", () => {
     const presentation = getAboutUpdatePresentation(
       createStatus({
-        stage: "idle",
+        stage: "verifying",
         currentVersion: "0.1.1",
         latestVersion: "0.1.2",
         progressPercent: 100,
@@ -52,7 +52,7 @@ describe("getAboutUpdatePresentation", () => {
       }),
     );
 
-    expect(presentation.label).toBeNull();
+    expect(presentation.label).toBe("正在校验更新包");
     expect(presentation.isUpdateInFlight).toBe(true);
     expect(presentation.showLatestVersion).toBe(true);
     expect(presentation.showProgress).toBe(true);

@@ -1,5 +1,6 @@
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
 import type {
+  ChatMessageMetadata,
   ChatSendPayload,
   ChatSendResponse,
   ChatStreamEvent,
@@ -47,6 +48,11 @@ type TimelineStep =
       content: string;
     }
   | {
+      type: "thinking";
+      createdAt: string;
+      content: string;
+    }
+  | {
       type: "tool";
       createdAt: string;
       toolUseId?: string;
@@ -54,6 +60,11 @@ type TimelineStep =
       toolInput?: string;
       output?: string;
     };
+
+const buildThinkingMetadataJson = (): string =>
+  JSON.stringify({
+    kind: "thinking",
+  } satisfies ChatMessageMetadata);
 
 const mergeToolOutput = (
   existing: string | undefined,
@@ -78,6 +89,18 @@ const mergeToolOutput = (
 const normalizeToolInput = (input: string | undefined): string | undefined => {
   const trimmed = input?.trim();
   return trimmed ? trimmed : undefined;
+};
+
+const findLastTimelineStepIndex = (
+  timeline: TimelineStep[],
+  type: TimelineStep["type"],
+): number => {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    if (timeline[index]?.type === type) {
+      return index;
+    }
+  }
+  return -1;
 };
 
 const buildAutoTitlePromptInput = async (
@@ -155,21 +178,79 @@ const maybeSetOptimisticSessionTitle = async (
   return optimisticTitle;
 };
 
+const appendTextDelta = (
+  timeline: TimelineStep[],
+  delta: string,
+  createdAt: string,
+  type: "assistant" | "thinking",
+): void => {
+  if (!delta) return;
+  const targetIndex =
+    type === "thinking"
+      ? findLastTimelineStepIndex(timeline, type)
+      : timeline.length - 1;
+  const target =
+    targetIndex >= 0 && targetIndex < timeline.length
+      ? timeline[targetIndex]
+      : undefined;
+
+  if (target?.type === type) {
+    target.content += delta;
+    return;
+  }
+  timeline.push({
+    type,
+    createdAt,
+    content: delta,
+  });
+};
+
 const appendAssistantDelta = (
   timeline: TimelineStep[],
   delta: string,
   createdAt: string,
 ): void => {
-  if (!delta) return;
-  const last = timeline[timeline.length - 1];
-  if (last?.type === "assistant") {
-    last.content += delta;
+  appendTextDelta(timeline, delta, createdAt, "assistant");
+};
+
+const appendThinkingDelta = (
+  timeline: TimelineStep[],
+  delta: string,
+  createdAt: string,
+): void => {
+  appendTextDelta(timeline, delta, createdAt, "thinking");
+};
+
+const ensureThinkingContent = (
+  timeline: TimelineStep[],
+  content: string,
+  createdAt: string,
+): void => {
+  const next = content.trim();
+  if (!next) return;
+
+  const targetIndex = findLastTimelineStepIndex(timeline, "thinking");
+  const target =
+    targetIndex >= 0 && targetIndex < timeline.length
+      ? timeline[targetIndex]
+      : undefined;
+
+  if (target?.type === "thinking") {
+    if (!target.content.trim() || next.includes(target.content)) {
+      target.content = next;
+      return;
+    }
+    if (target.content.includes(next)) {
+      return;
+    }
+    target.content = `${target.content}${next}`;
     return;
   }
+
   timeline.push({
-    type: "assistant",
+    type: "thinking",
     createdAt,
-    content: delta,
+    content: next,
   });
 };
 
@@ -434,6 +515,16 @@ export const chatService = {
         return;
       }
 
+      if (event.type === "thinking_delta") {
+        appendThinkingDelta(timeline, event.delta ?? "", eventCreatedAt);
+        return;
+      }
+
+      if (event.type === "thinking_end" && event.thinking?.trim()) {
+        ensureThinkingContent(timeline, event.thinking, eventCreatedAt);
+        return;
+      }
+
       if (event.type === "tool_start") {
         const step = ensureToolStep(
           timeline,
@@ -501,10 +592,11 @@ export const chatService = {
     }
 
     const persistedMessages: Array<{
-      role: "assistant" | "tool";
+      role: "assistant" | "tool" | "system";
       createdAt: string;
       content: string;
       toolCallJson?: string;
+      metadataJson?: string;
     }> = [];
 
     for (const step of timeline) {
@@ -515,6 +607,18 @@ export const chatService = {
           role: "assistant",
           createdAt: step.createdAt,
           content,
+        });
+        continue;
+      }
+
+      if (step.type === "thinking") {
+        const content = normalizeMediaMarkdownInText(step.content.trim());
+        if (!content) continue;
+        persistedMessages.push({
+          role: "system",
+          createdAt: step.createdAt,
+          content,
+          metadataJson: buildThinkingMetadataJson(),
         });
         continue;
       }
@@ -563,6 +667,7 @@ export const chatService = {
         role: item.role,
         content: item.content,
         toolCallJson: item.role === "tool" ? item.toolCallJson : undefined,
+        metadataJson: item.metadataJson,
         createdAt: item.createdAt,
       });
     }

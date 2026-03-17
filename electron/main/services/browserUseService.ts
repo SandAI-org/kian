@@ -4,6 +4,7 @@ import path from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_DOM_ELEMENTS = 400;
+const BROWSER_USE_PARTITION = "kian-browser-use";
 
 type BrowserSession = {
   window: BrowserWindow;
@@ -179,6 +180,7 @@ class BrowserUseService {
       show: false,
       paintWhenInitiallyHidden: true,
       webPreferences: {
+        partition: BROWSER_USE_PARTITION,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -187,6 +189,7 @@ class BrowserUseService {
 
     const view = new BrowserView({
       webPreferences: {
+        partition: BROWSER_USE_PARTITION,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,

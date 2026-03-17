@@ -1508,16 +1508,21 @@ const createOrResumeSession = async (
     : SessionManager.continueRecent(projectCwd, sessionDir);
   const previousContextModel =
     resumedSessionManager?.buildSessionContext().model;
-  const shouldStartFreshForModelMismatch = Boolean(
+  const modelChangedFromPersistedContext = Boolean(
     previousContextModel &&
     (previousContextModel.provider !== effectiveProvider ||
       previousContextModel.modelId !== effectiveModelId),
   );
   const sessionManager =
-    startFreshRequested || shouldStartFreshForModelMismatch
-      ? SessionManager.create(projectCwd, sessionDir)
-      : (resumedSessionManager ??
-        SessionManager.create(projectCwd, sessionDir));
+    resumedSessionManager ?? SessionManager.create(projectCwd, sessionDir);
+  if (modelChangedFromPersistedContext) {
+    logger.info("Restoring persisted session context with a different model", {
+      scope: scopeKey,
+      chatSessionId,
+      previousModelId: `${previousContextModel?.provider}:${previousContextModel?.modelId}`,
+      nextModelId: compositeModelKey,
+    });
+  }
 
   const contextDir = getContextDirectoryForScope(scope, projectCwd);
   const [project, contextFiles, developerMetadata, activeSkills] =
@@ -1760,6 +1765,7 @@ export const agentService = {
       }
 
       let streamedLength = 0;
+      let streamedThinkingLength = 0;
       const toolStartTimes = new Map<string, number>();
       let toolProgressCount = 0;
       let toolOutputCount = 0;
@@ -1803,6 +1809,52 @@ export const agentService = {
               createdAt: nowISO(),
               type: "assistant_delta",
               delta: llmEvent.delta,
+            });
+            return;
+          }
+
+          if (llmEvent.type === "thinking_start") {
+            emit({
+              requestId,
+              sessionId: payload.sessionId,
+              scope: payload.scope,
+              module: payload.module,
+              createdAt: nowISO(),
+              type: "thinking_start",
+            });
+            return;
+          }
+
+          if (llmEvent.type === "thinking_delta") {
+            streamedThinkingLength += llmEvent.delta.length;
+            emit({
+              requestId,
+              sessionId: payload.sessionId,
+              scope: payload.scope,
+              module: payload.module,
+              createdAt: nowISO(),
+              type: "thinking_delta",
+              delta: llmEvent.delta,
+            });
+            return;
+          }
+
+          if (llmEvent.type === "thinking_end") {
+            const thinkingContent = llmEvent.content?.trim() ?? "";
+            if (thinkingContent) {
+              streamedThinkingLength = Math.max(
+                streamedThinkingLength,
+                thinkingContent.length,
+              );
+            }
+            emit({
+              requestId,
+              sessionId: payload.sessionId,
+              scope: payload.scope,
+              module: payload.module,
+              createdAt: nowISO(),
+              type: "thinking_end",
+              thinking: thinkingContent || undefined,
             });
             return;
           }
@@ -1921,6 +1973,24 @@ export const agentService = {
         if (event.type === "message_end") {
           const msg = event.message;
           if (msg.role === "assistant" && Array.isArray(msg.content)) {
+            const fullThinking = msg.content
+              .map((c: { type?: string; thinking?: string }) =>
+                c?.type === "thinking" ? (c.thinking ?? "") : "",
+              )
+              .join("")
+              .trim();
+            if (fullThinking && fullThinking.length > streamedThinkingLength) {
+              emit({
+                requestId,
+                sessionId: payload.sessionId,
+                scope: payload.scope,
+                module: payload.module,
+                createdAt: nowISO(),
+                type: "thinking_end",
+                thinking: fullThinking,
+              });
+              streamedThinkingLength = fullThinking.length;
+            }
             const fullText = msg.content
               .map((c: { type?: string; text?: string }) =>
                 c?.type === "text" ? (c.text ?? "") : "",
@@ -2113,20 +2183,6 @@ export const agentService = {
         fullText: finalMessage,
       });
 
-      logger.info("Agent prompt completed", {
-        requestId,
-        scope: getScopeKey(payload.scope),
-        agent: getAgentLogLabel(payload.scope),
-        chatSessionId: payload.sessionId,
-        module: payload.module,
-        modelId,
-        modelSource,
-        thinkingLevel: resolvedThinkingLevel,
-        interrupted: isRequestInterrupted(),
-        toolOutputCount,
-        assistantTextLength: assistantText.length,
-      });
-
       if (
         payload.scope.type === "project" &&
         payload.delegationContext &&
@@ -2152,6 +2208,20 @@ export const agentService = {
           startFreshOnNextPrompt: true,
         });
       }
+
+      logger.info("Agent prompt completed", {
+        requestId,
+        scope: getScopeKey(payload.scope),
+        agent: getAgentLogLabel(payload.scope),
+        chatSessionId: payload.sessionId,
+        module: payload.module,
+        modelId,
+        modelSource,
+        thinkingLevel: resolvedThinkingLevel,
+        interrupted: isRequestInterrupted(),
+        toolOutputCount,
+        assistantTextLength: assistantText.length,
+      });
 
       return {
         assistantMessage: finalMessage,

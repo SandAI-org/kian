@@ -116,6 +116,18 @@ class UpdateService {
     updateEvents.emit({ ...this.status });
   }
 
+  private beginChecking(): void {
+    this.setStatus({
+      stage: "checking",
+      latestVersion: undefined,
+      downloadedVersion: undefined,
+      downloadedFilePath: undefined,
+      progressPercent: undefined,
+      message: undefined,
+      lastCheckedAt: new Date().toISOString(),
+    });
+  }
+
   private initUpdater(): void {
     if (this.updaterInitialized) return;
     this.updaterInitialized = true;
@@ -125,12 +137,7 @@ class UpdateService {
     autoUpdater.logger = logger;
 
     autoUpdater.on("checking-for-update", () => {
-      this.setStatus({
-        stage: "checking",
-        message: undefined,
-        progressPercent: undefined,
-        lastCheckedAt: new Date().toISOString(),
-      });
+      this.beginChecking();
     });
 
     autoUpdater.on("update-available", (info) => {
@@ -242,6 +249,7 @@ class UpdateService {
   }
 
   private async performCheck(force: boolean): Promise<AppUpdateStatusDTO> {
+    this.beginChecking();
     const result = await autoUpdater.checkForUpdates();
     const nextVersion = result?.updateInfo?.version
       ? normalizeVersion(result.updateInfo.version)
@@ -251,13 +259,27 @@ class UpdateService {
       nextVersion && compareVersions(nextVersion, currentVersion) > 0,
     );
 
-    if (shouldTreatAsNewerVersion && this.status.stage === "upToDate") {
+    if (
+      shouldTreatAsNewerVersion &&
+      (this.status.stage === "checking" || this.status.stage === "upToDate")
+    ) {
       this.setStatus({
         stage: "available",
         latestVersion: nextVersion ?? undefined,
         downloadedVersion: undefined,
         downloadedFilePath: undefined,
         progressPercent: 0,
+        message: undefined,
+      });
+    }
+
+    if (!shouldTreatAsNewerVersion && this.status.stage === "checking") {
+      this.setStatus({
+        stage: "upToDate",
+        latestVersion: nextVersion ?? currentVersion,
+        downloadedVersion: undefined,
+        downloadedFilePath: undefined,
+        progressPercent: undefined,
         message: undefined,
       });
     }

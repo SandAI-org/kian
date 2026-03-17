@@ -6,6 +6,7 @@ import { logger } from './logger';
 import { settingsService } from './settingsService';
 
 const LOCAL_MEDIA_SCHEME_PREFIX = 'kian-local://local/';
+const APP_PREVIEW_PARTITION = 'kian-app-preview';
 
 const APP_TYPE_TITLES: Record<AppLanguage, Record<AppType, string>> = {
   'zh-CN': {
@@ -114,6 +115,7 @@ const ensurePreviewWindow = (): BrowserWindow => {
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
     webPreferences: {
+      partition: APP_PREVIEW_PARTITION,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true

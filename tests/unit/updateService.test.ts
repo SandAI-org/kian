@@ -58,6 +58,7 @@ vi.mock('../../electron/main/services/updatePackageValidator', () => ({
 describe('updateService', () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.useRealTimers();
     state.quit.mockReset();
     state.listeners.clear();
     state.checkForUpdates.mockReset();
@@ -149,6 +150,35 @@ describe('updateService', () => {
     expect(status.message).toContain('network unavailable');
   });
 
+  it('falls back to up-to-date when updater returns the current version without events', async () => {
+    state.appVersion = '1.2.3';
+    state.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '1.2.3' }
+    });
+
+    const { updateService } = await import('../../electron/main/services/updateService');
+    const status = await updateService.checkForUpdates({ force: true });
+
+    expect(status.stage).toBe('upToDate');
+    expect(status.latestVersion).toBe('1.2.3');
+    expect(status.progressPercent).toBeUndefined();
+  });
+
+  it('falls back to available and starts download when updater returns a newer version without events', async () => {
+    state.appVersion = '1.2.2';
+    state.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '1.2.3' }
+    });
+
+    const { updateService } = await import('../../electron/main/services/updateService');
+    const status = await updateService.checkForUpdates({ force: true });
+
+    expect(state.downloadUpdate).toHaveBeenCalledTimes(1);
+    expect(status.stage).toBe('available');
+    expect(status.latestVersion).toBe('1.2.3');
+    expect(status.progressPercent).toBe(0);
+  });
+
   it('calls autoUpdater.quitAndInstall after update is downloaded', async () => {
     state.appVersion = '1.2.2';
     state.checkForUpdates.mockImplementation(async () => {
@@ -195,5 +225,24 @@ describe('updateService', () => {
     expect(status.stage).toBe('failed');
     expect(status.message).toContain('签名身份与当前安装版本不一致');
     await expect(updateService.quitAndInstall()).rejects.toThrow('更新尚未下载完成');
+  });
+
+  it('schedules automatic checks on startup and repeats after the interval', async () => {
+    vi.useFakeTimers();
+    state.appVersion = '1.2.3';
+    state.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '1.2.3' }
+    });
+
+    const { updateService } = await import('../../electron/main/services/updateService');
+    updateService.start();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(state.checkForUpdates).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+    expect(state.checkForUpdates).toHaveBeenCalledTimes(2);
+
+    updateService.stop();
   });
 });

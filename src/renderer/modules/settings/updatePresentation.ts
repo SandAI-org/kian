@@ -28,7 +28,7 @@ const getStageLabel = (stage: AppUpdateStage): string | null => {
     case "downloading":
       return "正在下载更新";
     case "verifying":
-      return null;
+      return "正在校验更新包";
     case "downloaded":
       return "更新已下载，可安装";
     case "upToDate":
@@ -40,46 +40,10 @@ const getStageLabel = (stage: AppUpdateStage): string | null => {
   }
 };
 
-const getEffectiveStage = (
-  status: AppUpdateStatusDTO | null | undefined,
-): AppUpdateStage => {
-  const stage = status?.stage;
-  if (!status) return "idle";
-  if (stage && stage !== "idle") {
-    return stage;
-  }
-
-  const hasNewerLatestVersion = Boolean(
-    status.latestVersion && status.latestVersion !== status.currentVersion,
-  );
-
-  if (
-    status.downloadedVersion &&
-    status.downloadedVersion === status.latestVersion
-  ) {
-    return "downloaded";
-  }
-
-  if (typeof status.progressPercent === "number") {
-    if (status.progressPercent >= 100 && hasNewerLatestVersion) {
-      return "verifying";
-    }
-    if (status.progressPercent > 0 && hasNewerLatestVersion) {
-      return "downloading";
-    }
-  }
-
-  if (hasNewerLatestVersion) {
-    return "available";
-  }
-
-  return "idle";
-};
-
 export const getAboutUpdatePresentation = (
   status: AppUpdateStatusDTO | null | undefined,
 ): AboutUpdatePresentation => {
-  const stage = getEffectiveStage(status);
+  const stage = status?.stage ?? "idle";
   const canInstallUpdate = stage === "downloaded";
   const isUpdateChecking = stage === "checking";
   const isUpdateInFlight =
@@ -96,7 +60,11 @@ export const getAboutUpdatePresentation = (
     isUpdateInFlight,
     progressPercent,
     showLatestVersion: Boolean(
-      status?.latestVersion && status.latestVersion !== status.currentVersion,
+      status?.latestVersion &&
+        status.latestVersion !== status.currentVersion &&
+        stage !== "idle" &&
+        stage !== "checking" &&
+        stage !== "upToDate",
     ),
     showProgress: Boolean(stage && PROGRESS_STAGES.has(stage)),
   };

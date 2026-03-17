@@ -190,7 +190,7 @@ export interface DelegationContext {
 }
 
 export interface ChatMessageMetadata {
-  kind: 'delegation' | 'sub_agent_report' | 'delegation_receipt';
+  kind: 'delegation' | 'sub_agent_report' | 'delegation_receipt' | 'thinking';
   delegationId?: string;
   sourceProjectId?: string;
   sourceProjectName?: string;
@@ -280,9 +280,19 @@ export interface ChatStreamEvent {
   scope: ChatScope;
   module: ChatModuleType;
   createdAt?: string;
-  type: 'assistant_delta' | 'assistant_done' | 'tool_start' | 'tool_progress' | 'tool_output' | 'error';
+  type:
+    | 'assistant_delta'
+    | 'assistant_done'
+    | 'thinking_start'
+    | 'thinking_delta'
+    | 'thinking_end'
+    | 'tool_start'
+    | 'tool_progress'
+    | 'tool_output'
+    | 'error';
   delta?: string;
   fullText?: string;
+  thinking?: string;
   toolUseId?: string;
   toolName?: string;
   toolInput?: string;

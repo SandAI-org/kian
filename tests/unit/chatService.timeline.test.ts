@@ -53,6 +53,15 @@ describe("chatService timeline persistence", () => {
         sessionId: "session-1",
         scope: { type: "main" },
         module: "main",
+        type: "thinking_delta",
+        delta: "先分析需求",
+        createdAt: "2026-03-10T00:00:00.500Z",
+      });
+      onStream?.({
+        requestId: "req-1",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
         type: "tool_start",
         toolUseId: "tool-1",
         toolName: "callSubAgent",
@@ -97,14 +106,90 @@ describe("chatService timeline persistence", () => {
       message: "帮我委派任务",
     });
 
-    expect(state.appendMessage).toHaveBeenCalledTimes(3);
+    expect(state.appendMessage).toHaveBeenCalledTimes(4);
     expect(state.appendMessage.mock.calls[1]?.[0]).toMatchObject({
+      role: "system",
+      createdAt: "2026-03-10T00:00:00.500Z",
+      metadataJson: JSON.stringify({ kind: "thinking" }),
+    });
+    expect(state.appendMessage.mock.calls[2]?.[0]).toMatchObject({
       role: "tool",
       createdAt: "2026-03-10T00:00:01.000Z",
     });
-    expect(state.appendMessage.mock.calls[2]?.[0]).toMatchObject({
+    expect(state.appendMessage.mock.calls[3]?.[0]).toMatchObject({
       role: "assistant",
       createdAt: "2026-03-10T00:00:03.000Z",
+    });
+  });
+
+  it("persists interleaved thinking deltas as a single thinking message", async () => {
+    state.appendMessage.mockReset().mockResolvedValue(undefined);
+    state.agentSend.mockReset().mockImplementation(async (_payload, onStream) => {
+      onStream?.({
+        requestId: "req-2",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
+        type: "thinking_delta",
+        delta: "第一段思考",
+        createdAt: "2026-03-10T00:00:00.500Z",
+      });
+      onStream?.({
+        requestId: "req-2",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
+        type: "assistant_delta",
+        delta: "先说结论。",
+        createdAt: "2026-03-10T00:00:01.000Z",
+      });
+      onStream?.({
+        requestId: "req-2",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
+        type: "thinking_delta",
+        delta: "第二段思考",
+        createdAt: "2026-03-10T00:00:01.500Z",
+      });
+      onStream?.({
+        requestId: "req-2",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
+        type: "assistant_delta",
+        delta: "再补一句。",
+        createdAt: "2026-03-10T00:00:02.000Z",
+      });
+
+      return {
+        assistantMessage: "先说结论。再补一句。",
+        toolActions: [],
+      };
+    });
+
+    const { chatService } = await import("../../electron/main/services/chatService");
+
+    await chatService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-1",
+      requestId: "req-2",
+      message: "解释一下",
+    });
+
+    const thinkingMessages = state.appendMessage.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (message) =>
+          message.role === "system" &&
+          message.metadataJson === JSON.stringify({ kind: "thinking" }),
+      );
+
+    expect(thinkingMessages).toHaveLength(1);
+    expect(thinkingMessages[0]).toMatchObject({
+      content: "第一段思考第二段思考",
+      createdAt: "2026-03-10T00:00:00.500Z",
     });
   });
 });
