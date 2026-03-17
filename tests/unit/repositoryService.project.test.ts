@@ -253,6 +253,36 @@ describe("repositoryService project management", () => {
     ).resolves.toBeTruthy();
   });
 
+  it("rejects appending messages to a missing session without creating a message file", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    await expect(
+      repositoryService.appendMessage({
+        scope: { type: "main" },
+        sessionId: "missing-session",
+        role: "user",
+        content: "hello",
+      }),
+    ).rejects.toThrow("会话不存在");
+
+    await expect(
+      fs.stat(
+        path.join(
+          tempRoot,
+          ".kian",
+          "main-agent",
+          "chat",
+          "messages",
+          "missing-session.json",
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("stores main agent docs under the internal workspace and migrates legacy context files", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"

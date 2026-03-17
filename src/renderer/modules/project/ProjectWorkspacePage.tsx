@@ -94,6 +94,31 @@ export const ProjectWorkspacePage = () => {
     };
   }, [handleNewSession]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncProjectSession = async (): Promise<void> => {
+      setCurrentSessionId(undefined);
+      try {
+        const sessions = await api.chat.getSessions(chatScope);
+        if (cancelled) {
+          return;
+        }
+        setCurrentSessionId(sessions[0]?.id);
+      } catch {
+        if (!cancelled) {
+          setCurrentSessionId(undefined);
+        }
+      }
+    };
+
+    void syncProjectSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatScope]);
+
   const left = useMemo(
     () => (
       <div className="h-full min-h-0">

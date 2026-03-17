@@ -3098,6 +3098,14 @@ export const repositoryService = {
     createdAt?: string;
   }): Promise<ChatMessageDTO> {
     await ensureChatScopeStructure(input.scope);
+    const sessions = await readJson<ChatSessionDTO[]>(
+      getChatSessionsPathByScope(input.scope),
+      [],
+    );
+    const sessionExists = sessions.some((item) => item.id === input.sessionId);
+    if (!sessionExists) {
+      throw new Error("会话不存在");
+    }
     const createdAt = input.createdAt?.trim() || nowISO();
 
     const next: ChatMessageDTO = {
