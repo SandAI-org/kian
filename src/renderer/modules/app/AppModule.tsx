@@ -121,7 +121,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
   const openAppDir = () => {
     if (!status?.appDir) return;
     void api.file.open(status.appDir).catch((error) => {
-      message.error(error instanceof Error ? error.message : "打开目录失败");
+      message.error(error instanceof Error ? error.message : t("打开目录失败"));
     });
   };
 
@@ -135,7 +135,9 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
       appType: status.appType ?? "unknown",
     };
     void api.window.openAppPreview(payload).catch((error) => {
-      message.error(error instanceof Error ? error.message : "打开全局预览失败");
+      message.error(
+        error instanceof Error ? error.message : t("打开全局预览失败"),
+      );
     });
   };
 

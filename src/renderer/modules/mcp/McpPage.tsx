@@ -150,14 +150,16 @@ export const McpPage = () => {
       await refreshMcpServers();
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : "添加 MCP 服务失败");
+      message.error(
+        error instanceof Error ? error.message : t("添加 MCP 服务失败"),
+      );
     },
   });
 
   const updateMcpServerMutation = useMutation({
     mutationFn: async (values: McpFormValues) => {
       if (!editingServer) {
-        throw new Error("缺少待编辑的 MCP 服务");
+        throw new Error(t("缺少待编辑的 MCP 服务"));
       }
 
       const payload = {
@@ -189,7 +191,9 @@ export const McpPage = () => {
       await refreshMcpServers();
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : "更新 MCP 服务失败");
+      message.error(
+        error instanceof Error ? error.message : t("更新 MCP 服务失败"),
+      );
     },
   });
 
@@ -205,7 +209,9 @@ export const McpPage = () => {
       await refreshMcpServers();
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : "切换 MCP 状态失败");
+      message.error(
+        error instanceof Error ? error.message : t("切换 MCP 状态失败"),
+      );
     },
   });
 
@@ -281,7 +287,7 @@ export const McpPage = () => {
       ) {
         return;
       }
-      message.error(error instanceof Error ? error.message : "表单校验失败");
+      message.error(error instanceof Error ? error.message : t("表单校验失败"));
     }
   };
 
@@ -480,7 +486,7 @@ export const McpPage = () => {
                 <Form.Item
                   name="name"
                   label="服务名称"
-                  rules={[{ required: true, message: "请输入服务名称" }]}
+                  rules={[{ required: true, message: t("请输入服务名称") }]}
                 >
                   <Input placeholder="例如：Figma MCP / Browser MCP" />
                 </Form.Item>
@@ -490,7 +496,7 @@ export const McpPage = () => {
                     <Form.Item
                       name="command"
                       label="启动命令"
-                      rules={[{ required: true, message: "请输入启动命令" }]}
+                      rules={[{ required: true, message: t("请输入启动命令") }]}
                     >
                       <Input placeholder="例如：npx -y @modelcontextprotocol/server-filesystem" />
                     </Form.Item>
@@ -526,7 +532,7 @@ export const McpPage = () => {
                     <Form.Item
                       name="url"
                       label="服务 URL"
-                      rules={[{ required: true, message: "请输入服务 URL" }]}
+                      rules={[{ required: true, message: t("请输入服务 URL") }]}
                     >
                       <Input placeholder="例如：https://example.com/mcp" />
                     </Form.Item>

@@ -1,5 +1,7 @@
 import { PlayCircleOutlined, StopOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ScrollArea } from '@renderer/components/ScrollArea';
+import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
+import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { api } from '@renderer/lib/api';
 import type { TaskDTO } from '@shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -91,6 +93,8 @@ const TaskEmptyState = ({
 };
 
 export const TasksPage = () => {
+  const { language } = useAppI18n();
+  const t = (value: string): string => translateUiText(language, value);
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get('task') ?? '';
@@ -129,7 +133,7 @@ export const TasksPage = () => {
       ]);
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : '启动任务失败');
+      message.error(error instanceof Error ? error.message : t('启动任务失败'));
     }
   });
 
@@ -142,7 +146,7 @@ export const TasksPage = () => {
       ]);
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : '停止任务失败');
+      message.error(error instanceof Error ? error.message : t('停止任务失败'));
     }
   });
 
@@ -155,7 +159,7 @@ export const TasksPage = () => {
       await queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : '删除任务失败');
+      message.error(error instanceof Error ? error.message : t('删除任务失败'));
     }
   });
 

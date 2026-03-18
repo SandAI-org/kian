@@ -165,6 +165,34 @@ export const sessionCreateSchema = z.object({
   title: z.string().max(100)
 });
 
+const httpUrlStringSchema = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v && v.length > 0 ? v : undefined))
+  .refine((value) => {
+    if (!value) return true;
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }, 'URL 必须是合法的 http/https 地址');
+
+const customAgentModelSchema = z.object({
+  id: z.string().trim().min(1),
+  name: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  reasoning: z.boolean().default(false),
+  input: z.array(z.enum(['text', 'image'])).default(['text']),
+  contextWindow: z.number().int().positive().max(10_000_000).default(128000),
+  maxTokens: z.number().int().positive().max(10_000_000).default(16384)
+});
+
 export const saveApiKeySchema = z.object({
   provider: z.string().min(1).default('anthropic'),
   enabled: z.boolean(),
@@ -173,7 +201,29 @@ export const saveApiKeySchema = z.object({
     .trim()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
+  baseUrl: httpUrlStringSchema,
+  api: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  customModels: z.array(customAgentModelSchema).default([]),
   enabledModels: z.array(z.string().min(1))
+}).superRefine((input, ctx) => {
+  if (input.customModels.length > 0 && !input.baseUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['baseUrl'],
+      message: '配置自定义模型时必须填写 URL'
+    });
+  }
+  if (input.customModels.length > 0 && !input.api) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['api'],
+      message: '配置自定义模型时必须选择 API 类型'
+    });
+  }
 });
 
 const keyboardShortcutSchema = z.object({

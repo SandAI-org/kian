@@ -10,9 +10,13 @@ import { formatUtcTimestampToLocal } from "@shared/utils/dateTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Space, Spin, Typography, message } from "antd";
 import { CompactDropdown } from "@renderer/components/CompactDropdown";
+import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
+import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { useNavigate } from "react-router-dom";
 
 export const ProjectListPage = () => {
+  const { language } = useAppI18n();
+  const t = (value: string): string => translateUiText(language, value);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const compactCardBodyStyle = { height: "100%", padding: "16px 18px" };
@@ -41,7 +45,7 @@ export const ProjectListPage = () => {
       navigate(`/agent/${project.id}`);
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : "创建失败");
+      message.error(error instanceof Error ? error.message : t("创建失败"));
     },
   });
 
@@ -61,7 +65,7 @@ export const ProjectListPage = () => {
       ]);
     },
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : "删除失败");
+      message.error(error instanceof Error ? error.message : t("删除失败"));
     },
   });
   const projects = projectQuery.data ?? [];

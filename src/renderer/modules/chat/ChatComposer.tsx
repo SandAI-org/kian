@@ -4,7 +4,10 @@ import {
   PlusOutlined,
 } from "@ant-design/icons";
 import { RevealableImage } from "@renderer/components/RevealableImage";
-import { CompactSelect } from "@renderer/components/CompactSelect";
+import {
+  CompactSelect,
+  type CompactSelectOption,
+} from "@renderer/components/CompactSelect";
 import type { ChatThinkingLevel } from "@shared/types";
 import { Button, Input, Tooltip } from "antd";
 import type { ChangeEvent, KeyboardEvent, ReactNode, RefObject } from "react";
@@ -53,7 +56,7 @@ interface ChatComposerProps {
   addFileLabel?: string;
   removeFileLabel?: (fileName: string) => string;
   selectedModel?: string;
-  modelOptions?: Array<{ label: string; value: string }>;
+  modelOptions?: CompactSelectOption[];
   onModelChange?: (value: string) => void;
   selectedThinkingLevel: ChatThinkingLevel;
   onThinkingLevelChange: (value: ChatThinkingLevel) => void;

@@ -8,9 +8,9 @@ const state = vi.hoisted(() => ({
   agentSend: vi.fn(),
   getClaudeStatus: vi.fn(),
   getClaudeSecret: vi.fn(),
+  resolveAgentModel: vi.fn(),
   emitHistoryUpdated: vi.fn(),
   completeSimple: vi.fn(),
-  getModel: vi.fn(),
 }));
 
 vi.mock("../../electron/main/services/repositoryService", () => ({
@@ -33,6 +33,7 @@ vi.mock("../../electron/main/services/settingsService", () => ({
   settingsService: {
     getClaudeStatus: (...args: unknown[]) => state.getClaudeStatus(...args),
     getClaudeSecret: (...args: unknown[]) => state.getClaudeSecret(...args),
+    resolveAgentModel: (...args: unknown[]) => state.resolveAgentModel(...args),
   },
 }));
 
@@ -44,7 +45,6 @@ vi.mock("../../electron/main/services/chatEvents", () => ({
 
 vi.mock("@mariozechner/pi-ai", () => ({
   completeSimple: (...args: unknown[]) => state.completeSimple(...args),
-  getModel: (...args: unknown[]) => state.getModel(...args),
 }));
 
 vi.mock("../../electron/main/services/logger", () => ({
@@ -112,8 +112,10 @@ describe("chatService auto title", () => {
       lastSelectedThinkingLevel: "medium",
     });
     state.getClaudeSecret.mockReset().mockResolvedValue("test-key");
+    state.resolveAgentModel
+      .mockReset()
+      .mockResolvedValue({ id: "mock-model" });
     state.emitHistoryUpdated.mockReset();
-    state.getModel.mockReset().mockReturnValue({ id: "mock-model" });
     state.completeSimple.mockReset().mockResolvedValue({
       content: [{ type: "text", text: "自动标题" }],
     });
@@ -150,7 +152,7 @@ describe("chatService auto title", () => {
     }
 
     expect(state.completeSimple).toHaveBeenCalledTimes(1);
-    expect(state.getModel).toHaveBeenCalledWith(
+    expect(state.resolveAgentModel).toHaveBeenCalledWith(
       "anthropic",
       "claude-3-7-sonnet",
     );

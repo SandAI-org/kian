@@ -282,6 +282,24 @@ const stripProviderPrefixFromModelName = (modelName: string): string => {
   return nameOnly || trimmed;
 };
 
+const formatProviderLabel = (provider: string): string => {
+  switch (provider) {
+    case "openai":
+      return "OpenAI";
+    case "custom-api":
+      return "Custom API";
+    case "openrouter":
+      return "OpenRouter";
+    case "xai":
+      return "xAI";
+    default:
+      return provider
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+  }
+};
+
 const getScopeKey = (scope: ChatScope): string =>
   scope.type === "main" ? "main" : scope.projectId;
 
@@ -1884,7 +1902,7 @@ export const ModuleChatPane = ({
       if (!streamState?.activeRequestId) {
         clearSessionStream(variables.sessionId);
       }
-      message.error(error instanceof Error ? error.message : "发送失败");
+      message.error(error instanceof Error ? error.message : t("发送失败"));
     },
   });
 
@@ -1902,7 +1920,7 @@ export const ModuleChatPane = ({
         requestId,
       }),
     onError: (error) => {
-      message.error(error instanceof Error ? error.message : "打断失败");
+      message.error(error instanceof Error ? error.message : t("打断失败"));
     },
   });
 
@@ -2220,7 +2238,7 @@ export const ModuleChatPane = ({
       const legacyPath = (rawFile as File & { path?: string }).path;
       const sourcePath = api.file.getPathForFile(rawFile) || legacyPath;
       if (!sourcePath) {
-        message.error("当前环境无法读取文件路径");
+        message.error(t("当前环境无法读取文件路径"));
         continue;
       }
 
@@ -2571,7 +2589,6 @@ export const ModuleChatPane = ({
           handleSend();
           return;
         }
-
         if (
           matchesKeyboardShortcut(
             event.nativeEvent,
@@ -2595,7 +2612,8 @@ export const ModuleChatPane = ({
       removeFileLabel={(fileName) => t(`移除文件 ${fileName}`)}
       selectedModel={selectedModel}
       modelOptions={enabledModels.map((m) => ({
-        label: stripProviderPrefixFromModelName(m.modelName),
+        label: `${formatProviderLabel(m.provider)} · ${stripProviderPrefixFromModelName(m.modelName)}`,
+        description: m.modelId,
         value: `${m.provider}:${m.modelId}`,
       }))}
       onModelChange={(value) => {

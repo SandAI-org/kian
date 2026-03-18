@@ -1,4 +1,6 @@
 import { ScrollArea } from '@renderer/components/ScrollArea';
+import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
+import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { api } from '@renderer/lib/api';
 import type { CronJobDTO } from '@shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -47,6 +49,8 @@ const resolveTargetAgentLabel = (job: CronJobDTO): string =>
   job.targetAgentName?.trim() || job.targetAgentId?.trim() || '主 Agent';
 
 export const CronjobPage = () => {
+  const { language } = useAppI18n();
+  const t = (value: string): string => translateUiText(language, value);
   const queryClient = useQueryClient();
   const cronjobQuery = useQuery({
     queryKey: ['cronjobs'],
@@ -81,7 +85,7 @@ export const CronjobPage = () => {
       if (context?.previousJobs) {
         queryClient.setQueryData(['cronjobs'], context.previousJobs);
       }
-      void message.error('切换状态失败');
+      void message.error(t('切换状态失败'));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['cronjobs'] });

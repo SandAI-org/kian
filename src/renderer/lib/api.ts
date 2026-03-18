@@ -5,6 +5,7 @@ import type {
   AppBuildResultDTO,
   BroadcastChannelDTO,
   ChatScope,
+  CustomAgentModelConfigDTO,
   GeneralConfigDTO,
   ShortcutConfigDTO,
   McpServerDTO,
@@ -191,6 +192,9 @@ export const api = {
       provider: string;
       enabled: boolean;
       secret?: string;
+      baseUrl?: string;
+      api?: string;
+      customModels: CustomAgentModelConfigDTO[];
       enabledModels: string[];
     }) =>
       unwrap(await window.api.settings.saveClaudeApiKey(payload)),
