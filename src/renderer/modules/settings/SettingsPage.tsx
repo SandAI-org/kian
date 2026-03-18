@@ -12,6 +12,7 @@ import {
 } from "@renderer/lib/shortcuts";
 import type {
   AgentModelDTO,
+  ClaudeConfigStatus,
   AppUpdateStatusDTO,
   CustomAgentModelConfigDTO,
   KeyboardShortcutDTO,
@@ -294,6 +295,15 @@ const getCustomModelIdsSignatureFromClaudeValues = (
   normalizeCustomModelFormValues(values.customModels)
     .map((model) => model.id)
     .join("|");
+
+const getNormalizedClaudeDraftFromStatus = (
+  provider: string,
+  status?: ClaudeConfigStatus,
+): ClaudeFormValues =>
+  normalizeClaudeDraftValues(
+    getClaudeFormValuesFromProviderConfig(provider, status?.providers[provider]),
+    provider,
+  );
 
 type ChannelFormValues = {
   enabled: boolean;
@@ -758,6 +768,27 @@ export const SettingsPage = () => {
     ],
   );
 
+  const syncClaudeProviderDraftFromStatus = useCallback(
+    (
+      providerId: string,
+      status?: ClaudeConfigStatus,
+      options?: { applyToForm?: boolean },
+    ): ClaudeFormValues => {
+      const syncedDraft = getNormalizedClaudeDraftFromStatus(providerId, status);
+      claudeProviderDraftsRef.current = {
+        ...claudeProviderDraftsRef.current,
+        [providerId]: syncedDraft,
+      };
+      if (options?.applyToForm) {
+        claudeForm.setFieldsValue(syncedDraft);
+        previousCustomModelIdsSignatureRef.current =
+          getCustomModelIdsSignatureFromClaudeValues(syncedDraft);
+      }
+      return syncedDraft;
+    },
+    [claudeForm],
+  );
+
   useEffect(() => {
     if (!generalConfigQuery.data) return;
     generalForm.setFieldsValue({
@@ -787,9 +818,9 @@ export const SettingsPage = () => {
     const nextDrafts = { ...claudeProviderDraftsRef.current };
     for (const sortedProvider of sortedProviders) {
       if (!nextDrafts[sortedProvider.id]) {
-        nextDrafts[sortedProvider.id] = getClaudeFormValuesFromProviderConfig(
+        nextDrafts[sortedProvider.id] = getNormalizedClaudeDraftFromStatus(
           sortedProvider.id,
-          claudeStatusQuery.data.providers[sortedProvider.id],
+          claudeStatusQuery.data,
         );
       }
     }
@@ -1097,6 +1128,7 @@ export const SettingsPage = () => {
 
     const refetchTasks: Array<Promise<unknown>> = [];
     let firstSaveError: string | null = null;
+    let savedClaudeProvider: string | null = null;
 
     const captureSaveError = (error: unknown) => {
       if (firstSaveError) return;
@@ -1156,9 +1188,24 @@ export const SettingsPage = () => {
           customModels: cloneCustomModelFormValues(values.customModels ?? []),
           enabledModels: values.enabledModels,
         };
+        savedClaudeProvider = payload.provider.trim();
         await saveClaudeMutation.mutateAsync(payload);
       },
-      claudeStatusQuery.refetch,
+      async () => {
+        const result = await claudeStatusQuery.refetch();
+        const refreshedStatus = result.data;
+        const savedProvider = savedClaudeProvider;
+        if (!refreshedStatus || !savedProvider) {
+          return result;
+        }
+        const activeProvider = String(
+          claudeForm.getFieldValue("provider") ?? provider,
+        ).trim();
+        syncClaudeProviderDraftFromStatus(savedProvider, refreshedStatus, {
+          applyToForm: activeProvider === savedProvider,
+        });
+        return result;
+      },
     );
 
     await runSaveTask(

@@ -966,4 +966,81 @@ describe("agentService delegation reporting", () => {
       "gpt-5-mini",
     );
   });
+
+  it("uses the current chat scope for send preflight model resolution", async () => {
+    state.getClaudeStatus.mockReset().mockImplementation(async (scope) => {
+      if (
+        scope &&
+        typeof scope === "object" &&
+        "type" in scope &&
+        scope.type === "project"
+      ) {
+        return {
+          allEnabledModels: [{ provider: "openai", modelId: "gpt-5-mini" }],
+          providers: {
+            openai: {
+              apiKey: "openai-key",
+            },
+          },
+          lastSelectedModel: "openai:gpt-5-mini",
+          lastSelectedThinkingLevel: "high",
+        };
+      }
+
+      return {
+        allEnabledModels: [{ provider: "custom-api", modelId: "missing-model" }],
+        providers: {
+          "custom-api": {
+            apiKey: "custom-api-key",
+          },
+        },
+        lastSelectedModel: "custom-api:missing-model",
+        lastSelectedThinkingLevel: "high",
+      };
+    });
+    state.resolveAgentModel.mockReset().mockImplementation(async (provider, modelId) => {
+      if (provider === "openai" && modelId === "gpt-5-mini") {
+        return {
+          provider: "openai",
+          id: "gpt-5-mini",
+          api: "openai-responses",
+          baseUrl: "https://api.openai.com/v1",
+          name: "GPT-5 Mini",
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200000,
+          maxTokens: 8192,
+        };
+      }
+      return null;
+    });
+    state.prompt.mockReset().mockImplementation(async () => {
+      state.sessionListener?.({ type: "agent_end" });
+    });
+
+    const { agentService } =
+      await import("../../electron/main/services/agentService");
+
+    await expect(
+      agentService.send({
+        scope: { type: "project", projectId: "agent-a" },
+        module: "docs",
+        sessionId: "sub-session-scope-preflight",
+        requestId: "sub-request-scope-preflight",
+        message: "继续处理这个任务",
+      }),
+    ).resolves.toMatchObject({
+      assistantMessage: "已处理请求，但未收到 Agent 文本回复。",
+    });
+
+    expect(state.getClaudeStatus).toHaveBeenNthCalledWith(1, {
+      type: "project",
+      projectId: "agent-a",
+    });
+    expect(state.resolveAgentModel).toHaveBeenCalledWith(
+      "openai",
+      "gpt-5-mini",
+    );
+  });
 });

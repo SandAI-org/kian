@@ -1727,7 +1727,7 @@ export const agentService = {
     payload: ChatSendPayload,
     onStream?: (event: ChatStreamEvent) => void,
   ): Promise<ChatSendResponse> {
-    const status = await settingsService.getClaudeStatus();
+    const status = await settingsService.getClaudeStatus(payload.scope);
 
     if (status.allEnabledModels.length === 0) {
       return {
