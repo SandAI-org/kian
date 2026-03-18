@@ -1125,7 +1125,6 @@ export const SettingsPage = () => {
       checkUpdateMutation.isPending ||
       resolvedUpdateStatus?.stage === "checking" ||
       resolvedUpdateStatus?.stage === "downloading" ||
-      resolvedUpdateStatus?.stage === "verifying" ||
       resolvedUpdateStatus?.stage === "downloaded"
     ) {
       return;

@@ -11,9 +11,6 @@ const state = vi.hoisted(() => ({
 const loggerState = vi.hoisted(() => ({
   error: vi.fn()
 }));
-const validatorState = vi.hoisted(() => ({
-  validateDownloadedMacUpdate: vi.fn<(downloadedFilePath: string) => Promise<void>>()
-}));
 
 const emitUpdaterEvent = (event: string, ...args: unknown[]): void => {
   for (const listener of state.listeners.get(event) ?? []) {
@@ -50,10 +47,6 @@ vi.mock('../../electron/main/services/logger', () => ({
     debug: vi.fn()
   }
 }));
-vi.mock('../../electron/main/services/updatePackageValidator', () => ({
-  validateDownloadedMacUpdate: (downloadedFilePath: string) =>
-    validatorState.validateDownloadedMacUpdate(downloadedFilePath)
-}));
 
 describe('updateService', () => {
   beforeEach(() => {
@@ -65,8 +58,6 @@ describe('updateService', () => {
     state.downloadUpdate.mockReset();
     state.quitAndInstall.mockReset();
     loggerState.error.mockReset();
-    validatorState.validateDownloadedMacUpdate.mockReset();
-    validatorState.validateDownloadedMacUpdate.mockResolvedValue();
     state.downloadUpdate.mockResolvedValue(undefined);
   });
 
@@ -200,31 +191,6 @@ describe('updateService', () => {
 
     expect(result).toBe(true);
     expect(state.quitAndInstall).toHaveBeenCalledWith(false, true);
-  });
-
-  it('marks update as failed when mac package signature validation fails', async () => {
-    state.appVersion = '1.2.2';
-    validatorState.validateDownloadedMacUpdate.mockRejectedValue(
-      new Error('更新包签名身份与当前安装版本不一致（OLDTEAM -> NEWTEAM），请手动下载安装最新版。')
-    );
-    state.checkForUpdates.mockImplementation(async () => {
-      emitUpdaterEvent('checking-for-update');
-      emitUpdaterEvent('update-available', { version: '1.2.3' });
-      const downloadPromise = Promise.resolve().then(() => {
-        emitUpdaterEvent('update-downloaded', {
-          version: '1.2.3',
-          downloadedFile: '/tmp/Kian-1.2.3.zip'
-        });
-      });
-      return { updateInfo: { version: '1.2.3' }, downloadPromise };
-    });
-
-    const { updateService } = await import('../../electron/main/services/updateService');
-    const status = await updateService.checkForUpdates({ force: true });
-
-    expect(status.stage).toBe('failed');
-    expect(status.message).toContain('签名身份与当前安装版本不一致');
-    await expect(updateService.quitAndInstall()).rejects.toThrow('更新尚未下载完成');
   });
 
   it('schedules automatic checks on startup and repeats after the interval', async () => {

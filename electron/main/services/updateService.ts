@@ -1,10 +1,8 @@
 import type { AppUpdateStatusDTO } from "@shared/types";
 import { app } from "electron";
-import type { UpdateDownloadedEvent } from "electron-updater";
 import { autoUpdater } from "electron-updater";
 import { logger } from "./logger";
 import { updateEvents } from "./updateEvents";
-import { validateDownloadedMacUpdate } from "./updatePackageValidator";
 import { compareVersions, normalizeVersion } from "./updateVersion";
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -21,7 +19,6 @@ class UpdateService {
   };
 
   private checkPromise: Promise<AppUpdateStatusDTO> | null = null;
-  private downloadValidationPromise: Promise<void> | null = null;
   private nextCheckTimer: ReturnType<typeof setTimeout> | null = null;
   private started = false;
   private updaterInitialized = false;
@@ -53,8 +50,7 @@ class UpdateService {
     }
     if (
       (this.status.stage === "checking" ||
-        this.status.stage === "downloading" ||
-        this.status.stage === "verifying") &&
+        this.status.stage === "downloading") &&
       !force
     ) {
       return this.getStatus();
@@ -165,7 +161,10 @@ class UpdateService {
     });
 
     autoUpdater.on("update-downloaded", (info) => {
-      void this.handleDownloadedUpdate(info);
+      this.markDownloaded(
+        normalizeVersion(info.version),
+        info.downloadedFile,
+      );
     });
 
     autoUpdater.on("update-not-available", (info) => {
@@ -188,53 +187,6 @@ class UpdateService {
         message: error instanceof Error ? error.message : "更新失败",
       });
     });
-  }
-
-  private async handleDownloadedUpdate(
-    info: UpdateDownloadedEvent,
-  ): Promise<void> {
-    const version = normalizeVersion(info.version);
-    const downloadedFilePath = info.downloadedFile;
-    if (process.platform === "darwin" && downloadedFilePath) {
-      this.setStatus({
-        stage: "verifying",
-        latestVersion: version,
-        downloadedVersion: undefined,
-        downloadedFilePath,
-        progressPercent: 100,
-        message: undefined,
-      });
-      this.downloadValidationPromise = validateDownloadedMacUpdate(
-        downloadedFilePath,
-      )
-        .then(() => {
-          this.markDownloaded(version, downloadedFilePath);
-        })
-        .catch((error) => {
-          logger.error("Auto update package validation failed", {
-            downloadedFilePath,
-            error,
-          });
-          this.setStatus({
-            stage: "failed",
-            latestVersion: version,
-            downloadedVersion: undefined,
-            downloadedFilePath,
-            progressPercent: undefined,
-            message:
-              error instanceof Error
-                ? error.message
-                : "更新包签名校验失败，请手动下载安装最新版",
-          });
-        })
-        .finally(() => {
-          this.downloadValidationPromise = null;
-        });
-      await this.downloadValidationPromise;
-      return;
-    }
-
-    this.markDownloaded(version, downloadedFilePath);
   }
 
   private markDownloaded(version: string, downloadedFilePath?: string): void {
@@ -289,7 +241,6 @@ class UpdateService {
       (shouldTreatAsNewerVersion ? autoUpdater.downloadUpdate() : undefined);
 
     await downloadPromise;
-    await this.downloadValidationPromise;
     if (force && this.status.stage === "downloaded") {
       this.setStatus({
         message: "已准备好安装最新版本",

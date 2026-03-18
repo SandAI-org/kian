@@ -1,5 +1,6 @@
 import { session, systemPreferences } from 'electron';
 import { logger } from './logger';
+import { APP_PREVIEW_PARTITION } from './appPreviewWindowService';
 
 const PREVIEW_ORIGIN_PREFIX = 'kian-local://local';
 const APP_SHELL_ORIGIN_PREFIXES = [
@@ -106,147 +107,155 @@ const isPreviewRequest = (input: {
   isPreviewOrigin(input.webContentsUrl);
 
 export const registerAppPreviewPermissionService = (): void => {
-  const defaultSession = session.defaultSession;
-  if (!defaultSession) return;
-
-  defaultSession.setPermissionCheckHandler(
-    (webContents, permission, requestingOrigin, details) => {
-      if (!isMediaPermission(permission)) {
-        return false;
-      }
-
-      const mediaType =
-        details && 'mediaType' in details && typeof details.mediaType === 'string'
-          ? details.mediaType
-          : undefined;
-      const mediaTypes = mediaType ? [mediaType] : undefined;
-      const requestingUrl =
-        details && 'requestingUrl' in details && typeof details.requestingUrl === 'string'
-          ? details.requestingUrl
-          : undefined;
-      const securityOrigin =
-        details && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
-          ? details.securityOrigin
-          : undefined;
-
-      const allowedByOrigin = isPreviewRequest({
-        requestingOrigin,
-        embeddingOrigin: undefined,
-        webContentsUrl: webContents?.getURL(),
-      }) ||
-      isPreviewOrigin(requestingUrl) ||
-      isPreviewOrigin(securityOrigin) ||
-      isAppShellOrigin(requestingOrigin) ||
-      isAppShellOrigin(requestingUrl) ||
-      isAppShellOrigin(securityOrigin) ||
-      isAppShellOrigin(webContents?.getURL());
-
-      if (!allowedByOrigin) {
-        logger.warn('Denied media permission check by origin gate', {
-          permission,
-          requestingOrigin,
-          requestingUrl,
-          securityOrigin,
-          webContentsUrl: webContents?.getURL(),
-          mediaType,
-        });
-        return false;
-      }
-
-      if (!hasAllowedMediaTypes(mediaTypes)) {
-        logger.warn('Denied media permission check by mediaType gate', {
-          permission,
-          requestingOrigin,
-          requestingUrl,
-          securityOrigin,
-          webContentsUrl: webContents?.getURL(),
-          mediaType,
-        });
-        return false;
-      }
-
-      return true;
-    },
+  const managedSessions = Array.from(
+    new Set(
+      [session.defaultSession, session.fromPartition(APP_PREVIEW_PARTITION)].filter(
+        (value): value is Electron.Session => Boolean(value),
+      ),
+    ),
   );
+  if (managedSessions.length === 0) return;
 
-  defaultSession.setPermissionRequestHandler(
-    (webContents, permission, callback, details) => {
-      if (!isMediaPermission(permission)) {
-        callback(false);
-        return;
-      }
+  for (const managedSession of managedSessions) {
+    managedSession.setPermissionCheckHandler(
+      (webContents, permission, requestingOrigin, details) => {
+        if (!isMediaPermission(permission)) {
+          return false;
+        }
 
-      const requestingOrigin =
-        'requestingOrigin' in details
-          ? toOptionalString(details.requestingOrigin)
-          : undefined;
-      const embeddingOrigin =
-        'embeddingOrigin' in details
-          ? toOptionalString(details.embeddingOrigin)
-          : undefined;
-      const mediaTypes =
-        'mediaTypes' in details
-          ? toOptionalStringArray(details.mediaTypes)
-          : undefined;
-      const requestingUrl =
-        'requestingUrl' in details
-          ? toOptionalString(details.requestingUrl)
-          : undefined;
-      const securityOrigin =
-        'securityOrigin' in details
-          ? toOptionalString(details.securityOrigin)
-          : undefined;
-      const allowedByOrigin = isPreviewRequest({
-        requestingOrigin,
-        embeddingOrigin,
-        webContentsUrl: webContents?.getURL(),
-      }) ||
-      isPreviewOrigin(requestingUrl) ||
-      isPreviewOrigin(securityOrigin) ||
-      isAppShellOrigin(requestingOrigin) ||
-      isAppShellOrigin(embeddingOrigin) ||
-      isAppShellOrigin(requestingUrl) ||
-      isAppShellOrigin(securityOrigin) ||
-      isAppShellOrigin(webContents?.getURL());
-      if (!allowedByOrigin) {
-        logger.warn('Denied media permission by origin gate', {
-          permission,
+        const mediaType =
+          details && 'mediaType' in details && typeof details.mediaType === 'string'
+            ? details.mediaType
+            : undefined;
+        const mediaTypes = mediaType ? [mediaType] : undefined;
+        const requestingUrl =
+          details && 'requestingUrl' in details && typeof details.requestingUrl === 'string'
+            ? details.requestingUrl
+            : undefined;
+        const securityOrigin =
+          details && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
+            ? details.securityOrigin
+            : undefined;
+
+        const allowedByOrigin = isPreviewRequest({
+          requestingOrigin,
+          embeddingOrigin: undefined,
+          webContentsUrl: webContents?.getURL(),
+        }) ||
+        isPreviewOrigin(requestingUrl) ||
+        isPreviewOrigin(securityOrigin) ||
+        isAppShellOrigin(requestingOrigin) ||
+        isAppShellOrigin(requestingUrl) ||
+        isAppShellOrigin(securityOrigin) ||
+        isAppShellOrigin(webContents?.getURL());
+
+        if (!allowedByOrigin) {
+          logger.warn('Denied media permission check by origin gate', {
+            permission,
+            requestingOrigin,
+            requestingUrl,
+            securityOrigin,
+            webContentsUrl: webContents?.getURL(),
+            mediaType,
+          });
+          return false;
+        }
+
+        if (!hasAllowedMediaTypes(mediaTypes)) {
+          logger.warn('Denied media permission check by mediaType gate', {
+            permission,
+            requestingOrigin,
+            requestingUrl,
+            securityOrigin,
+            webContentsUrl: webContents?.getURL(),
+            mediaType,
+          });
+          return false;
+        }
+
+        return true;
+      },
+    );
+
+    managedSession.setPermissionRequestHandler(
+      (webContents, permission, callback, details) => {
+        if (!isMediaPermission(permission)) {
+          callback(false);
+          return;
+        }
+
+        const requestingOrigin =
+          'requestingOrigin' in details
+            ? toOptionalString(details.requestingOrigin)
+            : undefined;
+        const embeddingOrigin =
+          'embeddingOrigin' in details
+            ? toOptionalString(details.embeddingOrigin)
+            : undefined;
+        const mediaTypes =
+          'mediaTypes' in details
+            ? toOptionalStringArray(details.mediaTypes)
+            : undefined;
+        const requestingUrl =
+          'requestingUrl' in details
+            ? toOptionalString(details.requestingUrl)
+            : undefined;
+        const securityOrigin =
+          'securityOrigin' in details
+            ? toOptionalString(details.securityOrigin)
+            : undefined;
+        const allowedByOrigin = isPreviewRequest({
           requestingOrigin,
           embeddingOrigin,
-          requestingUrl,
-          securityOrigin,
           webContentsUrl: webContents?.getURL(),
-          mediaTypes,
-        });
-        callback(false);
-        return;
-      }
-
-      if (permission === 'media') {
-        if (!hasAllowedMediaTypes(mediaTypes)) {
-          logger.warn('Denied media permission by mediaTypes gate', {
-            mediaTypes,
+        }) ||
+        isPreviewOrigin(requestingUrl) ||
+        isPreviewOrigin(securityOrigin) ||
+        isAppShellOrigin(requestingOrigin) ||
+        isAppShellOrigin(embeddingOrigin) ||
+        isAppShellOrigin(requestingUrl) ||
+        isAppShellOrigin(securityOrigin) ||
+        isAppShellOrigin(webContents?.getURL());
+        if (!allowedByOrigin) {
+          logger.warn('Denied media permission by origin gate', {
+            permission,
             requestingOrigin,
             embeddingOrigin,
             requestingUrl,
             securityOrigin,
             webContentsUrl: webContents?.getURL(),
+            mediaTypes,
           });
           callback(false);
           return;
         }
 
-        void ensureMacMediaAccess(mediaTypes)
-          .then((granted) => {
-            callback(granted);
-          })
-          .catch(() => {
+        if (permission === 'media') {
+          if (!hasAllowedMediaTypes(mediaTypes)) {
+            logger.warn('Denied media permission by mediaTypes gate', {
+              mediaTypes,
+              requestingOrigin,
+              embeddingOrigin,
+              requestingUrl,
+              securityOrigin,
+              webContentsUrl: webContents?.getURL(),
+            });
             callback(false);
-          });
-        return;
-      }
+            return;
+          }
 
-      callback(true);
-    },
-  );
+          void ensureMacMediaAccess(mediaTypes)
+            .then((granted) => {
+              callback(granted);
+            })
+            .catch(() => {
+              callback(false);
+            });
+          return;
+        }
+
+        callback(true);
+      },
+    );
+  }
 };

@@ -2,7 +2,6 @@ import type { AppUpdateStage, AppUpdateStatusDTO } from "@shared/types";
 
 const PROGRESS_STAGES = new Set<AppUpdateStatusDTO["stage"]>([
   "downloading",
-  "verifying",
   "downloaded",
 ]);
 
@@ -27,8 +26,6 @@ const getStageLabel = (stage: AppUpdateStage): string | null => {
       return "发现新版本";
     case "downloading":
       return "正在下载更新";
-    case "verifying":
-      return "正在校验更新包";
     case "downloaded":
       return "更新已下载，可安装";
     case "upToDate":
@@ -46,12 +43,10 @@ export const getAboutUpdatePresentation = (
   const stage = status?.stage ?? "idle";
   const canInstallUpdate = stage === "downloaded";
   const isUpdateChecking = stage === "checking";
-  const isUpdateInFlight =
-    stage === "downloading" || stage === "verifying";
-  const progressPercent =
-    canInstallUpdate || stage === "verifying"
-      ? 100
-      : clampPercent(status?.progressPercent);
+  const isUpdateInFlight = stage === "downloading";
+  const progressPercent = canInstallUpdate
+    ? 100
+    : clampPercent(status?.progressPercent);
 
   return {
     canInstallUpdate,

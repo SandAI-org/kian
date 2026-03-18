@@ -8,6 +8,7 @@ import {
   nativeImage,
   net,
   protocol,
+  session,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions
 } from 'electron';
@@ -32,7 +33,10 @@ import { taskSupervisorService } from './services/taskSupervisorService';
 import { resolveLocalMediaPath } from './services/localMediaPath';
 import { updateEvents } from './services/updateEvents';
 import { updateService } from './services/updateService';
-import { appPreviewWindowService } from './services/appPreviewWindowService';
+import {
+  APP_PREVIEW_PARTITION,
+  appPreviewWindowService
+} from './services/appPreviewWindowService';
 import {
   APP_WEB_SDK_SAVE_FILE_PATH,
   injectAppWebSdkIntoHtml,
@@ -384,7 +388,7 @@ const handleSaveFileToAssets = async (request: Request, parsed: URL): Promise<Re
 };
 
 const registerLocalMediaProtocol = (): void => {
-  protocol.handle(LOCAL_MEDIA_SCHEME, async (request) => {
+  const handler = async (request: Request): Promise<Response> => {
     try {
       const parsed = new URL(request.url);
       if (parsed.hostname !== 'local') {
@@ -427,7 +431,19 @@ const registerLocalMediaProtocol = (): void => {
     } catch {
       return new Response('Bad Request', { status: 400 });
     }
-  });
+  };
+
+  const targetSessions = Array.from(
+    new Set(
+      [session.defaultSession, session.fromPartition(APP_PREVIEW_PARTITION)].filter(
+        (value): value is Electron.Session => Boolean(value),
+      ),
+    ),
+  );
+
+  for (const targetSession of targetSessions) {
+    targetSession.protocol.handle(LOCAL_MEDIA_SCHEME, handler);
+  }
 };
 
 const createApplicationMenu = async (): Promise<void> => {

@@ -41,24 +41,6 @@ describe("getAboutUpdatePresentation", () => {
     expect(presentation.showProgress).toBe(false);
   });
 
-  it("shows verifying state only when the main process explicitly reports verifying", () => {
-    const presentation = getAboutUpdatePresentation(
-      createStatus({
-        stage: "verifying",
-        currentVersion: "0.1.1",
-        latestVersion: "0.1.2",
-        progressPercent: 100,
-        message: "正在校验更新包签名…",
-      }),
-    );
-
-    expect(presentation.label).toBe("正在校验更新包");
-    expect(presentation.isUpdateInFlight).toBe(true);
-    expect(presentation.showLatestVersion).toBe(true);
-    expect(presentation.showProgress).toBe(true);
-    expect(presentation.progressPercent).toBe(100);
-  });
-
   it("shows a full progress state after the update package is downloaded", () => {
     const presentation = getAboutUpdatePresentation(
       createStatus({

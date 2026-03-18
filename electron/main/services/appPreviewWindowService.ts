@@ -6,7 +6,7 @@ import { logger } from './logger';
 import { settingsService } from './settingsService';
 
 const LOCAL_MEDIA_SCHEME_PREFIX = 'kian-local://local/';
-const APP_PREVIEW_PARTITION = 'kian-app-preview';
+export const APP_PREVIEW_PARTITION = 'kian-app-preview';
 
 const APP_TYPE_TITLES: Record<AppLanguage, Record<AppType, string>> = {
   'zh-CN': {
