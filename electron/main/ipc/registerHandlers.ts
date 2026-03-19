@@ -495,6 +495,7 @@ export const registerHandlers = (options?: RegisterHandlersOptions): void => {
       await settingsService.saveGeneralConfig({
         workspaceRoot: input.workspaceRoot,
         language: input.language,
+        themeMode: input.themeMode,
         linkOpenMode: input.linkOpenMode,
         mainSubModeEnabled: true,
         quickGuideDismissed: input.quickGuideDismissed,

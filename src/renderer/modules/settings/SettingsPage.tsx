@@ -5,6 +5,7 @@ import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { DEFAULT_APP_LANGUAGE, type AppLanguage } from "@shared/i18n";
+import { DEFAULT_APP_THEME_MODE, type AppThemeMode } from "@shared/theme";
 import { getAboutUpdatePresentation } from "@renderer/modules/settings/updatePresentation";
 import {
   formatKeyboardShortcut,
@@ -148,6 +149,7 @@ type ChannelFormValues = {
 type GeneralFormValues = {
   workspaceRoot: string;
   language: AppLanguage;
+  themeMode: AppThemeMode;
   linkOpenMode: "builtin" | "system";
 };
 
@@ -170,6 +172,105 @@ interface ModelSwitchGridItem {
   title: string;
   description: string;
 }
+
+type SettingsGuideCardTone = "blue" | "cyan" | "green";
+
+const SettingsGuideCard = ({
+  title,
+  steps,
+  tone = "blue",
+}: {
+  title: string;
+  steps: string[];
+  tone?: SettingsGuideCardTone;
+}) => (
+  <div className={`settings-guide-card settings-guide-card--${tone}`}>
+    <div className="settings-guide-card__glow settings-guide-card__glow--primary" />
+    <div className="settings-guide-card__glow settings-guide-card__glow--secondary" />
+    <Typography.Text strong className="settings-guide-card__title">
+      {title}
+    </Typography.Text>
+    <div className="settings-guide-card__steps">
+      {steps.map((step) => (
+        <div key={step} className="settings-guide-card__step">
+          {step}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ThemeModeSelector = ({
+  value = DEFAULT_APP_THEME_MODE,
+  onChange,
+  t,
+}: {
+  value?: AppThemeMode;
+  onChange?: (value: AppThemeMode) => void;
+  t: (value: string) => string;
+}) => {
+  const options: Array<{ value: AppThemeMode; label: string }> = [
+    { value: "system", label: t("跟随系统") },
+    { value: "light", label: t("浅色模式") },
+    { value: "dark", label: t("深色模式") },
+  ];
+
+  return (
+    <div className="theme-mode-picker" role="radiogroup" aria-label={t("外观")}>
+      {options.map((option) => {
+        const selected = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            className={`theme-mode-card${selected ? " is-selected" : ""}`}
+            onClick={() => onChange?.(option.value)}
+          >
+            <div className={`theme-mode-card__preview theme-mode-card__preview--${option.value}`}>
+              <div className="theme-mode-card__window">
+                <div className="theme-mode-card__toolbar">
+                  <span className="theme-mode-card__traffic theme-mode-card__traffic--red" />
+                  <span className="theme-mode-card__traffic theme-mode-card__traffic--yellow" />
+                  <span className="theme-mode-card__traffic theme-mode-card__traffic--green" />
+                </div>
+                <div className="theme-mode-card__body">
+                  <div className="theme-mode-card__sidebar" />
+                  <div className="theme-mode-card__content">
+                    <div className="theme-mode-card__hero" />
+                    <div className="theme-mode-card__line theme-mode-card__line--strong" />
+                    <div className="theme-mode-card__line" />
+                    <div className="theme-mode-card__line theme-mode-card__line--short" />
+                  </div>
+                </div>
+              </div>
+              {option.value === "system" ? (
+                <div className="theme-mode-card__window theme-mode-card__window--overlay">
+                  <div className="theme-mode-card__toolbar">
+                    <span className="theme-mode-card__traffic theme-mode-card__traffic--red" />
+                    <span className="theme-mode-card__traffic theme-mode-card__traffic--yellow" />
+                    <span className="theme-mode-card__traffic theme-mode-card__traffic--green" />
+                  </div>
+                  <div className="theme-mode-card__body">
+                    <div className="theme-mode-card__sidebar" />
+                    <div className="theme-mode-card__content">
+                      <div className="theme-mode-card__hero" />
+                      <div className="theme-mode-card__line theme-mode-card__line--strong" />
+                      <div className="theme-mode-card__line" />
+                      <div className="theme-mode-card__line theme-mode-card__line--short" />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <span className="theme-mode-card__label">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 const ModelSwitchGrid = ({
   items,
@@ -336,6 +437,9 @@ export const SettingsPage = () => {
   const languageValue =
     Form.useWatch("language", { form: generalForm, preserve: true }) ??
     DEFAULT_APP_LANGUAGE;
+  const themeModeValue =
+    Form.useWatch("themeMode", { form: generalForm, preserve: true }) ??
+    DEFAULT_APP_THEME_MODE;
   const linkOpenModeValue =
     Form.useWatch("linkOpenMode", { form: generalForm, preserve: true }) ??
     "builtin";
@@ -463,6 +567,7 @@ export const SettingsPage = () => {
       api.settings.saveGeneralConfig({
         workspaceRoot: values.workspaceRoot,
         language: values.language,
+        themeMode: values.themeMode,
         linkOpenMode: values.linkOpenMode,
         mainSubModeEnabled: true,
         quickGuideDismissed:
@@ -562,6 +667,7 @@ export const SettingsPage = () => {
     generalForm.setFieldsValue({
       workspaceRoot: generalConfigQuery.data.workspaceRoot,
       language: generalConfigQuery.data.language,
+      themeMode: generalConfigQuery.data.themeMode,
       linkOpenMode: generalConfigQuery.data.linkOpenMode,
     });
   }, [generalForm, generalConfigQuery.data]);
@@ -715,6 +821,7 @@ export const SettingsPage = () => {
   const generalDirty = generalConfig
     ? String(workspaceRootValue ?? "") !== generalConfig.workspaceRoot ||
       languageValue !== generalConfig.language ||
+      themeModeValue !== generalConfig.themeMode ||
       linkOpenModeValue !== generalConfig.linkOpenMode
     : false;
   const savedShortcutConfig =
@@ -835,6 +942,7 @@ export const SettingsPage = () => {
         await saveGeneralMutation.mutateAsync({
           workspaceRoot: String(values.workspaceRoot ?? ""),
           language: values.language ?? DEFAULT_APP_LANGUAGE,
+          themeMode: values.themeMode ?? DEFAULT_APP_THEME_MODE,
           linkOpenMode:
             values.linkOpenMode === "system" ? "system" : "builtin",
         });
@@ -997,6 +1105,7 @@ export const SettingsPage = () => {
       [
         workspaceRootValue,
         languageValue,
+        themeModeValue,
         linkOpenModeValue,
         shortcutConfigToSignature(shortcutConfigDraft),
         provider,
@@ -1025,6 +1134,7 @@ export const SettingsPage = () => {
     [
       workspaceRootValue,
       languageValue,
+      themeModeValue,
       linkOpenModeValue,
       shortcutConfigDraft,
       provider,
@@ -1275,9 +1385,17 @@ export const SettingsPage = () => {
                       initialValues={{
                         workspaceRoot: "",
                         language: DEFAULT_APP_LANGUAGE,
+                        themeMode: DEFAULT_APP_THEME_MODE,
                         linkOpenMode: "builtin",
                       }}
                     >
+                      <Form.Item
+                        name="themeMode"
+                        label={t("外观")}
+                      >
+                        <ThemeModeSelector t={t} />
+                      </Form.Item>
+
                       <Form.Item
                         name="workspaceRoot"
                         label="数据存放目录"
@@ -1761,26 +1879,22 @@ export const SettingsPage = () => {
                                     />
                                   </Form.Item>
 
-                                  <div className="mt-1 rounded-xl border border-[#d6e6ff] bg-gradient-to-br from-[#eef5ff] via-[#f7fbff] to-[#ebfffa] p-4 shadow-[0_10px_24px_rgba(47,111,247,0.1)]">
-                                    <Typography.Text
-                                      strong
-                                      className="text-slate-800"
-                                    >
-                                      Telegram 接入方式指引
-                                    </Typography.Text>
-                                    <div className="mt-2 space-y-1 text-xs text-slate-700">
-                                      <div>
-                                        1. 在 Telegram 中通过 BotFather 创建
-                                        Bot，并获取 Bot Token。
-                                      </div>
-                                      <div>
-                                        2. 给 Bot 发送消息，获取自己的
-                                        user_id（纯数字）。
-                                      </div>
-                                      <div>
-                                        3. 配置允许与 Bot 对话的 user_id 列表。
-                                      </div>
-                                    </div>
+                                  <div className="mt-1">
+                                    <SettingsGuideCard
+                                      tone="blue"
+                                      title={t("Telegram 接入方式指引")}
+                                      steps={[
+                                        t(
+                                          "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。",
+                                        ),
+                                        t(
+                                          "2. 给 Bot 发送消息，获取自己的 user_id（纯数字）。",
+                                        ),
+                                        t(
+                                          "3. 配置允许与 Bot 对话的 user_id 列表。",
+                                        ),
+                                      ]}
+                                    />
                                   </div>
                                 </>
                               ) : null}
@@ -1935,26 +2049,22 @@ export const SettingsPage = () => {
                                     />
                                   </Form.Item>
 
-                                  <div className="mt-1 rounded-xl border border-[#d4e4ff] bg-gradient-to-br from-[#edf3ff] via-[#f6f9ff] to-[#ebf9ff] p-4 shadow-[0_10px_24px_rgba(51,108,214,0.12)]">
-                                    <Typography.Text
-                                      strong
-                                      className="text-slate-800"
-                                    >
-                                      Discord 接入方式指引
-                                    </Typography.Text>
-                                    <div className="mt-2 space-y-1 text-xs text-slate-700">
-                                      <div>
-                                        1. 在 Discord Developer Portal
-                                        创建应用并添加 Bot，复制 Bot Token。
-                                      </div>
-                                      <div>
-                                        2. 将 Bot
-                                        邀请进目标服务器并授予可读取/发送消息权限。
-                                      </div>
-                                      <div>
-                                        3. 配置允许接入的服务器 ID 与频道 ID。
-                                      </div>
-                                    </div>
+                                  <div className="mt-1">
+                                    <SettingsGuideCard
+                                      tone="cyan"
+                                      title={t("Discord 接入方式指引")}
+                                      steps={[
+                                        t(
+                                          "1. 在 Discord Developer Portal 创建应用并添加 Bot，复制 Bot Token。",
+                                        ),
+                                        t(
+                                          "2. 将 Bot 邀请进目标服务器并授予可读取/发送消息权限。",
+                                        ),
+                                        t(
+                                          "3. 配置允许接入的服务器 ID 与频道 ID。",
+                                        ),
+                                      ]}
+                                    />
                                   </div>
                                 </>
                               ) : null}
@@ -2041,33 +2151,28 @@ export const SettingsPage = () => {
                                     <Input.Password placeholder="sec_xxx" />
                                   </Form.Item>
 
-                                  <div className="mt-1 rounded-xl border border-[#d8e7ff] bg-gradient-to-br from-[#eef6ff] via-[#f7fbff] to-[#effff2] p-4 shadow-[0_10px_24px_rgba(56,124,94,0.1)]">
-                                    <Typography.Text
-                                      strong
-                                      className="text-slate-800"
-                                    >
-                                      飞书接入方式指引
-                                    </Typography.Text>
-                                    <div className="mt-2 space-y-1 text-xs text-slate-700">
-                                      <div>
-                                        1. 在飞书开发者后台创建应用，获取 app_id
-                                        与 app_secret。
-                                      </div>
-                                      <div>
-                                        2. 在配置中分别填写 AppID 与 AppSecret。
-                                      </div>
-                                      <div>
-                                        3. 事件与回调使用长链接接受事件，添加
-                                        im.message.receive_v1 事件。
-                                      </div>
-                                      <div>
-                                        4. 添加 im:message 和 im:resource 权限。
-                                      </div>
-                                      <div>
-                                        5.
-                                        成员管理中只添加自己（自己使用确保安全，同时可以免审核发布）。
-                                      </div>
-                                    </div>
+                                  <div className="mt-1">
+                                    <SettingsGuideCard
+                                      tone="green"
+                                      title={t("飞书接入方式指引")}
+                                      steps={[
+                                        t(
+                                          "1. 在飞书开发者后台创建应用，获取 app_id 与 app_secret。",
+                                        ),
+                                        t(
+                                          "2. 在配置中分别填写 AppID 与 AppSecret。",
+                                        ),
+                                        t(
+                                          "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。",
+                                        ),
+                                        t(
+                                          "4. 添加 im:message 和 im:resource 权限。",
+                                        ),
+                                        t(
+                                          "5. 成员管理中只添加自己（自己使用确保安全，同时可以免审核发布）。",
+                                        ),
+                                      ]}
+                                    />
                                   </div>
                                 </>
                               ) : null}
@@ -2184,41 +2289,35 @@ export const SettingsPage = () => {
                     )}
 
                     <div className="mt-4 space-y-3">
-                      <div className="rounded-xl border border-[#d8e7ff] bg-gradient-to-br from-[#eef6ff] via-[#f7fbff] to-[#effff2] p-4 shadow-[0_10px_24px_rgba(56,124,94,0.1)]">
-                        <Typography.Text strong className="text-slate-800">
-                          如何获取飞书群机器人 Webhook
-                        </Typography.Text>
-                        <div className="mt-2 space-y-1 text-xs text-slate-700">
-                          <div>1. 打开目标飞书群，点击右上角”设置”。</div>
-                          <div>2. 进入”群机器人”，添加”自定义机器人”。</div>
-                          <div>
-                            3.
-                            按提示设置机器人名称与安全策略（如关键词或签名）。
-                          </div>
-                          <div>
-                            4. 创建完成后复制 Webhook
-                            地址，粘贴到上方渠道配置中。
-                          </div>
-                        </div>
-                      </div>
+                      <SettingsGuideCard
+                        tone="green"
+                        title={t("如何获取飞书群机器人 Webhook")}
+                        steps={[
+                          t("1. 打开目标飞书群，点击右上角”设置”。"),
+                          t("2. 进入”群机器人”，添加”自定义机器人”。"),
+                          t(
+                            "3. 按提示设置机器人名称与安全策略（如关键词或签名）。",
+                          ),
+                          t(
+                            "4. 创建完成后复制 Webhook 地址，粘贴到上方渠道配置中。",
+                          ),
+                        ]}
+                      />
 
-                      <div className="rounded-xl border border-[#d6e6d8] bg-gradient-to-br from-[#f0f7f0] via-[#f7fbf7] to-[#ebfff0] p-4 shadow-[0_10px_24px_rgba(56,124,80,0.1)]">
-                        <Typography.Text strong className="text-slate-800">
-                          如何获取企业微信群机器人 Webhook
-                        </Typography.Text>
-                        <div className="mt-2 space-y-1 text-xs text-slate-700">
-                          <div>1. 打开企业微信桌面端，进入目标群聊。</div>
-                          <div>
-                            2.
-                            右键群聊，选择”添加群机器人”，点击”新创建一个机器人”。
-                          </div>
-                          <div>3. 设置机器人名称和头像，点击”添加”。</div>
-                          <div>
-                            4. 创建完成后复制 Webhook
-                            地址，粘贴到上方渠道配置中。
-                          </div>
-                        </div>
-                      </div>
+                      <SettingsGuideCard
+                        tone="cyan"
+                        title={t("如何获取企业微信群机器人 Webhook")}
+                        steps={[
+                          t("1. 打开企业微信桌面端，进入目标群聊。"),
+                          t(
+                            "2. 右键群聊，选择”添加群机器人”，点击”新创建一个机器人”。",
+                          ),
+                          t("3. 设置机器人名称和头像，点击”添加”。"),
+                          t(
+                            "4. 创建完成后复制 Webhook 地址，粘贴到上方渠道配置中。",
+                          ),
+                        ]}
+                      />
                     </div>
                   </div>
                 </ScrollArea>

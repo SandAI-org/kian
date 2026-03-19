@@ -153,10 +153,45 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
             <div className="asset-empty__glow asset-empty__glow--two" />
             <div className="asset-empty__icon">
               <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="10" y="14" width="30" height="24" rx="4" stroke="#c4d3eb" strokeWidth="1.5" fill="none" opacity="0.5" transform="rotate(-3 25 26)" />
-                <rect x="16" y="10" width="30" height="24" rx="4" stroke="#b0c4de" strokeWidth="1.5" fill="#f8fbff" transform="rotate(2 31 22)" />
-                <circle cx="25" cy="19" r="3" stroke="#b0c4de" strokeWidth="1.2" fill="none" />
-                <path d="M18 30 L26 23 L31 27 L38 20 L44 26" stroke="#b0c4de" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <rect
+                  x="10"
+                  y="14"
+                  width="30"
+                  height="24"
+                  rx="4"
+                  stroke="var(--asset-empty-icon-stroke-soft)"
+                  strokeWidth="1.5"
+                  fill="none"
+                  opacity="0.5"
+                  transform="rotate(-3 25 26)"
+                />
+                <rect
+                  x="16"
+                  y="10"
+                  width="30"
+                  height="24"
+                  rx="4"
+                  stroke="var(--asset-empty-icon-stroke)"
+                  strokeWidth="1.5"
+                  fill="var(--asset-empty-icon-fill)"
+                  transform="rotate(2 31 22)"
+                />
+                <circle
+                  cx="25"
+                  cy="19"
+                  r="3"
+                  stroke="var(--asset-empty-icon-stroke)"
+                  strokeWidth="1.2"
+                  fill="none"
+                />
+                <path
+                  d="M18 30 L26 23 L31 27 L38 20 L44 26"
+                  stroke="var(--asset-empty-icon-stroke)"
+                  strokeWidth="1.2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
             <div className="asset-empty__text">

@@ -247,6 +247,7 @@ describe("settingsService.getAgentSystemPrompt", () => {
     await settingsService.saveGeneralConfig({
       workspaceRoot: "/tmp/next-workspace",
       language: "en-US",
+      themeMode: "dark",
       linkOpenMode: "system",
       mainSubModeEnabled: true,
       quickGuideDismissed: true,
@@ -256,7 +257,7 @@ describe("settingsService.getAgentSystemPrompt", () => {
     await expect(
       fs.readFile(path.join(tempRoot, ".global", "config.json"), "utf8"),
     ).resolves.toBe(
-      '{\n  "workspaceRoot": "/tmp/next-workspace",\n  "language": "en-US",\n  "linkOpenMode": "system",\n  "quickGuideDismissed": true,\n  "chatInputShortcutTipDismissed": true\n}\n',
+      '{\n  "workspaceRoot": "/tmp/next-workspace",\n  "language": "en-US",\n  "themeMode": "dark",\n  "linkOpenMode": "system",\n  "quickGuideDismissed": true,\n  "chatInputShortcutTipDismissed": true\n}\n',
     );
   });
 
@@ -281,6 +282,7 @@ describe("settingsService.getAgentSystemPrompt", () => {
     await expect(settingsService.getGeneralConfig()).resolves.toEqual({
       workspaceRoot: "/tmp/legacy-workspace",
       language: "zh-CN",
+      themeMode: "system",
       linkOpenMode: "builtin",
       mainSubModeEnabled: true,
       quickGuideDismissed: false,

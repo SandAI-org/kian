@@ -40,7 +40,7 @@ export const CreationModule = ({ projectId, onContextChange }: CreationModulePro
       {/* ── Header ── */}
       <div className="cb-header">
         <div className="cb-header__left">
-          <span className="cb-header__title">视频场景</span>
+          <span className="cb-header__title">{t('视频场景')}</span>
           <span className="cb-header__sep" />
           <span className="cb-header__stat">{t(`场景 ${scenes.length}`)}</span>
           <span className="cb-header__stat">{t(`镜头 ${shotCount}`)}</span>
@@ -51,7 +51,7 @@ export const CreationModule = ({ projectId, onContextChange }: CreationModulePro
           onClick={() => queryClient.invalidateQueries({ queryKey: ['creation-board', projectId] })}
         >
           <ReloadOutlined style={{ fontSize: 11 }} />
-          <span>刷新</span>
+          <span>{t('刷新')}</span>
         </button>
       </div>
 
@@ -65,8 +65,8 @@ export const CreationModule = ({ projectId, onContextChange }: CreationModulePro
               <IllustrationEmptyCreationBoard size={156} />
             </div>
             <div className="cb-empty__text">
-              <p className="cb-empty__title">还没有分镜场景</p>
-              <p className="cb-empty__hint">在右侧描述剧情和风格，AI 会自动生成场景与镜头。</p>
+              <p className="cb-empty__title">{t('还没有分镜场景')}</p>
+              <p className="cb-empty__hint">{t('在右侧描述剧情和风格，AI 会自动生成场景与镜头。')}</p>
             </div>
           </div>
         </div>
@@ -129,7 +129,7 @@ export const CreationModule = ({ projectId, onContextChange }: CreationModulePro
                             </div>
 
                             <div className="cb-shot__prompt">
-                              {shot.prompt || '暂无 Prompt'}
+                              {shot.prompt || t('暂无 Prompt')}
                             </div>
 
                             {shot.notes && (

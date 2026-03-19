@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { APP_LANGUAGES } from '../i18n';
+import { APP_THEME_MODES } from '../theme';
 
 export const moduleSchema = z.enum(['docs', 'creation', 'assets', 'app']);
 export const chatModuleSchema = z.enum(['docs', 'creation', 'assets', 'app', 'main']);
@@ -197,6 +198,7 @@ export const saveShortcutConfigSchema = z.object({
 export const saveGeneralConfigSchema = z.object({
   workspaceRoot: z.string(),
   language: z.enum(APP_LANGUAGES).default('zh-CN'),
+  themeMode: z.enum(APP_THEME_MODES).default('system'),
   linkOpenMode: z.enum(['builtin', 'system']).default('builtin'),
   mainSubModeEnabled: z.boolean().default(true),
   quickGuideDismissed: z.boolean().optional(),

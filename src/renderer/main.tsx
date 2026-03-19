@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App as AntdApp, ConfigProvider } from "antd";
+import { App as AntdApp, ConfigProvider, theme as antdTheme } from "antd";
 import "github-markdown-css/github-markdown.css";
 import "highlight.js/styles/github.css";
 import React from "react";
@@ -33,18 +33,26 @@ const queryClient = new QueryClient({
 initializeChatQueryBridge(queryClient);
 
 const AppShell = () => {
-  const { antdLocale } = useAppI18n();
+  const { antdLocale, resolvedTheme } = useAppI18n();
+  const isDark = resolvedTheme === "dark";
 
   return (
     <ConfigProvider
       locale={antdLocale}
       theme={{
+        algorithm: isDark
+          ? antdTheme.darkAlgorithm
+          : antdTheme.defaultAlgorithm,
         token: {
           colorPrimary: "#2f6ff7",
           borderRadius: 4,
-          colorBgContainer: "#edf3ff",
-          colorText: "#101828",
-          colorBorder: "#d7e1f1",
+          colorBgBase: isDark ? "#0b1220" : "#ffffff",
+          colorBgContainer: isDark ? "#111b2e" : "#edf3ff",
+          colorBgElevated: isDark ? "#111b2e" : "#ffffff",
+          colorText: isDark ? "#e2e8f0" : "#101828",
+          colorTextSecondary: isDark ? "#94a3b8" : "#475569",
+          colorBorder: isDark ? "#273449" : "#d7e1f1",
+          colorSplit: isDark ? "#273449" : "#d7e1f1",
           controlHeight: 40,
           fontSize: 15,
           fontFamily: "Manrope, 'PingFang SC', 'Segoe UI', sans-serif",
@@ -53,17 +61,20 @@ const AppShell = () => {
           Layout: {
             bodyBg: "transparent",
             headerBg: "transparent",
+            siderBg: "transparent",
           },
           Menu: {
             itemBg: "transparent",
-            itemColor: "#475569",
-            itemSelectedBg: "#dce9ff",
-            itemSelectedColor: "#1d4ed8",
+            itemColor: isDark ? "#8ea0b8" : "#475569",
+            itemHoverBg: isDark ? "#111b2e" : "#edf3ff",
+            itemHoverColor: isDark ? "#e2e8f0" : "#0f172a",
+            itemSelectedBg: isDark ? "#172554" : "#dce9ff",
+            itemSelectedColor: isDark ? "#93c5fd" : "#1d4ed8",
           },
           Tabs: {
-            itemColor: "#64748b",
-            itemActiveColor: "#1d4ed8",
-            itemSelectedColor: "#1d4ed8",
+            itemColor: isDark ? "#94a3b8" : "#64748b",
+            itemActiveColor: isDark ? "#93c5fd" : "#1d4ed8",
+            itemSelectedColor: isDark ? "#93c5fd" : "#1d4ed8",
             inkBarColor: "#2f6ff7",
           },
           Button: {
@@ -75,6 +86,12 @@ const AppShell = () => {
           Input: {
             borderRadius: 4,
             controlHeight: 40,
+          },
+          Select: {
+            optionSelectedBg: isDark ? "#172554" : "#dce9ff",
+          },
+          Tooltip: {
+            colorBgSpotlight: isDark ? "#0f172a" : "#0f172a",
           },
           Card: {
             borderRadiusLG: 4,

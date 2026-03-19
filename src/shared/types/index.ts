@@ -1,4 +1,5 @@
 import type { AppLanguage } from "@shared/i18n";
+import type { AppThemeMode } from "@shared/theme";
 
 export type ModuleType = 'docs' | 'creation' | 'assets' | 'app';
 export type ChatModuleType = ModuleType | 'main';
@@ -422,6 +423,7 @@ export type LinkOpenMode = 'builtin' | 'system';
 export interface GeneralConfigDTO {
   workspaceRoot: string;
   language: AppLanguage;
+  themeMode: AppThemeMode;
   linkOpenMode: LinkOpenMode;
   mainSubModeEnabled: boolean;
   quickGuideDismissed: boolean;

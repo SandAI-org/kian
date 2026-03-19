@@ -212,28 +212,28 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="100"
                   height="72"
                   rx="8"
-                  stroke="#b0c4de"
+                  stroke="var(--app-empty-window-stroke)"
                   strokeWidth="1.5"
-                  fill="rgba(255,255,255,0.7)"
+                  fill="var(--app-empty-window-fill)"
                 />
                 <line
                   x1="10"
                   y1="28"
                   x2="110"
                   y2="28"
-                  stroke="#c4d3eb"
+                  stroke="var(--app-empty-window-divider)"
                   strokeWidth="1"
                 />
-                <circle cx="20" cy="20" r="3" fill="#f6b0b0" />
-                <circle cx="29" cy="20" r="3" fill="#f8d9a0" />
-                <circle cx="38" cy="20" r="3" fill="#b7e4c7" />
+                <circle cx="20" cy="20" r="3" fill="var(--app-empty-dot-red)" />
+                <circle cx="29" cy="20" r="3" fill="var(--app-empty-dot-yellow)" />
+                <circle cx="38" cy="20" r="3" fill="var(--app-empty-dot-green)" />
                 <rect
                   x="22"
                   y="38"
                   width="40"
                   height="4"
                   rx="2"
-                  fill="#dbe5f5"
+                  fill="var(--app-empty-window-line)"
                 />
                 <rect
                   x="22"
@@ -241,7 +241,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="28"
                   height="4"
                   rx="2"
-                  fill="#dbe5f5"
+                  fill="var(--app-empty-window-line)"
                 />
                 <rect
                   x="22"
@@ -249,7 +249,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="34"
                   height="4"
                   rx="2"
-                  fill="#dbe5f5"
+                  fill="var(--app-empty-window-line)"
                 />
                 <rect
                   x="22"
@@ -257,7 +257,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="24"
                   height="4"
                   rx="2"
-                  fill="#dbe5f5"
+                  fill="var(--app-empty-window-line)"
                 />
                 <rect
                   x="74"
@@ -265,7 +265,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="24"
                   height="34"
                   rx="4"
-                  stroke="#c4d3eb"
+                  stroke="var(--app-empty-window-divider)"
                   strokeWidth="1"
                   fill="none"
                 />
@@ -275,7 +275,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="16"
                   height="3"
                   rx="1.5"
-                  fill="#e8eff9"
+                  fill="var(--app-empty-window-line-soft)"
                 />
                 <rect
                   x="78"
@@ -283,7 +283,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
                   width="12"
                   height="3"
                   rx="1.5"
-                  fill="#e8eff9"
+                  fill="var(--app-empty-window-line-soft)"
                 />
               </svg>
             </div>

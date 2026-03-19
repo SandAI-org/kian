@@ -1,6 +1,7 @@
 import { EditOutlined, ReadOutlined } from "@ant-design/icons";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { RevealableImage } from "@renderer/components/RevealableImage";
+import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
 import {
@@ -193,6 +194,7 @@ export const MarkdownEditor = ({
   value,
   onChange,
 }: MarkdownEditorProps) => {
+  const { resolvedTheme } = useAppI18n();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [readMode, setReadMode] = useState(true);
   const markdownPreviewEnabled = useMemo(() => isMarkdownDocument(title), [title]);
@@ -500,7 +502,7 @@ export const MarkdownEditor = ({
           <Editor
             height="100%"
             language={editorLanguage}
-            theme="vs"
+            theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
             value={value}
             onMount={handleMount}
             onChange={(next) => onChange(next ?? "")}

@@ -216,6 +216,7 @@ describe('ipc validators', () => {
     const result = saveGeneralConfigSchema.safeParse({
       workspaceRoot: '/tmp/workspace',
       language: 'en-US',
+      themeMode: 'dark',
       linkOpenMode: 'system',
       quickGuideDismissed: true
     });
@@ -231,6 +232,7 @@ describe('ipc validators', () => {
       return;
     }
     expect(result.data.language).toBe('zh-CN');
+    expect(result.data.themeMode).toBe('system');
     expect(result.data.linkOpenMode).toBe('builtin');
   });
 

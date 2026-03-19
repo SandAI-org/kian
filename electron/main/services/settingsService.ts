@@ -22,6 +22,11 @@ import {
   isAppLanguage,
   type AppLanguage,
 } from "@shared/i18n";
+import {
+  DEFAULT_APP_THEME_MODE,
+  isAppThemeMode,
+  type AppThemeMode,
+} from "@shared/theme";
 import { normalizeUtcTimestamp } from "@shared/utils/dateTime";
 import { normalizeShortcutConfig } from "@shared/utils/shortcuts";
 import { app } from "electron";
@@ -170,6 +175,7 @@ const DEFAULT_FEISHU_CHAT_CHANNEL: FeishuChatChannelSettings = {
 const DEFAULT_BROADCAST_CHANNELS: BroadcastChannelSettings[] = [];
 const DEFAULT_GENERAL_CONFIG_FLAGS = {
   language: DEFAULT_APP_LANGUAGE,
+  themeMode: DEFAULT_APP_THEME_MODE,
   linkOpenMode: "builtin" as LinkOpenMode,
   quickGuideDismissed: false,
   chatInputShortcutTipDismissed: false,
@@ -349,12 +355,16 @@ const normalizeGeneralConfig = (
   const language = isAppLanguage(raw.language)
     ? raw.language
     : DEFAULT_GENERAL_CONFIG_FLAGS.language;
+  const themeMode = isAppThemeMode(raw.themeMode)
+    ? raw.themeMode
+    : DEFAULT_GENERAL_CONFIG_FLAGS.themeMode;
   const linkOpenMode =
     raw.linkOpenMode === "system" ? "system" : DEFAULT_GENERAL_CONFIG_FLAGS.linkOpenMode;
 
   return {
     workspaceRoot,
     language,
+    themeMode,
     linkOpenMode,
     mainSubModeEnabled: true,
     quickGuideDismissed: normalizeBoolean(
@@ -1667,6 +1677,7 @@ export const settingsService = {
   async saveGeneralConfig(input: {
     workspaceRoot: string;
     language?: AppLanguage;
+    themeMode?: AppThemeMode;
     linkOpenMode?: LinkOpenMode;
     mainSubModeEnabled?: boolean;
     quickGuideDismissed?: boolean;
@@ -1678,6 +1689,9 @@ export const settingsService = {
       language: isAppLanguage(input.language)
         ? input.language
         : currentConfig.language,
+      themeMode: isAppThemeMode(input.themeMode)
+        ? input.themeMode
+        : currentConfig.themeMode,
       linkOpenMode:
         input.linkOpenMode === "system" || input.linkOpenMode === "builtin"
           ? input.linkOpenMode
@@ -1700,6 +1714,7 @@ export const settingsService = {
         {
           workspaceRoot: nextConfig.workspaceRoot,
           language: nextConfig.language,
+          themeMode: nextConfig.themeMode,
           linkOpenMode: nextConfig.linkOpenMode,
           quickGuideDismissed: nextConfig.quickGuideDismissed,
           chatInputShortcutTipDismissed:
