@@ -117,6 +117,13 @@ body {
 
 .ant-tabs-top > .ant-tabs-nav {
   margin-bottom: 12px;
+  padding-inline: 8px;
+}
+
+.ant-tabs-top > .ant-tabs-nav .ant-tabs-tab {
+  padding-inline: 14px;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
 }
 
 .settings-sidebar-tabs.ant-tabs-left {
@@ -828,6 +835,13 @@ body {
   background: #b8c7e2;
   border-radius: 999px;
   opacity: 0.85;
+}
+
+.simplebar-content-wrapper,
+.simplebar-content-wrapper:focus,
+.simplebar-content-wrapper:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .simplebar-track.simplebar-vertical .simplebar-scrollbar::before {
@@ -3058,6 +3072,18 @@ body {
 :root.theme-dark .chat-file-preview__title,
 :root.theme-dark .chat-file-preview__content {
   color: #dce7f5 !important;
+}
+
+:root.theme-dark .chat-file-preview__content,
+:root.theme-dark .chat-file-preview--light .chat-file-preview__content,
+:root.theme-dark .chat-markdown--assistant .chat-file-preview__content,
+:root.theme-dark .chat-markdown--user .chat-file-preview__content {
+  background: #0f172a !important;
+}
+
+:root.theme-dark .chat-file-preview__finder:hover {
+  border-color: #465872 !important;
+  background: #182337 !important;
 }
 
 :root.theme-dark .chat-file-card__hint {
