@@ -297,7 +297,8 @@ const buildMainWindowOptions = (
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
   };
 };
@@ -642,6 +643,66 @@ const shouldDelegateExternalNavigation = (
   return true;
 };
 
+const registerExternalNavigationHandlers = (
+  contents: Electron.WebContents,
+): void => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (shouldDelegateExternalNavigation(url, contents.getURL())) {
+      void linkOpenService.open(url);
+      return { action: 'deny' };
+    }
+
+    return { action: 'allow' };
+  });
+
+  contents.on('will-navigate', (event, url) => {
+    if (!shouldDelegateExternalNavigation(url, contents.getURL())) {
+      return;
+    }
+
+    event.preventDefault();
+    void linkOpenService.open(url);
+  });
+};
+
+const registerAppPreviewWebviewHandlers = (
+  win: BrowserWindow,
+): void => {
+  win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    const src = typeof params.src === 'string' ? params.src : '';
+    const parsedSrc = parseNavigationUrl(src);
+    const isLocalPreview =
+      parsedSrc?.protocol === `${LOCAL_MEDIA_SCHEME}:` &&
+      parsedSrc.hostname === 'local';
+    if (!isLocalPreview) {
+      event.preventDefault();
+      return;
+    }
+
+    if (params.partition !== APP_PREVIEW_PARTITION) {
+      params.partition = APP_PREVIEW_PARTITION;
+    }
+
+    delete webPreferences.preload;
+    delete params.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+  });
+
+  win.webContents.on('did-attach-webview', (_event, guestContents) => {
+    registerExternalNavigationHandlers(guestContents);
+
+    guestContents.on('render-process-gone', (_guestEvent, details) => {
+      logger.warn('App preview webview renderer exited unexpectedly', details);
+    });
+
+    guestContents.on('unresponsive', () => {
+      logger.warn('App preview webview became unresponsive');
+    });
+  });
+};
+
 const focusWindow = (window: BrowserWindow): void => {
   if (window.isDestroyed()) {
     return;
@@ -819,23 +880,8 @@ const createMainWindow = (): BrowserWindow => {
     }
   });
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (shouldDelegateExternalNavigation(url, win.webContents.getURL())) {
-      void linkOpenService.open(url);
-      return { action: 'deny' };
-    }
-
-    return { action: 'allow' };
-  });
-
-  win.webContents.on('will-navigate', (event, url) => {
-    if (!shouldDelegateExternalNavigation(url, win.webContents.getURL())) {
-      return;
-    }
-
-    event.preventDefault();
-    void linkOpenService.open(url);
-  });
+  registerExternalNavigationHandlers(win.webContents);
+  registerAppPreviewWebviewHandlers(win);
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || displayedFallback || win.isDestroyed()) return;
