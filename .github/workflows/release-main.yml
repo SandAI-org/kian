@@ -468,12 +468,7 @@ jobs:
           body: ${{ steps.notes.outputs.body }}
           artifacts: |
             dist/**/*.dmg
-            dist/**/*.zip
-            dist/**/*.zip.blockmap
             dist/**/*.exe
-            dist/**/*.exe.blockmap
-            dist/**/latest-mac.yml
-            dist/**/latest.yml
           artifactErrorsFailBuild: true
 
       - name: Install ossutil

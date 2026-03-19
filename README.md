@@ -1,6 +1,10 @@
-# Kian
+# Kian [![Release](https://img.shields.io/github/v/release/SandAI-org/kian?display_name=tag&sort=semver)](https://github.com/SandAI-org/kian/releases/latest)
 
-**Your first AI agent team.**
+[English](./README.md) | [中文](./README.zh-CN.md)
+
+**An OpenClaw you can use right after download and install 🦞**
+
+Visit the official website and download now. 👉 [https://heykian.com](https://heykian.com)
 
 ## Core Features
 
@@ -12,7 +16,7 @@
 
 ## License
 
-The Kian Community Edition is governed by the standard GNU Affero General Public License v3.0 (AGPL-3.0), available at [https://www.gnu.org/licenses/agpl-3.0.html](https://www.gnu.org/licenses/agpl-3.0.html).
+The Kian Community Edition is governed by the standard [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html).
 
 Use of the Kian Community Edition for commercial purposes is permitted, subject to full compliance with the terms and conditions of the AGPL-3.0 license.
 
