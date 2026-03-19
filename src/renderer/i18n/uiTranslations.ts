@@ -796,8 +796,59 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "Built-in repositories come from skills/repositories.json. You can also add custom GitHub repositories.",
     "可以试试让 Kian 来帮你修改或者创建文档":
       "Try asking Kian to edit or create a document for you",
-    "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
-      "Switch Provider tabs to choose an integration, configure the corresponding API key, and enable models.",
+  "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
+    "Switch Provider tabs to choose an integration, configure the corresponding API key, and enable models.",
+  "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。":
+    "Switch Provider tabs to choose an integration, configure the corresponding API key, and enable models. Custom API sits alongside OpenRouter and is used for Custom URL, custom API type, and model list settings.",
+  "Custom API 的 API Key 为可选项；如果你的服务不要求 Bearer Token，可以留空。":
+    "API key is optional for Custom API. Leave it empty if your service does not require a Bearer token.",
+  "Custom API 用于接入兼容 OpenAI、Anthropic 或其他受支持协议的服务。API Key 可选；是否填写取决于你的服务是否要求鉴权。":
+    "Custom API connects to services compatible with OpenAI, Anthropic, or other supported protocols. The API key is optional and only needed when your service requires authentication.",
+  "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。":
+    "Enter the API root URL only. Do not include endpoint paths such as /chat/completions, /responses, or /messages.",
+  "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。":
+    "Choose the protocol your service actually implements. Most OpenAI-compatible services should use openai-completions.",
+  "这里定义 Custom API 可用的模型。新增后会出现在下方的启用模型列表中。":
+    "Define the models available through Custom API here. New models will appear in the enabled model list below.",
+  "并启用模型。可选的 URL、自定义 API 类型和模型配置遵循 pi-mono 的 provider 覆盖方式：只填 URL 会重定向当前 Provider 的内置模型，配置自定义模型后则改为使用自定义模型列表。":
+    "Optional URL, custom API type, and model settings follow pi-mono provider override semantics: URL-only reroutes built-in models, while custom models replace the provider model list.",
+  "Provider": "Provider",
+  "Open Compatible API": "Open Compatible API",
+  "Custom API": "Custom API",
+  "只填 URL 会重定向当前 Provider 的内置模型；配置自定义模型后会直接替换当前 Provider 的内置模型列表。":
+    "URL-only reroutes the provider's built-in models. Once custom models are configured, they directly replace the provider's built-in model list.",
+  "OpenAI Compatible": "OpenAI Compatible",
+  "填写 URL 后会将当前 Provider 的请求路由到该地址；配置自定义模型后，这些模型会出现在下面的启用模型列表中。":
+    "After you enter a URL, requests for the current provider are routed there. Once you configure custom models, they will appear in the enabled model list below.",
+  "自定义 URL": "Custom URL",
+  "留空表示使用 Provider 默认地址；填写后会把当前 Provider 的请求路由到该地址。":
+    "Leave empty to use the provider default endpoint. When set, requests for this provider are routed there.",
+  "自定义模型 API 类型": "Custom Model API Type",
+  "仅在添加自定义模型时需要选择。":
+    "Only required when adding custom models.",
+  "配置自定义模型时必须选择 API 类型":
+    "Select an API type when configuring custom models",
+  "配置自定义模型时必须填写 URL":
+    "URL is required when configuring custom models",
+  "自定义模型": "Custom Models",
+  "配置后会直接替换当前 Provider 的内置模型列表。":
+    "Configured custom models replace the built-in model list for this provider.",
+  "配置后会直接作为当前 Provider 的模型列表。":
+    "Configured models become the model list for the current provider.",
+  "新增自定义模型": "Add Custom Model",
+  "显示名称": "Display Name",
+  "模型 ID": "Model ID",
+  "留空则使用 Model ID": "Leave empty to use the Model ID",
+  "上下文窗口": "Context Window",
+  "最大输出 Token": "Max Output Tokens",
+  "支持推理": "Reasoning",
+  "支持图片输入": "Image Input",
+  "是": "Yes",
+  "否": "No",
+  "Model ID 不能为空": "Model ID is required",
+  "上下文窗口不能为空": "Context window is required",
+  "最大输出 Token 不能为空": "Max output tokens is required",
+  "自定义": "Custom",
     "当前支持 fal Provider。你可以配置 fal API Key，并启用可用于生图/生视频的模型。":
       "fal is currently supported. You can configure the fal API key and enable image and video generation models.",
     "所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。":
@@ -1226,6 +1277,57 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "退出录制。": "를 눌러 녹화를 종료합니다.",
     "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
       "Provider 탭을 전환해 연동 방식을 선택하고, 해당 API Key를 설정한 뒤 모델을 활성화하세요.",
+    "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。":
+      "Provider 탭을 전환해 연동 방식을 선택하고, 해당 API Key를 설정한 뒤 모델을 활성화하세요. Custom API는 OpenRouter와 같은 레벨의 별도 Provider이며, Custom URL, 사용자 지정 API 유형, 모델 목록 설정에 사용됩니다.",
+    "Custom API 的 API Key 为可选项；如果你的服务不要求 Bearer Token，可以留空。":
+      "Custom API의 API Key는 선택 사항입니다. 서비스에서 Bearer 토큰 인증을 요구하지 않으면 비워 둘 수 있습니다.",
+    "Custom API 用于接入兼容 OpenAI、Anthropic 或其他受支持协议的服务。API Key 可选；是否填写取决于你的服务是否要求鉴权。":
+      "Custom API는 OpenAI, Anthropic 또는 기타 지원 프로토콜과 호환되는 서비스를 연결하는 데 사용됩니다. API Key는 선택 사항이며 서비스에서 인증을 요구할 때만 필요합니다.",
+    "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。":
+      "API 루트 주소만 입력하세요. /chat/completions, /responses, /messages 같은 구체적인 엔드포인트 경로는 포함하지 마세요.",
+    "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。":
+      "서비스가 실제로 호환되는 프로토콜 유형을 선택하세요. 대부분의 OpenAI 호환 서비스는 openai-completions를 선택하면 됩니다.",
+    "这里定义 Custom API 可用的模型。新增后会出现在下方的启用模型列表中。":
+      "여기에서 Custom API로 사용할 모델을 정의합니다. 새 모델을 추가하면 아래 활성화 모델 목록에 표시됩니다.",
+    "并启用模型。可选的 URL、自定义 API 类型和模型配置遵循 pi-mono 的 provider 覆盖方式：只填 URL 会重定向当前 Provider 的内置模型，配置自定义模型后则改为使用自定义模型列表。":
+      "선택 사항인 URL, 사용자 지정 API 유형, 모델 설정은 pi-mono의 provider override 방식과 동일합니다. URL만 입력하면 내장 모델이 해당 주소로 라우팅되고, 사용자 지정 모델을 설정하면 현재 Provider의 모델 목록이 사용자 지정 목록으로 대체됩니다.",
+    "Provider": "Provider",
+    "Open Compatible API": "Open Compatible API",
+    "Custom API": "Custom API",
+    "只填 URL 会重定向当前 Provider 的内置模型；配置自定义模型后会直接替换当前 Provider 的内置模型列表。":
+      "URL만 입력하면 현재 Provider의 내장 모델이 해당 주소로 라우팅됩니다. 사용자 지정 모델을 설정하면 현재 Provider의 내장 모델 목록이 바로 대체됩니다.",
+    "OpenAI Compatible": "OpenAI Compatible",
+    "填写 URL 后会将当前 Provider 的请求路由到该地址；配置自定义模型后，这些模型会出现在下面的启用模型列表中。":
+      "URL을 입력하면 현재 Provider 요청이 해당 주소로 라우팅됩니다. 사용자 지정 모델을 설정하면 그 모델들이 아래 활성화 모델 목록에 표시됩니다.",
+    "自定义 URL": "사용자 지정 URL",
+    "留空表示使用 Provider 默认地址；填写后会把当前 Provider 的请求路由到该地址。":
+      "비워 두면 Provider 기본 주소를 사용합니다. 값을 입력하면 해당 Provider 요청이 이 주소로 라우팅됩니다.",
+    "自定义模型 API 类型": "사용자 지정 모델 API 유형",
+    "仅在添加自定义模型时需要选择。":
+      "사용자 지정 모델을 추가할 때만 선택하면 됩니다.",
+    "配置自定义模型时必须选择 API 类型":
+      "사용자 지정 모델을 구성하려면 API 유형을 선택해야 합니다",
+    "配置自定义模型时必须填写 URL":
+      "사용자 지정 모델을 구성하려면 URL을 입력해야 합니다",
+    "自定义模型": "사용자 지정 모델",
+    "配置后会直接替换当前 Provider 的内置模型列表。":
+      "설정 후 현재 Provider의 내장 모델 목록이 사용자 지정 모델 목록으로 대체됩니다.",
+    "配置后会直接作为当前 Provider 的模型列表。":
+      "설정한 모델이 현재 Provider의 모델 목록으로 바로 사용됩니다.",
+    "新增自定义模型": "사용자 지정 모델 추가",
+    "显示名称": "표시 이름",
+    "模型 ID": "모델 ID",
+    "留空则使用 Model ID": "비워 두면 Model ID를 사용합니다",
+    "上下文窗口": "컨텍스트 윈도우",
+    "最大输出 Token": "최대 출력 토큰",
+    "支持推理": "추론 지원",
+    "支持图片输入": "이미지 입력 지원",
+    "是": "예",
+    "否": "아니오",
+    "Model ID 不能为空": "Model ID는 필수입니다",
+    "上下文窗口不能为空": "컨텍스트 윈도우는 필수입니다",
+    "最大输出 Token 不能为空": "최대 출력 토큰은 필수입니다",
+    "自定义": "사용자 지정",
     "当前支持 fal Provider。你可以配置 fal API Key，并启用可用于生图/生视频的模型。":
       "현재는 fal Provider를 지원합니다. fal API Key를 설정하고 이미지/비디오 생성에 사용할 모델을 활성화할 수 있습니다.",
     "所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。":
@@ -1655,6 +1757,47 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "退出录制。": "を押して録音を終了します。",
     "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
       "Provider タブを切り替えて接続方法を選び、対応する API Key を設定してモデルを有効化してください。",
+    "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。":
+      "Provider タブを切り替えて接続方法を選び、対応する API Key を設定してモデルを有効化してください。Custom API は OpenRouter と同じ階層の独立 Provider で、Custom URL、カスタム API 種別、モデル一覧の設定に使います。",
+    "并启用模型。可选的 URL、自定义 API 类型和模型配置遵循 pi-mono 的 provider 覆盖方式：只填 URL 会重定向当前 Provider 的内置模型，配置自定义模型后则改为使用自定义模型列表。":
+      "任意の URL、カスタム API 種別、モデル設定は pi-mono の provider override 方式に従います。URL のみを設定すると内蔵モデルはその URL に転送され、カスタムモデルを設定すると現在の Provider のモデル一覧がカスタム一覧に置き換わります。",
+    "Provider": "Provider",
+    "Open Compatible API": "Open Compatible API",
+    "Custom API": "Custom API",
+    "只填 URL 会重定向当前 Provider 的内置模型；配置自定义模型后会直接替换当前 Provider 的内置模型列表。":
+      "URL のみを設定すると現在の Provider の内蔵モデルはその URL にルーティングされます。カスタムモデルを設定すると現在の Provider の内蔵モデル一覧が直接置き換わります。",
+    "OpenAI Compatible": "OpenAI Compatible",
+    "填写 URL 后会将当前 Provider 的请求路由到该地址；配置自定义模型后，这些模型会出现在下面的启用模型列表中。":
+      "URL を入力すると現在の Provider へのリクエストはそのアドレスにルーティングされます。カスタムモデルを設定すると、それらのモデルが下の有効モデル一覧に表示されます。",
+    "自定义 URL": "カスタム URL",
+    "留空表示使用 Provider 默认地址；填写后会把当前 Provider 的请求路由到该地址。":
+      "空欄のままなら Provider の既定 URL を使います。入力するとこの Provider へのリクエストはその URL にルーティングされます。",
+    "自定义模型 API 类型": "カスタムモデル API 種別",
+    "仅在添加自定义模型时需要选择。":
+      "カスタムモデルを追加する場合のみ選択が必要です。",
+    "配置自定义模型时必须选择 API 类型":
+      "カスタムモデルを設定する場合は API 種別を選択してください",
+    "配置自定义模型时必须填写 URL":
+      "カスタムモデルを設定する場合は URL を入力してください",
+    "自定义模型": "カスタムモデル",
+    "配置后会直接替换当前 Provider 的内置模型列表。":
+      "設定すると現在の Provider の内蔵モデル一覧はカスタムモデル一覧に置き換わります。",
+    "配置后会直接作为当前 Provider 的模型列表。":
+      "設定したモデルがそのまま現在の Provider のモデル一覧になります。",
+    "新增自定义模型": "カスタムモデルを追加",
+    "显示名称": "表示名",
+    "模型 ID": "モデル ID",
+    "留空则使用 Model ID": "空欄の場合は Model ID を使用します",
+    "上下文窗口": "コンテキストウィンドウ",
+    "最大输出 Token": "最大出力トークン",
+    "支持推理": "推論対応",
+    "支持图片输入": "画像入力対応",
+    "是": "はい",
+    "否": "いいえ",
+    "Model ID 不能为空": "Model ID は必須です",
+    "上下文窗口不能为空": "コンテキストウィンドウは必須です",
+    "最大输出 Token 不能为空": "最大出力トークンは必須です",
+    "自定义": "カスタム",
     "当前支持 fal Provider。你可以配置 fal API Key，并启用可用于生图/生视频的模型。":
       "現在は fal Provider に対応しています。fal API Key を設定し、画像生成や動画生成に使うモデルを有効化できます。",
     "所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。":
@@ -1902,6 +2045,10 @@ const EN_US_PATTERNS: PatternTranslation[] = [
     render: (value) => `Broadcast Channel ${value}`,
   },
   {
+    pattern: /^自定义模型 (\d+)$/,
+    render: (value) => `Custom Model ${value}`,
+  },
+  {
     pattern: /^建议镜头素材：(.+)$/,
     render: (value) => `Suggested shot asset: ${value}`,
   },
@@ -2060,6 +2207,10 @@ const KO_KR_PATTERNS: PatternTranslation[] = [
   {
     pattern: /^广播渠道 (\d+)$/,
     render: (value) => `브로드캐스트 채널 ${value}`,
+  },
+  {
+    pattern: /^自定义模型 (\d+)$/,
+    render: (value) => `사용자 지정 모델 ${value}`,
   },
   {
     pattern: /^建议镜头素材：(.+)$/,
@@ -2221,6 +2372,10 @@ const JA_JP_PATTERNS: PatternTranslation[] = [
   {
     pattern: /^广播渠道 (\d+)$/,
     render: (value) => `配信チャネル ${value}`,
+  },
+  {
+    pattern: /^自定义模型 (\d+)$/,
+    render: (value) => `カスタムモデル ${value}`,
   },
   {
     pattern: /^建议镜头素材：(.+)$/,

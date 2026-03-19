@@ -4,6 +4,7 @@ import {
   chatSendSchema,
   chatUploadFilesSchema,
   projectCreateSchema,
+  saveApiKeySchema,
   saveGeneralConfigSchema,
   sessionCreateSchema,
   saveBroadcastChannelConfigSchema,
@@ -178,6 +179,28 @@ describe('ipc validators', () => {
       provider: 'fal',
       secret: 'fal_api_key_demo',
       enabledModels: []
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates language model provider payload with baseUrl and custom models', () => {
+    const result = saveApiKeySchema.safeParse({
+      provider: 'openai',
+      enabled: true,
+      secret: 'sk_test_custom_model',
+      baseUrl: 'https://proxy.example.com/v1',
+      api: 'openai-completions',
+      customModels: [
+        {
+          id: 'gpt-4.1-custom',
+          name: 'GPT 4.1 Custom',
+          reasoning: true,
+          input: ['text', 'image'],
+          contextWindow: 256000,
+          maxTokens: 32768,
+        },
+      ],
+      enabledModels: ['gpt-4.1-custom'],
     });
     expect(result.success).toBe(true);
   });

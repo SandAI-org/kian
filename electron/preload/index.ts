@@ -280,6 +280,16 @@ const api = {
       provider: string;
       enabled: boolean;
       secret?: string;
+      baseUrl?: string;
+      api?: string;
+      customModels: Array<{
+        id: string;
+        name?: string;
+        reasoning: boolean;
+        input: Array<"text" | "image">;
+        contextWindow: number;
+        maxTokens: number;
+      }>;
       enabledModels: string[];
     }) => invoke<boolean>("settings:saveClaudeApiKey", payload),
     getAvailableProviders: () =>

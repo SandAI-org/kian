@@ -1,4 +1,4 @@
-import { completeSimple, getModel } from "@mariozechner/pi-ai";
+import { completeSimple } from "@mariozechner/pi-ai";
 import type {
   ChatMessageMetadata,
   ChatSendPayload,
@@ -414,10 +414,16 @@ const generateSessionTitle = async (
       assistantMessagePreview: assistantMessage?.slice(0, 80),
     });
 
-    const model = getModel(
-      provider as Parameters<typeof getModel>[0],
-      modelId as never,
-    );
+    const model = await settingsService.resolveAgentModel(provider, modelId);
+    if (!model) {
+      logger.warn("Auto title skipped: model could not be resolved", {
+        sessionId: payload.sessionId,
+        scope: payload.scope,
+        provider,
+        modelId,
+      });
+      return;
+    }
 
     const result = await completeSimple(
       model,

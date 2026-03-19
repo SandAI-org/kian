@@ -1,4 +1,4 @@
-import { getModels, getProviders } from "@mariozechner/pi-ai";
+import { getModel, getModels, getProviders, type Api, type Model } from "@mariozechner/pi-ai";
 import type {
   AgentModelDTO,
   AgentProviderDTO,
@@ -15,7 +15,9 @@ import type {
   McpTransportType,
   MediaProvider,
   ModelProviderConfigStatus,
+  ProviderConfigEntry,
   TelegramChatChannelStatus,
+  CustomAgentModelConfigDTO,
 } from "@shared/types";
 import {
   DEFAULT_APP_LANGUAGE,
@@ -38,11 +40,21 @@ import { GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_PATH, INTERNAL_ROOT, WORKSPACE_ROOT } 
 
 const SETTINGS_PATH = path.join(INTERNAL_ROOT, "settings.json");
 const LEGACY_WORKSPACE_SETTINGS_PATH = path.join(WORKSPACE_ROOT, "settings.json");
+const CUSTOM_API_PROVIDER = "custom-api";
+const LEGACY_OPENAI_COMPATIBLE_PROVIDER = "openai-compatible";
+
+const normalizeAgentProviderId = (provider: string): string =>
+  provider === LEGACY_OPENAI_COMPATIBLE_PROVIDER
+    ? CUSTOM_API_PROVIDER
+    : provider;
 
 interface ProviderEntry {
   provider: string;
   enabled: boolean;
   apiKey: string;
+  baseUrl?: string;
+  api?: string;
+  customModels: CustomAgentModelConfigDTO[];
   enabledModels: string[];
 }
 
@@ -255,6 +267,21 @@ const parseLegacyDiscordSnowflakeIds = (input: unknown): string[] => {
 const normalizeSecretValue = (value: unknown): string => {
   if (typeof value !== "string") return "";
   return value.trim();
+};
+
+const normalizeOptionalHttpUrl = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return normalized;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 };
 
 const normalizeChatThinkingLevel = (
@@ -550,14 +577,209 @@ const normalizeProviderEntries = (input: unknown): ProviderEntry[] => {
   return input
     .filter((entry) => entry && typeof entry === "object" && typeof entry.provider === "string" && entry.provider)
     .map((entry) => {
-      const apiKey = typeof entry.apiKey === "string" ? entry.apiKey : "";
+      const rawEntry = entry as Record<string, unknown>;
+      const apiKey = typeof rawEntry.apiKey === "string" ? rawEntry.apiKey : "";
+      const customModelsRaw = Array.isArray(rawEntry.customModels)
+        ? rawEntry.customModels
+        : [];
+      const customModels = customModelsRaw.reduce<CustomAgentModelConfigDTO[]>(
+        (acc, item) => {
+          if (!item || typeof item !== "object") return acc;
+          const rawItem = item as Record<string, unknown>;
+          const id =
+            typeof rawItem.id === "string" ? rawItem.id.trim() : "";
+          if (!id) return acc;
+          const inputModes: Array<"text" | "image"> = Array.isArray(rawItem.input)
+            ? Array.from(
+                new Set(
+                  rawItem.input.filter(
+                    (mode): mode is "text" | "image" =>
+                      mode === "text" || mode === "image",
+                  ),
+                ),
+              )
+            : ["text"];
+          acc.push({
+            id,
+            name:
+              typeof rawItem.name === "string" && rawItem.name.trim().length > 0
+                ? rawItem.name.trim()
+                : undefined,
+            reasoning:
+              typeof rawItem.reasoning === "boolean" ? rawItem.reasoning : false,
+            input: inputModes.length > 0 ? inputModes : ["text"],
+            contextWindow:
+              typeof rawItem.contextWindow === "number" && rawItem.contextWindow > 0
+                ? Math.trunc(rawItem.contextWindow)
+                : 128000,
+            maxTokens:
+              typeof rawItem.maxTokens === "number" && rawItem.maxTokens > 0
+                ? Math.trunc(rawItem.maxTokens)
+                : 16384,
+          });
+          return acc;
+        },
+        [],
+      );
       return {
-        provider: entry.provider,
-        enabled: typeof entry.enabled === "boolean" ? entry.enabled : Boolean(apiKey),
+        provider: normalizeAgentProviderId(rawEntry.provider as string),
+        enabled: typeof rawEntry.enabled === "boolean" ? rawEntry.enabled : Boolean(apiKey),
         apiKey,
-        enabledModels: uniqueStrings(entry.enabledModels),
+        baseUrl: normalizeOptionalHttpUrl(rawEntry.baseUrl),
+        api:
+          typeof rawEntry.api === "string" && rawEntry.api.trim().length > 0
+            ? rawEntry.api.trim()
+            : undefined,
+        customModels,
+        enabledModels: uniqueStrings(rawEntry.enabledModels),
       };
     });
+};
+
+const toAgentModelDto = (
+  model: Pick<
+    Model<Api>,
+    "id" | "name" | "reasoning" | "input" | "contextWindow" | "maxTokens"
+  >,
+  source: AgentModelDTO["source"],
+): AgentModelDTO => ({
+  id: model.id,
+  name: model.name,
+  reasoning: model.reasoning,
+  input: model.input,
+  contextWindow: model.contextWindow,
+  maxTokens: model.maxTokens,
+  source,
+});
+
+const getConfiguredModelsForProvider = (
+  provider: string,
+  providerEntry?: ProviderEntry,
+): AgentModelDTO[] => {
+  if (providerEntry?.customModels.length) {
+    return providerEntry.customModels.map((model) =>
+      toAgentModelDto(
+        {
+          id: model.id,
+          name: model.name ?? model.id,
+          reasoning: model.reasoning,
+          input: model.input,
+          contextWindow: model.contextWindow,
+          maxTokens: model.maxTokens,
+        },
+        "custom",
+      ),
+    );
+  }
+
+  if (normalizeAgentProviderId(provider) === CUSTOM_API_PROVIDER) {
+    return [];
+  }
+
+  try {
+    const models = getModels(provider as Parameters<typeof getModels>[0]);
+    return models.map((model) => toAgentModelDto(model, "builtin"));
+  } catch {
+    return [];
+  }
+};
+
+const getConfiguredEnabledModels = (
+  providerEntry?: ProviderEntry,
+): string[] => {
+  if (!providerEntry) return [];
+  const availableIds = new Set(
+    getConfiguredModelsForProvider(providerEntry.provider, providerEntry).map(
+      (model) => model.id,
+    ),
+  );
+  return providerEntry.enabledModels.filter((modelId) => availableIds.has(modelId));
+};
+
+const isCustomApiProviderEntryConfigured = (
+  providerEntry: ProviderEntry | undefined,
+): boolean =>
+  Boolean(
+    providerEntry &&
+      providerEntry.baseUrl &&
+      providerEntry.api &&
+      providerEntry.customModels.length > 0,
+  );
+
+const isProviderEntryConfigured = (
+  providerEntry: ProviderEntry | undefined,
+): boolean => {
+  if (!providerEntry) return false;
+  if (normalizeAgentProviderId(providerEntry.provider) === CUSTOM_API_PROVIDER) {
+    return isCustomApiProviderEntryConfigured(providerEntry);
+  }
+  return Boolean(providerEntry.apiKey);
+};
+
+const getProviderRuntimeApiKey = (
+  providerEntry: ProviderEntry | undefined,
+): string | null => {
+  if (!providerEntry) return null;
+  if (providerEntry.apiKey) {
+    return providerEntry.apiKey;
+  }
+  if (normalizeAgentProviderId(providerEntry.provider) === CUSTOM_API_PROVIDER) {
+    return isCustomApiProviderEntryConfigured(providerEntry)
+      ? "kian-custom-api-no-auth"
+      : null;
+  }
+  return null;
+};
+
+const resolveConfiguredModel = (
+  provider: string,
+  modelId: string,
+  providerEntry?: ProviderEntry,
+): Model<Api> | null => {
+  if (
+    normalizeAgentProviderId(provider) === CUSTOM_API_PROVIDER ||
+    providerEntry?.customModels.length
+  ) {
+    const resolvedBaseUrl = providerEntry?.baseUrl;
+    const resolvedApi = providerEntry?.api;
+    const customModel = providerEntry?.customModels.find(
+      (candidate) => candidate.id === modelId,
+    );
+    if (!customModel || !resolvedBaseUrl || !resolvedApi) {
+      return null;
+    }
+    return {
+      id: customModel.id,
+      name: customModel.name ?? customModel.id,
+      api: resolvedApi as Api,
+      provider,
+      baseUrl: resolvedBaseUrl,
+      reasoning: customModel.reasoning,
+      input: customModel.input,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: customModel.contextWindow,
+      maxTokens: customModel.maxTokens,
+    };
+  }
+
+  try {
+    const builtInModel = getModel(
+      provider as Parameters<typeof getModel>[0],
+      modelId as never,
+    );
+    if (!builtInModel) {
+      return null;
+    }
+    if (providerEntry?.baseUrl) {
+      return {
+        ...builtInModel,
+        baseUrl: providerEntry.baseUrl,
+      };
+    }
+    return builtInModel;
+  } catch {
+    return null;
+  }
 };
 
 const normalizeSettingsFile = (
@@ -566,11 +788,24 @@ const normalizeSettingsFile = (
   const providers = normalizeProviderEntries(raw?.providers);
   const mediaProviders = normalizeProviderEntries(raw?.mediaProviders);
   if (mediaProviders.length === 0) {
-    mediaProviders.push({ provider: "fal", enabled: false, apiKey: "", enabledModels: DEFAULT_FAL_ENABLED_MODELS });
+    mediaProviders.push({
+      provider: "fal",
+      enabled: false,
+      apiKey: "",
+      customModels: [],
+      enabledModels: DEFAULT_FAL_ENABLED_MODELS,
+    });
   }
   const mcpServers = normalizeMcpServers(raw?.mcpServers);
 
   const lastSelectedModel = raw?.lastSelectedModel;
+  const normalizedLastSelectedModel =
+    typeof lastSelectedModel === "string" &&
+    lastSelectedModel.startsWith(`${LEGACY_OPENAI_COMPATIBLE_PROVIDER}:`)
+      ? `${CUSTOM_API_PROVIDER}:${lastSelectedModel.slice(
+          LEGACY_OPENAI_COMPATIBLE_PROVIDER.length + 1,
+        )}`
+      : lastSelectedModel;
   const lastSelectedThinkingLevel = normalizeChatThinkingLevel(
     raw?.lastSelectedThinkingLevel,
   );
@@ -626,7 +861,7 @@ const normalizeSettingsFile = (
   return {
     providers,
     mediaProviders,
-    lastSelectedModel,
+    lastSelectedModel: normalizedLastSelectedModel,
     lastSelectedThinkingLevel,
     lastSelectedModelByScope,
     lastSelectedThinkingLevelByScope,
@@ -931,23 +1166,49 @@ export const settingsService = {
     provider: string;
     enabled: boolean;
     secret?: string;
+    baseUrl?: string;
+    api?: string;
+    customModels: CustomAgentModelConfigDTO[];
     enabledModels: string[];
   }): Promise<void> {
     await withSettingsWriteLock(async () => {
       const settings = await readSettingsFile();
-      const existing = settings.providers.find((e) => e.provider === input.provider);
+      const providerId = normalizeAgentProviderId(input.provider);
+      const existing = settings.providers.find((e) => e.provider === providerId);
       const nextApiKey = input.secret ?? existing?.apiKey ?? "";
-
-      const enabledModels = uniqueStrings(input.enabledModels);
-      const nextEntry: ProviderEntry = {
-        provider: input.provider,
+      const nextEntryDraft: ProviderEntry = {
+        provider: providerId,
         enabled: input.enabled,
         apiKey: nextApiKey,
+        baseUrl: normalizeOptionalHttpUrl(input.baseUrl),
+        api: normalizeOptionalString(input.api),
+        customModels:
+          input.customModels.length > 0
+            ? input.customModels.map((model) => ({
+                id: model.id.trim(),
+                name: normalizeOptionalString(model.name),
+                reasoning: model.reasoning,
+                input: model.input.includes("image")
+                  ? (["text", "image"] as Array<"text" | "image">)
+                  : (["text"] as Array<"text" | "image">),
+                contextWindow: model.contextWindow,
+                maxTokens: model.maxTokens,
+              }))
+            : [],
+        enabledModels: [],
+      };
+      const enabledModels = uniqueStrings(input.enabledModels).filter((modelId) =>
+        getConfiguredModelsForProvider(providerId, nextEntryDraft).some(
+          (model) => model.id === modelId,
+        ),
+      );
+      const nextEntry: ProviderEntry = {
+        ...nextEntryDraft,
         enabledModels,
       };
 
       const nextProviders = existing
-        ? settings.providers.map((e) => (e.provider === input.provider ? nextEntry : e))
+        ? settings.providers.map((e) => (e.provider === providerId ? nextEntry : e))
         : [...settings.providers, nextEntry];
 
       await writeSettingsFile({
@@ -962,10 +1223,7 @@ export const settingsService = {
   ): Promise<ClaudeConfigStatus> {
     const settings = await readSettingsFile();
 
-    const providers: Record<
-      string,
-      { configured: boolean; enabled: boolean; apiKey: string; enabledModels: string[] }
-    > = {};
+    const providers: Record<string, ProviderConfigEntry> = {};
     const allEnabledModels: {
       provider: string;
       modelId: string;
@@ -973,20 +1231,27 @@ export const settingsService = {
     }[] = [];
 
     for (const entry of settings.providers) {
-      const configured = Boolean(entry.apiKey);
+      const configured = isProviderEntryConfigured(entry);
+      const enabledModels = getConfiguredEnabledModels(entry);
       providers[entry.provider] = {
         configured,
         enabled: entry.enabled,
         apiKey: entry.apiKey,
-        enabledModels: entry.enabledModels,
+        baseUrl: entry.baseUrl,
+        api: entry.api,
+        customModels: entry.customModels,
+        enabledModels,
       };
 
-      if (entry.enabled && configured && entry.enabledModels.length > 0) {
-        const availableModels = settingsService.getAvailableModels(entry.provider);
+      if (entry.enabled && configured && enabledModels.length > 0) {
+        const availableModels = getConfiguredModelsForProvider(
+          entry.provider,
+          entry,
+        );
         const modelNameMap = new Map(
           availableModels.map((m) => [m.id, m.name]),
         );
-        for (const modelId of entry.enabledModels) {
+        for (const modelId of enabledModels) {
           allEnabledModels.push({
             provider: entry.provider,
             modelId,
@@ -1014,8 +1279,10 @@ export const settingsService = {
 
   async getClaudeSecret(provider: string): Promise<string | null> {
     const settings = await readSettingsFile();
-    const entry = settings.providers.find((e) => e.provider === provider);
-    return entry?.apiKey || null;
+    const entry = settings.providers.find(
+      (e) => e.provider === normalizeAgentProviderId(provider),
+    );
+    return getProviderRuntimeApiKey(entry);
   },
 
   async saveModelProviderConfig(input: {
@@ -1038,6 +1305,7 @@ export const settingsService = {
         provider: input.provider,
         enabled: existing?.enabled ?? Boolean(nextApiKey),
         apiKey: nextApiKey,
+        customModels: [],
         enabledModels,
       };
 
@@ -1641,27 +1909,57 @@ export const settingsService = {
       'google-antigravity',
       'google-gemini-cli',
     ]);
-    return getProviders()
+    const providers: AgentProviderDTO[] = getProviders()
       .filter((id) => !hidden.has(id))
       .map((id) => ({
         id,
         name: id.split('-').map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(' '),
       }));
+    const openRouterIndex = providers.findIndex((provider) => provider.id === "openrouter");
+    const customProvider = {
+      id: CUSTOM_API_PROVIDER,
+      name: "Custom API",
+    };
+    if (openRouterIndex >= 0) {
+      providers.splice(openRouterIndex + 1, 0, customProvider);
+    } else {
+      providers.push(customProvider);
+    }
+    return providers;
   },
 
-  getAvailableModels(provider: string): AgentModelDTO[] {
-    try {
-      const models = getModels(provider as Parameters<typeof getModels>[0]);
-      return models.map((m) => ({
-        id: m.id,
-        name: m.name,
-        reasoning: m.reasoning,
-        contextWindow: m.contextWindow,
-        maxTokens: m.maxTokens,
-      }));
-    } catch {
-      return [];
+  async getAvailableModels(provider: string): Promise<AgentModelDTO[]> {
+    const settings = await readSettingsFile();
+    const providerId = normalizeAgentProviderId(provider);
+    const providerEntry = settings.providers.find(
+      (entry) => entry.provider === providerId,
+    );
+    return getConfiguredModelsForProvider(providerId, providerEntry);
+  },
+
+  async resolveAgentModel(
+    provider: string,
+    modelId: string,
+  ): Promise<Model<Api> | null> {
+    const settings = await readSettingsFile();
+    const providerId = normalizeAgentProviderId(provider);
+    const providerEntry = settings.providers.find(
+      (entry) => entry.provider === providerId,
+    );
+    const resolvedModel = resolveConfiguredModel(providerId, modelId, providerEntry);
+    if (!resolvedModel) {
+      return null;
     }
+    if (providerId === CUSTOM_API_PROVIDER && resolvedModel.api === "openai-completions") {
+      return {
+        ...resolvedModel,
+        compat: {
+          ...(resolvedModel.compat ?? {}),
+          supportsDeveloperRole: false,
+        },
+      };
+    }
+    return resolvedModel;
   },
 
   async getGeneralConfig(): Promise<GeneralConfigDTO> {

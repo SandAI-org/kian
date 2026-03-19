@@ -34,6 +34,8 @@ import { NEW_PROJECT_SESSION_EVENT } from '@renderer/modules/project/ProjectWork
 import kianLogo from '@renderer/assets/kian-logo.png';
 import { Input, Layout, Menu, Tooltip, Typography, message } from 'antd';
 import { CompactDropdown } from '@renderer/components/CompactDropdown';
+import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
+import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { DEFAULT_SHORTCUT_CONFIG } from '@shared/utils/shortcuts';
 
@@ -54,6 +56,8 @@ const resolveProjectModule = (value: string | null): ModuleType => {
 };
 
 export const MainLayout = () => {
+  const { language } = useAppI18n();
+  const t = (value: string): string => translateUiText(language, value);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -392,9 +396,9 @@ export const MainLayout = () => {
 
   const handleInstallDownloadedUpdate = useCallback(() => {
     void api.update.quitAndInstall().catch((error) => {
-      message.error(error instanceof Error ? error.message : '安装更新失败');
+      message.error(error instanceof Error ? error.message : t('安装更新失败'));
     });
-  }, []);
+  }, [t]);
 
   const isUpdateReady = updateStatus?.stage === 'downloaded';
 
@@ -440,7 +444,9 @@ export const MainLayout = () => {
       }
     } catch (error) {
       setTitleDraft(project.name);
-      message.error(error instanceof Error ? error.message : 'Agent 名称保存失败');
+      message.error(
+        error instanceof Error ? error.message : t('Agent 名称保存失败'),
+      );
     } finally {
       setIsTitleEditing(false);
     }
@@ -451,6 +457,7 @@ export const MainLayout = () => {
     projectId,
     queryClient,
     titleDraft,
+    t,
     updateProjectMutation
   ]);
 

@@ -382,6 +382,150 @@ describe("settingsService.getAgentSystemPrompt", () => {
     });
   });
 
+  it("persists provider baseUrl override and custom models using pi-mono style config", async () => {
+    const { settingsService } = await import(
+      "../../electron/main/services/settingsService"
+    );
+
+    await settingsService.saveClaudeConfig({
+      provider: "custom-api",
+      enabled: true,
+      secret: "sk-test-custom-provider",
+      baseUrl: "https://proxy.example.com/v1",
+      api: "openai-completions",
+      customModels: [
+        {
+          id: "gpt-4.1-custom",
+          name: "GPT 4.1 Custom",
+          reasoning: true,
+          input: ["text", "image"],
+          contextWindow: 256000,
+          maxTokens: 32768,
+        },
+      ],
+      enabledModels: ["gpt-4.1-custom"],
+    });
+
+    await expect(settingsService.getClaudeStatus()).resolves.toMatchObject({
+      providers: {
+        "custom-api": {
+          enabled: true,
+          apiKey: "sk-test-custom-provider",
+          baseUrl: "https://proxy.example.com/v1",
+          api: "openai-completions",
+          customModels: [
+            {
+              id: "gpt-4.1-custom",
+              name: "GPT 4.1 Custom",
+              reasoning: true,
+              input: ["text", "image"],
+              contextWindow: 256000,
+              maxTokens: 32768,
+            },
+          ],
+          enabledModels: ["gpt-4.1-custom"],
+        },
+      },
+      allEnabledModels: [
+        {
+          provider: "custom-api",
+          modelId: "gpt-4.1-custom",
+          modelName: "GPT 4.1 Custom",
+        },
+      ],
+    });
+
+    await expect(
+      settingsService.getAvailableModels("custom-api"),
+    ).resolves.toEqual([
+      {
+        id: "gpt-4.1-custom",
+        name: "GPT 4.1 Custom",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 256000,
+        maxTokens: 32768,
+        source: "custom",
+      },
+    ]);
+
+    await expect(
+      settingsService.resolveAgentModel(
+        "custom-api",
+        "gpt-4.1-custom",
+      ),
+    ).resolves.toMatchObject({
+      provider: "custom-api",
+      id: "gpt-4.1-custom",
+      api: "openai-completions",
+      baseUrl: "https://proxy.example.com/v1",
+      compat: {
+        supportsDeveloperRole: false,
+      },
+    });
+  });
+
+  it("includes Custom API as a top-level language model provider", async () => {
+    const { settingsService } = await import(
+      "../../electron/main/services/settingsService"
+    );
+
+    expect(settingsService.getAvailableProviders()).toEqual(
+      expect.arrayContaining([
+        {
+          id: "custom-api",
+          name: "Custom API",
+        },
+      ]),
+    );
+  });
+
+  it("treats Custom API as configured without an API key when URL, API type, and custom models are present", async () => {
+    const { settingsService } = await import(
+      "../../electron/main/services/settingsService"
+    );
+
+    await settingsService.saveClaudeConfig({
+      provider: "custom-api",
+      enabled: true,
+      baseUrl: "http://localhost:2276/v1",
+      api: "openai-completions",
+      customModels: [
+        {
+          id: "qwen3.5-small-9b",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 131072,
+          maxTokens: 8192,
+        },
+      ],
+      enabledModels: ["qwen3.5-small-9b"],
+    });
+
+    await expect(settingsService.getClaudeStatus()).resolves.toMatchObject({
+      providers: {
+        "custom-api": {
+          configured: true,
+          apiKey: "",
+          baseUrl: "http://localhost:2276/v1",
+          api: "openai-completions",
+          enabledModels: ["qwen3.5-small-9b"],
+        },
+      },
+      allEnabledModels: [
+        {
+          provider: "custom-api",
+          modelId: "qwen3.5-small-9b",
+          modelName: "qwen3.5-small-9b",
+        },
+      ],
+    });
+
+    await expect(settingsService.getClaudeSecret("custom-api")).resolves.toBe(
+      "kian-custom-api-no-auth",
+    );
+  });
+
   it("persists model selection separately for main and project scopes", async () => {
     const { settingsService } = await import(
       "../../electron/main/services/settingsService"

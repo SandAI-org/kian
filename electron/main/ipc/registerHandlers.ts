@@ -383,6 +383,9 @@ export const registerHandlers = (options?: RegisterHandlersOptions): void => {
       provider: input.provider,
       enabled: input.enabled,
       secret: input.secret,
+      baseUrl: input.baseUrl,
+      api: input.api,
+      customModels: input.customModels,
       enabledModels: input.enabledModels
     });
     return true;

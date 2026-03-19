@@ -1,5 +1,4 @@
 import {
-  getModel,
   Type,
   type AssistantMessageEvent,
 } from "@mariozechner/pi-ai";
@@ -14,6 +13,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type {
   ChatAttachmentDTO,
+  ClaudeConfigStatus,
   ChatInterruptPayload,
   ChatMessageDTO,
   ChatMessageMetadata,
@@ -27,7 +27,7 @@ import type {
   ModuleType,
 } from "@shared/types";
 import { app } from "electron";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -61,6 +61,7 @@ type AgentSessionEntry = {
   session: AgentSession;
   unsubscribe: () => void;
   modelId: string;
+  modelConfigSignature: string;
   thinkingLevel: ChatThinkingLevel;
   mcpSignature: string;
   disposeMcpRuntime: () => Promise<void>;
@@ -110,6 +111,77 @@ const MAIN_AGENT_NAME = "主 Agent";
 const EMPTY_AGENT_FINAL_MESSAGE = "已处理请求，但未收到 Agent 文本回复。";
 const SUCCESS_WITHOUT_TEXT_FINAL_MESSAGE = "已处理完成。";
 const nowISO = (): string => new Date().toISOString();
+
+const buildAgentModelConfigSignature = (input: {
+  provider: string;
+  apiKey?: string;
+  model: {
+    id: string;
+    api: string;
+    baseUrl?: string;
+    headers?: Record<string, string>;
+    compat?: unknown;
+    reasoning?: boolean;
+    input?: string[];
+    contextWindow?: number;
+    maxTokens?: number;
+  };
+}): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: input.provider,
+        apiKey: input.apiKey ?? null,
+        modelId: input.model.id,
+        api: input.model.api,
+        baseUrl: input.model.baseUrl ?? null,
+        headers: input.model.headers ?? null,
+        compat: input.model.compat ?? null,
+        reasoning: input.model.reasoning ?? false,
+        input: input.model.input ?? [],
+        contextWindow: input.model.contextWindow ?? null,
+        maxTokens: input.model.maxTokens ?? null,
+      }),
+    )
+    .digest("hex");
+
+const resolveEffectiveAgentModelSelection = (
+  status: ClaudeConfigStatus,
+  modelOverride?: string,
+): {
+  provider: string;
+  modelId: string;
+  modelSource:
+    | "payload.model"
+    | "settings.lastSelectedModel"
+    | "settings.firstEnabledModel";
+} => {
+  if (modelOverride && modelOverride.includes(":")) {
+    const sepIdx = modelOverride.indexOf(":");
+    return {
+      provider: modelOverride.slice(0, sepIdx),
+      modelId: modelOverride.slice(sepIdx + 1),
+      modelSource: "payload.model",
+    };
+  }
+  const savedScopeModel = status.lastSelectedModel?.trim();
+  if (savedScopeModel) {
+    const sepIdx = savedScopeModel.indexOf(":");
+    if (sepIdx > 0 && sepIdx < savedScopeModel.length - 1) {
+      return {
+        provider: savedScopeModel.slice(0, sepIdx),
+        modelId: savedScopeModel.slice(sepIdx + 1),
+        modelSource: "settings.lastSelectedModel",
+      };
+    }
+  }
+  const first = status.allEnabledModels[0];
+  return {
+    provider: first?.provider ?? "anthropic",
+    modelId: modelOverride ?? first?.modelId ?? "",
+    modelSource: "settings.firstEnabledModel",
+  };
+};
 
 const registerActiveRequestTurnStarted = (
   storeKey: string,
@@ -1313,39 +1385,30 @@ const createOrResumeSession = async (
   const status = await settingsService.getClaudeStatus(scope);
   const effectiveThinkingLevel = thinkingLevel ?? DEFAULT_CHAT_THINKING_LEVEL;
 
-  // Resolve provider and model from override (format: "provider:modelId") or first enabled
-  let effectiveProvider: string;
-  let effectiveModelId: string;
-  let modelSource:
-    | "payload.model"
-    | "settings.lastSelectedModel"
-    | "settings.firstEnabledModel";
-  const savedScopeModel = status.lastSelectedModel?.trim();
-  if (modelOverride && modelOverride.includes(":")) {
-    const sepIdx = modelOverride.indexOf(":");
-    effectiveProvider = modelOverride.slice(0, sepIdx);
-    effectiveModelId = modelOverride.slice(sepIdx + 1);
-    modelSource = "payload.model";
-  } else if (savedScopeModel) {
-    const sepIdx = savedScopeModel.indexOf(":");
-    if (sepIdx > 0 && sepIdx < savedScopeModel.length - 1) {
-      effectiveProvider = savedScopeModel.slice(0, sepIdx);
-      effectiveModelId = savedScopeModel.slice(sepIdx + 1);
-      modelSource = "settings.lastSelectedModel";
-    } else {
-      const first = status.allEnabledModels[0];
-      effectiveProvider = first?.provider ?? "anthropic";
-      effectiveModelId = modelOverride ?? first?.modelId ?? "";
-      modelSource = "settings.firstEnabledModel";
-    }
-  } else {
-    const first = status.allEnabledModels[0];
-    effectiveProvider = first?.provider ?? "anthropic";
-    effectiveModelId = modelOverride ?? first?.modelId ?? "";
-    modelSource = "settings.firstEnabledModel";
-  }
+  // Resolve provider and model from override, saved scope state, or first enabled model.
+  const {
+    provider: effectiveProvider,
+    modelId: effectiveModelId,
+    modelSource,
+  } = resolveEffectiveAgentModelSelection(status, modelOverride);
 
   const compositeModelKey = `${effectiveProvider}:${effectiveModelId}`;
+  const providerApiKey =
+    status.providers[effectiveProvider]?.apiKey ||
+    (await settingsService.getClaudeSecret(effectiveProvider)) ||
+    undefined;
+  const model = await settingsService.resolveAgentModel(
+    effectiveProvider,
+    effectiveModelId,
+  );
+  if (!model) {
+    throw new Error(`Model not found: ${effectiveProvider}:${effectiveModelId}`);
+  }
+  const currentModelConfigSignature = buildAgentModelConfigSignature({
+    provider: effectiveProvider,
+    apiKey: providerApiKey,
+    model,
+  });
   const sessionDir = getPersistentSessionDir(projectCwd, chatSessionId);
   const startFreshRequested = freshSessionOnNextPrompt.has(storeKey);
   const mcpServers = await settingsService.getMcpServers();
@@ -1365,6 +1428,7 @@ const createOrResumeSession = async (
   if (existing) {
     if (
       existing.modelId !== compositeModelKey ||
+      existing.modelConfigSignature !== currentModelConfigSignature ||
       existing.mcpSignature !== mcpSignature
     ) {
       logger.info(
@@ -1375,6 +1439,8 @@ const createOrResumeSession = async (
           previousModelId: existing.modelId,
           nextModelId: compositeModelKey,
           modelChanged: existing.modelId !== compositeModelKey,
+          modelRuntimeChanged:
+            existing.modelConfigSignature !== currentModelConfigSignature,
           mcpChanged: existing.mcpSignature !== mcpSignature,
           enabledMcpServerCount: mcpServers.filter((server) => server.enabled)
             .length,
@@ -1425,21 +1491,13 @@ const createOrResumeSession = async (
     );
   }
   if (!status.providers[effectiveProvider]?.apiKey) {
-    const fallbackSecret =
-      await settingsService.getClaudeSecret(effectiveProvider);
-    if (fallbackSecret) {
+    if (providerApiKey) {
       authStorage.setRuntimeApiKey(
         toAuthProviderKey(effectiveProvider),
-        fallbackSecret,
+        providerApiKey,
       );
     }
   }
-
-  // Resolve the model from pi-ai using provider + modelId
-  const model: ReturnType<typeof getModel> = getModel(
-    effectiveProvider as Parameters<typeof getModel>[0],
-    effectiveModelId as never,
-  );
 
   // Create coding tools configured for the project directory
   const tools = createCodingTools(projectCwd);
@@ -1643,6 +1701,7 @@ const createOrResumeSession = async (
     session,
     unsubscribe: () => {},
     modelId: compositeModelKey,
+    modelConfigSignature: currentModelConfigSignature,
     thinkingLevel: effectiveThinkingLevel,
     mcpSignature,
     disposeMcpRuntime: mcpRuntime.dispose,
@@ -1668,7 +1727,7 @@ export const agentService = {
     payload: ChatSendPayload,
     onStream?: (event: ChatStreamEvent) => void,
   ): Promise<ChatSendResponse> {
-    const status = await settingsService.getClaudeStatus();
+    const status = await settingsService.getClaudeStatus(payload.scope);
 
     if (status.allEnabledModels.length === 0) {
       return {
@@ -1683,6 +1742,17 @@ export const agentService = {
 
     const requestId = payload.requestId ?? `req_${Date.now()}`;
     const projectCwd = getScopeCwd(payload.scope);
+    const {
+      provider: effectiveProvider,
+      modelId: effectiveModelId,
+    } = resolveEffectiveAgentModelSelection(status, payload.model);
+    const resolvedModel = await settingsService.resolveAgentModel(
+      effectiveProvider,
+      effectiveModelId,
+    );
+    if (!resolvedModel) {
+      throw new Error(`Model not found: ${effectiveProvider}:${effectiveModelId}`);
+    }
 
     logger.info("Context snapshot", {
       contextSnapshot: payload.contextSnapshot,

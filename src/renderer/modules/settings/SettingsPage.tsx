@@ -12,8 +12,12 @@ import {
   keyboardShortcutFromEvent,
 } from "@renderer/lib/shortcuts";
 import type {
+  AgentModelDTO,
+  ClaudeConfigStatus,
   AppUpdateStatusDTO,
+  CustomAgentModelConfigDTO,
   KeyboardShortcutDTO,
+  ProviderConfigEntry,
   ShortcutConfigDTO,
 } from "@shared/types";
 import {
@@ -47,12 +51,28 @@ const SETTINGS_TABS = [
   "about",
 ] as const;
 
+const CUSTOM_API_PROVIDER = "custom-api";
+
+const CUSTOM_MODEL_API_OPTIONS = [
+  "openai-completions",
+  "openai-responses",
+  "anthropic-messages",
+  "mistral-conversations",
+  "google-generative-ai",
+  "google-gemini-cli",
+  "google-vertex",
+  "azure-openai-responses",
+  "openai-codex-responses",
+  "bedrock-converse-stream",
+] as const;
+
 const KNOWN_PROVIDER_META: Record<
   string,
   { keyLabel: string; keyPlaceholder: string }
 > = {
   anthropic: { keyLabel: "API Key", keyPlaceholder: "sk-ant-..." },
   openrouter: { keyLabel: "API Key", keyPlaceholder: "sk-or-..." },
+  "custom-api": { keyLabel: "API Key", keyPlaceholder: "sk-..." },
   openai: { keyLabel: "API Key", keyPlaceholder: "sk-..." },
   google: { keyLabel: "API Key", keyPlaceholder: "AIza..." },
   mistral: { keyLabel: "API Key", keyPlaceholder: "sk-..." },
@@ -124,17 +144,167 @@ const isSameBroadcastChannelDraft = (
     );
   });
 
+const getUpdateStageLabel = (
+  stage: AppUpdateStatusDTO["stage"] | undefined,
+): string => {
+  switch (stage) {
+    case "checking":
+      return "正在检查更新";
+    case "available":
+      return "发现新版本";
+    case "downloading":
+      return "正在下载更新";
+    case "verifying":
+      return "正在校验更新包";
+    case "downloaded":
+      return "更新已下载，可安装";
+    case "upToDate":
+      return "当前已是最新版本";
+    case "failed":
+      return "更新失败";
+    default:
+      return "未检查更新";
+  }
+};
+
+const DEFAULT_CUSTOM_MODEL_FORM_VALUE = (): CustomModelFormValue => ({
+  id: "",
+  name: "",
+  reasoning: false,
+  contextWindow: 128000,
+  maxTokens: 16384,
+});
+
+const customModelFormValueFromConfig = (
+  model: CustomAgentModelConfigDTO,
+): CustomModelFormValue => ({
+  id: model.id,
+  name: model.name ?? "",
+  reasoning: model.reasoning,
+  contextWindow: model.contextWindow,
+  maxTokens: model.maxTokens,
+});
+
+const normalizeCustomModelFormValues = (
+  values: CustomModelFormValue[],
+): CustomAgentModelConfigDTO[] =>
+  values
+    .map((value) => ({
+      id: String(value.id ?? "").trim(),
+      name: String(value.name ?? "").trim() || undefined,
+      reasoning: Boolean(value.reasoning),
+      input: ["text"] as Array<"text" | "image">,
+      contextWindow: Number(value.contextWindow ?? 0),
+      maxTokens: Number(value.maxTokens ?? 0),
+    }))
+    .filter((value) => value.id.length > 0);
+
+const customModelConfigSignature = (
+  values: CustomAgentModelConfigDTO[],
+): string =>
+  values
+    .map((value) =>
+      [
+        value.id,
+        value.name ?? "",
+        value.reasoning ? "1" : "0",
+        value.input.join(","),
+        value.contextWindow,
+        value.maxTokens,
+      ].join(":"),
+    )
+    .join("|");
+
+const customModelConfigToAgentModel = (
+  model: CustomAgentModelConfigDTO,
+): AgentModelDTO => ({
+  id: model.id,
+  name: model.name ?? model.id,
+  reasoning: model.reasoning,
+  input: model.input,
+  contextWindow: model.contextWindow,
+  maxTokens: model.maxTokens,
+  source: "custom",
+});
 type ClaudeFormValues = {
   provider: string;
   enabled: boolean;
   secret?: string;
+  baseUrl?: string;
+  api?: string;
+  customModels: CustomModelFormValue[];
   enabledModels: string[];
+};
+
+type CustomModelFormValue = {
+  id: string;
+  name?: string;
+  reasoning: boolean;
+  contextWindow: number;
+  maxTokens: number;
 };
 
 type ProviderFormValues = {
   secret?: string;
   enabledModels: string[];
 };
+
+const cloneCustomModelFormValues = (
+  values: CustomModelFormValue[],
+): CustomModelFormValue[] =>
+  values.map((value) => ({
+    id: String(value.id ?? ""),
+    name: String(value.name ?? ""),
+    reasoning: Boolean(value.reasoning),
+    contextWindow: Number(value.contextWindow ?? 0),
+    maxTokens: Number(value.maxTokens ?? 0),
+  }));
+
+const getClaudeFormValuesFromProviderConfig = (
+  provider: string,
+  providerConfig?: ProviderConfigEntry,
+): ClaudeFormValues => ({
+  provider,
+  enabled: providerConfig?.enabled ?? false,
+  secret: providerConfig?.apiKey ?? "",
+  baseUrl: providerConfig?.baseUrl ?? "",
+  api: providerConfig?.api ?? undefined,
+  customModels: (providerConfig?.customModels ?? []).map(
+    customModelFormValueFromConfig,
+  ),
+  enabledModels: providerConfig?.enabledModels ?? [],
+});
+
+const normalizeClaudeDraftValues = (
+  values: Partial<ClaudeFormValues>,
+  provider: string,
+): ClaudeFormValues => ({
+  provider,
+  enabled: Boolean(values.enabled),
+  secret: String(values.secret ?? ""),
+  baseUrl: String(values.baseUrl ?? ""),
+  api: String(values.api ?? "").trim() || undefined,
+  customModels: cloneCustomModelFormValues(values.customModels ?? []),
+  enabledModels: Array.isArray(values.enabledModels)
+    ? values.enabledModels.map((value) => String(value))
+    : [],
+});
+
+const getCustomModelIdsSignatureFromClaudeValues = (
+  values: ClaudeFormValues,
+): string =>
+  normalizeCustomModelFormValues(values.customModels)
+    .map((model) => model.id)
+    .join("|");
+
+const getNormalizedClaudeDraftFromStatus = (
+  provider: string,
+  status?: ClaudeConfigStatus,
+): ClaudeFormValues =>
+  normalizeClaudeDraftValues(
+    getClaudeFormValuesFromProviderConfig(provider, status?.providers[provider]),
+    provider,
+  );
 
 type ChannelFormValues = {
   enabled: boolean;
@@ -449,12 +619,23 @@ export const SettingsPage = () => {
     preserve: true,
   }) ?? "anthropic") as string;
   const providerMeta = getProviderMeta(provider);
+  const isCustomApiProvider = provider === CUSTOM_API_PROVIDER;
   const providerEnabled =
     Form.useWatch("enabled", { form: claudeForm, preserve: true }) ?? false;
   const secretValue = Form.useWatch("secret", {
     form: claudeForm,
     preserve: true,
   });
+  const baseUrlValue = Form.useWatch("baseUrl", {
+    form: claudeForm,
+    preserve: true,
+  });
+  const apiValue = Form.useWatch("api", {
+    form: claudeForm,
+    preserve: true,
+  });
+  const customModelsValue =
+    Form.useWatch("customModels", { form: claudeForm, preserve: true }) ?? [];
   const enabledModelsValue =
     Form.useWatch("enabledModels", { form: claudeForm, preserve: true }) ?? [];
   const providerSecretValue = Form.useWatch("secret", {
@@ -510,6 +691,8 @@ export const SettingsPage = () => {
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const autoSaveInFlightRef = useRef(false);
   const aboutAutoCheckTriggeredRef = useRef(false);
+  const claudeProviderDraftsRef = useRef<Record<string, ClaudeFormValues>>({});
+  const previousCustomModelIdsSignatureRef = useRef<string | null>(null);
   const [broadcastChannelsDraft, setBroadcastChannelsDraft] = useState<
     BroadcastChannelDraft[]
   >([]);
@@ -587,6 +770,9 @@ export const SettingsPage = () => {
         provider: values.provider,
         enabled: values.enabled,
         secret: values.secret,
+        baseUrl: values.baseUrl,
+        api: values.api,
+        customModels: normalizeCustomModelFormValues(values.customModels ?? []),
         enabledModels: values.enabledModels,
       }),
   });
@@ -662,6 +848,52 @@ export const SettingsPage = () => {
     });
   }, [availableProvidersQuery.data, claudeStatusQuery.data]);
 
+  const currentClaudeDraft = useMemo(
+    () =>
+      normalizeClaudeDraftValues(
+        {
+          provider,
+          enabled: providerEnabled,
+          secret: secretValue,
+          baseUrl: baseUrlValue,
+          api: apiValue,
+          customModels: customModelsValue,
+          enabledModels: enabledModelsValue,
+        },
+        provider,
+      ),
+    [
+      apiValue,
+      baseUrlValue,
+      customModelsValue,
+      enabledModelsValue,
+      provider,
+      providerEnabled,
+      secretValue,
+    ],
+  );
+
+  const syncClaudeProviderDraftFromStatus = useCallback(
+    (
+      providerId: string,
+      status?: ClaudeConfigStatus,
+      options?: { applyToForm?: boolean },
+    ): ClaudeFormValues => {
+      const syncedDraft = getNormalizedClaudeDraftFromStatus(providerId, status);
+      claudeProviderDraftsRef.current = {
+        ...claudeProviderDraftsRef.current,
+        [providerId]: syncedDraft,
+      };
+      if (options?.applyToForm) {
+        claudeForm.setFieldsValue(syncedDraft);
+        previousCustomModelIdsSignatureRef.current =
+          getCustomModelIdsSignatureFromClaudeValues(syncedDraft);
+      }
+      return syncedDraft;
+    },
+    [claudeForm],
+  );
+
   useEffect(() => {
     if (!generalConfigQuery.data) return;
     generalForm.setFieldsValue({
@@ -678,19 +910,40 @@ export const SettingsPage = () => {
   }, [shortcutConfigQuery.data]);
 
   useEffect(() => {
+    if (!provider.trim()) return;
+    claudeProviderDraftsRef.current[provider] = currentClaudeDraft;
+  }, [currentClaudeDraft, provider]);
+
+  useEffect(() => {
     if (!claudeStatusQuery.data) return;
     const effectiveProvider =
       sortedProviders.length > 0 &&
       !sortedProviders.some((p) => p.id === provider)
         ? sortedProviders[0].id
         : provider;
-    const providerConfig = claudeStatusQuery.data.providers[effectiveProvider];
-    claudeForm.setFieldsValue({
-      provider: effectiveProvider,
-      enabled: providerConfig?.enabled ?? false,
-      secret: providerConfig?.apiKey ?? "",
-      enabledModels: providerConfig?.enabledModels ?? [],
-    });
+    const nextDrafts = { ...claudeProviderDraftsRef.current };
+    for (const sortedProvider of sortedProviders) {
+      if (!nextDrafts[sortedProvider.id]) {
+        nextDrafts[sortedProvider.id] = getNormalizedClaudeDraftFromStatus(
+          sortedProvider.id,
+          claudeStatusQuery.data,
+        );
+      }
+    }
+    const nextValues =
+      nextDrafts[effectiveProvider] ??
+      getClaudeFormValuesFromProviderConfig(
+        effectiveProvider,
+        claudeStatusQuery.data.providers[effectiveProvider],
+      );
+    nextDrafts[effectiveProvider] = normalizeClaudeDraftValues(
+      nextValues,
+      effectiveProvider,
+    );
+    claudeProviderDraftsRef.current = nextDrafts;
+    claudeForm.setFieldsValue(nextDrafts[effectiveProvider]);
+    previousCustomModelIdsSignatureRef.current =
+      getCustomModelIdsSignatureFromClaudeValues(nextDrafts[effectiveProvider]);
   }, [claudeForm, claudeStatusQuery.data, provider, sortedProviders]);
 
   useEffect(() => {
@@ -755,6 +1008,69 @@ export const SettingsPage = () => {
 
   const secretText = String(secretValue ?? "").trim();
   const tokenFilled = Boolean(secretText);
+  const baseUrlText = String(baseUrlValue ?? "").trim();
+  const apiText = String(apiValue ?? "").trim();
+  const normalizedCustomModels = normalizeCustomModelFormValues(customModelsValue);
+  const customModelIds = normalizedCustomModels.map((model) => model.id);
+  const customModelIdsSignature = customModelIds.join("|");
+  const customModelsFilled = normalizedCustomModels.length > 0;
+  const availableAgentModels = useMemo(
+    () =>
+      isCustomApiProvider
+        ? normalizedCustomModels.map(customModelConfigToAgentModel)
+        : (availableModelsQuery.data ?? []),
+    [availableModelsQuery.data, isCustomApiProvider, normalizedCustomModels],
+  );
+
+  useEffect(() => {
+    if (!isCustomApiProvider) {
+      previousCustomModelIdsSignatureRef.current = customModelIdsSignature;
+      return;
+    }
+    if (previousCustomModelIdsSignatureRef.current === null) {
+      previousCustomModelIdsSignatureRef.current = customModelIdsSignature;
+      return;
+    }
+
+    if (previousCustomModelIdsSignatureRef.current === customModelIdsSignature) {
+      return;
+    }
+
+    const previousIds = previousCustomModelIdsSignatureRef.current
+      .split("|")
+      .filter(Boolean);
+    const addedIds = customModelIds.filter((id) => !previousIds.includes(id));
+    const removedIds = previousIds.filter((id) => !customModelIds.includes(id));
+    previousCustomModelIdsSignatureRef.current = customModelIdsSignature;
+
+    if (addedIds.length === 0 && removedIds.length === 0) {
+      return;
+    }
+
+    const currentEnabledModels =
+      ((claudeForm.getFieldValue("enabledModels") as string[] | undefined) ?? []);
+    const nextEnabledModels = currentEnabledModels.filter(
+      (modelId) => !removedIds.includes(modelId),
+    );
+
+    for (const modelId of addedIds) {
+      if (!nextEnabledModels.includes(modelId)) {
+        nextEnabledModels.push(modelId);
+      }
+    }
+
+    const changed =
+      nextEnabledModels.length !== currentEnabledModels.length ||
+      nextEnabledModels.some(
+        (modelId, index) => modelId !== currentEnabledModels[index],
+      );
+
+    if (changed) {
+      claudeForm.setFieldsValue({
+        enabledModels: nextEnabledModels,
+      });
+    }
+  }, [claudeForm, customModelIds, customModelIdsSignature, isCustomApiProvider]);
 
   const providerSecretText = String(providerSecretValue ?? "").trim();
   const hasInputProviderToken = Boolean(providerSecretText);
@@ -841,9 +1157,16 @@ export const SettingsPage = () => {
   const savedEnabledAgentModels = normalizeIdList(
     currentProviderConfig?.enabledModels ?? [],
   );
+  const savedCustomModelSignature = customModelConfigSignature(
+    currentProviderConfig?.customModels ?? [],
+  );
   const claudeDirty = claudeStatus
     ? providerEnabled !== (currentProviderConfig?.enabled ?? false) ||
       secretText !== (currentProviderConfig?.apiKey ?? "") ||
+      baseUrlText !== String(currentProviderConfig?.baseUrl ?? "") ||
+      apiText !== String(currentProviderConfig?.api ?? "") ||
+      customModelConfigSignature(normalizedCustomModels) !==
+        savedCustomModelSignature ||
       !isSameStringArray(normalizedEnabledAgentModels, savedEnabledAgentModels)
     : false;
   const providerDirty = providerStatus
@@ -912,6 +1235,7 @@ export const SettingsPage = () => {
 
     const refetchTasks: Array<Promise<unknown>> = [];
     let firstSaveError: string | null = null;
+    let savedClaudeProvider: string | null = null;
 
     const captureSaveError = (error: unknown) => {
       if (firstSaveError) return;
@@ -963,14 +1287,33 @@ export const SettingsPage = () => {
       async () => {
         const values = claudeForm.getFieldsValue(true) as ClaudeFormValues;
         const normalizedSecret = values.secret?.trim();
-        await saveClaudeMutation.mutateAsync({
+        const payload: ClaudeFormValues = {
           provider: values.provider,
           enabled: values.enabled,
           secret: normalizedSecret || undefined,
+          baseUrl: String(values.baseUrl ?? "").trim() || undefined,
+          api: String(values.api ?? "").trim() || undefined,
+          customModels: cloneCustomModelFormValues(values.customModels ?? []),
           enabledModels: values.enabledModels,
-        });
+        };
+        savedClaudeProvider = payload.provider.trim();
+        await saveClaudeMutation.mutateAsync(payload);
       },
-      claudeStatusQuery.refetch,
+      async () => {
+        const result = await claudeStatusQuery.refetch();
+        const refreshedStatus = result.data;
+        const savedProvider = savedClaudeProvider;
+        if (!refreshedStatus || !savedProvider) {
+          return result;
+        }
+        const activeProvider = String(
+          claudeForm.getFieldValue("provider") ?? provider,
+        ).trim();
+        syncClaudeProviderDraftFromStatus(savedProvider, refreshedStatus, {
+          applyToForm: activeProvider === savedProvider,
+        });
+        return result;
+      },
     );
 
     await runSaveTask(
@@ -1111,6 +1454,9 @@ export const SettingsPage = () => {
         provider,
         providerEnabled,
         secretText,
+        baseUrlText,
+        apiText,
+        customModelConfigSignature(normalizedCustomModels),
         normalizedEnabledAgentModels.join(","),
         providerSecretText,
         normalizedEnabledModels.join(","),
@@ -1140,6 +1486,9 @@ export const SettingsPage = () => {
       provider,
       providerEnabled,
       secretText,
+      baseUrlText,
+      apiText,
+      normalizedCustomModels,
       normalizedEnabledAgentModels,
       providerSecretText,
       normalizedEnabledModels,
@@ -1401,7 +1750,7 @@ export const SettingsPage = () => {
                         label="数据存放目录"
                         extra="修改后需要重启应用才能生效。默认：~/KianWorkspace"
                         rules={[
-                          { required: true, message: "数据存放目录不能为空" },
+                          { required: true, message: t("数据存放目录不能为空") },
                         ]}
                       >
                         <Input placeholder="~/KianWorkspace" />
@@ -1515,8 +1864,9 @@ export const SettingsPage = () => {
                       语言模型
                     </Typography.Title>
                     <Typography.Paragraph className="!text-slate-600">
-                      选择 Provider 标签页来切换接入方式，配置对应的 API Key
-                      并启用模型。
+                        {t(
+                        "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。",
+                      )}
                     </Typography.Paragraph>
 
                     <Form
@@ -1525,6 +1875,7 @@ export const SettingsPage = () => {
                       initialValues={{
                         provider: "anthropic",
                         enabled: false,
+                        customModels: [],
                         enabledModels: [],
                       }}
                     >
@@ -1535,14 +1886,28 @@ export const SettingsPage = () => {
                       <Tabs
                         activeKey={provider}
                         onChange={(nextProvider) => {
-                          const pConfig =
-                            claudeStatusQuery.data?.providers[nextProvider];
-                          claudeForm.setFieldsValue({
-                            provider: nextProvider,
-                            enabled: pConfig?.enabled ?? false,
-                            secret: pConfig?.apiKey ?? "",
-                            enabledModels: pConfig?.enabledModels ?? [],
-                          });
+                          if (provider.trim()) {
+                            claudeProviderDraftsRef.current[provider] =
+                              currentClaudeDraft;
+                          }
+                          const nextValues =
+                            claudeProviderDraftsRef.current[nextProvider] ??
+                            getClaudeFormValuesFromProviderConfig(
+                              nextProvider,
+                              claudeStatusQuery.data?.providers[nextProvider],
+                            );
+                          claudeProviderDraftsRef.current[nextProvider] =
+                            normalizeClaudeDraftValues(
+                              nextValues,
+                              nextProvider,
+                            );
+                          claudeForm.setFieldsValue(
+                            claudeProviderDraftsRef.current[nextProvider],
+                          );
+                          previousCustomModelIdsSignatureRef.current =
+                            getCustomModelIdsSignatureFromClaudeValues(
+                              claudeProviderDraftsRef.current[nextProvider],
+                            );
                         }}
                         destroyInactiveTabPane={false}
                         animated={false}
@@ -1567,12 +1932,108 @@ export const SettingsPage = () => {
                       />
 
                       <div className="mt-2">
-                        <Form.Item name="enabled" valuePropName="checked">
-                          <Switch
-                            checkedChildren="已启用"
-                            unCheckedChildren="未启用"
-                          />
-                        </Form.Item>
+                        {isCustomApiProvider ? (
+                          <Typography.Paragraph className="!text-slate-600">
+                            {t(
+                              "Custom API 用于接入兼容 OpenAI、Anthropic 或其他受支持协议的服务。API Key 可选；是否填写取决于你的服务是否要求鉴权。",
+                            )}
+                          </Typography.Paragraph>
+                        ) : null}
+
+                        {!isCustomApiProvider ? (
+                          <Form.Item name="enabled" valuePropName="checked">
+                            <Switch
+                              checkedChildren="已启用"
+                              unCheckedChildren="未启用"
+                            />
+                          </Form.Item>
+                        ) : null}
+
+                        {isCustomApiProvider ? (
+                          <>
+                            <Form.Item
+                              name="baseUrl"
+                              label={getFieldLabel(
+                                "自定义 URL",
+                                Boolean(baseUrlText),
+                              )}
+                              extra={t(
+                                "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。",
+                              )}
+                              rules={[
+                                {
+                                  validator: async (_, value) => {
+                                    const trimmed = String(value ?? "").trim();
+                                    if (!trimmed) {
+                                      return Promise.resolve();
+                                    }
+                                    try {
+                                      const parsed = new URL(trimmed);
+                                      if (
+                                        parsed.protocol === "http:" ||
+                                        parsed.protocol === "https:"
+                                      ) {
+                                        return Promise.resolve();
+                                      }
+                                    } catch {
+                                      // handled below
+                                    }
+                                    return Promise.reject(
+                                      new Error(
+                                        t("URL 必须是合法的 http/https 地址"),
+                                      ),
+                                    );
+                                  },
+                                },
+                              ]}
+                            >
+                              <Input placeholder="https://api.example.com/v1" />
+                            </Form.Item>
+
+                            <Form.Item
+                              name="api"
+                              label={getFieldLabel(
+                                "自定义模型 API 类型",
+                                Boolean(apiText),
+                              )}
+                              extra={t(
+                                "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。",
+                              )}
+                              rules={[
+                                {
+                                  validator: async (_, value) => {
+                                    const customModels =
+                                      normalizeCustomModelFormValues(
+                                        (claudeForm.getFieldValue(
+                                          "customModels",
+                                        ) as
+                                          | CustomModelFormValue[]
+                                          | undefined) ?? [],
+                                      );
+                                    const trimmed = String(value ?? "").trim();
+                                    if (customModels.length === 0 || trimmed) {
+                                      return Promise.resolve();
+                                    }
+                                    return Promise.reject(
+                                      new Error(
+                                        t("配置自定义模型时必须选择 API 类型"),
+                                      ),
+                                    );
+                                  },
+                                },
+                              ]}
+                            >
+                              <Select
+                                allowClear
+                                placeholder="请选择"
+                                options={CUSTOM_MODEL_API_OPTIONS.map((value) => ({
+                                  label: value,
+                                  value,
+                                }))}
+                              />
+                            </Form.Item>
+                          </>
+                        ) : null}
 
                         <Form.Item
                           name="secret"
@@ -1580,22 +2041,33 @@ export const SettingsPage = () => {
                             providerMeta.keyLabel,
                             tokenFilled,
                           )}
+                          extra={
+                            isCustomApiProvider
+                              ? t(
+                                  "Custom API 的 API Key 为可选项；如果你的服务不要求 Bearer Token，可以留空。",
+                                )
+                              : undefined
+                          }
                           rules={[
                             {
                               validator: async (_, value) => {
                                 const enabled =
                                   claudeForm.getFieldValue("enabled");
-                                if (enabled && !String(value ?? "").trim()) {
-                                  return Promise.reject(
-                                    new Error(
-                                      "启用 Provider 时必须设置 API Key",
-                                    ),
-                                  );
+                                if (
+                                  enabled &&
+                                  !isCustomApiProvider &&
+                                  !String(value ?? "").trim()
+                                ) {
+                                    return Promise.reject(
+                                      new Error(
+                                        t("启用 Provider 时必须设置 API Key"),
+                                      ),
+                                    );
                                 }
                                 const trimmed = String(value ?? "").trim();
                                 if (trimmed && trimmed.length < 10) {
                                   return Promise.reject(
-                                    new Error("凭证长度至少 10 位"),
+                                    new Error(t("凭证长度至少 10 位")),
                                   );
                                 }
                                 return Promise.resolve();
@@ -1607,6 +2079,150 @@ export const SettingsPage = () => {
                             placeholder={providerMeta.keyPlaceholder}
                           />
                         </Form.Item>
+
+                        {isCustomApiProvider ? (
+                          <>
+                            <Form.Item name="enabled" valuePropName="checked">
+                              <Switch
+                                checkedChildren="已启用"
+                                unCheckedChildren="未启用"
+                              />
+                            </Form.Item>
+
+                            <Form.List name="customModels">
+                              {(fields, { add, remove }) => (
+                                <Form.Item
+                                  label={getFieldLabel(
+                                    "自定义模型",
+                                    customModelsFilled,
+                                  )}
+                                  extra={t(
+                                    "这里定义 Custom API 可用的模型。新增后会出现在下方的启用模型列表中。",
+                                  )}
+                                  className="[&_.ant-form-item-label>label]:after:!content-none"
+                                >
+                                  <div className="flex flex-col gap-3">
+                                    {fields.map((field) => (
+                                      <div
+                                        key={field.key}
+                                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
+                                      >
+                                        <div className="mb-3 flex items-center justify-between gap-3">
+                                          <Typography.Text strong>
+                                            {t(`自定义模型 ${field.name + 1}`)}
+                                          </Typography.Text>
+                                          <Button
+                                            size="small"
+                                            type="text"
+                                            danger
+                                            onClick={() => {
+                                              const currentCustomModels =
+                                                normalizeCustomModelFormValues(
+                                                  ((claudeForm.getFieldValue(
+                                                    "customModels",
+                                                  ) as CustomModelFormValue[] | undefined) ??
+                                                    []),
+                                                );
+                                              const removedModelId =
+                                                currentCustomModels[field.name]?.id;
+                                              remove(field.name);
+                                              if (!removedModelId) {
+                                                return;
+                                              }
+                                              const currentEnabledModels =
+                                                ((claudeForm.getFieldValue(
+                                                  "enabledModels",
+                                                ) as string[] | undefined) ?? []);
+                                              const nextEnabledModels =
+                                                currentEnabledModels.filter(
+                                                  (modelId) =>
+                                                    modelId !== removedModelId,
+                                                );
+                                              claudeForm.setFieldsValue({
+                                                enabledModels: nextEnabledModels,
+                                              });
+                                            }}
+                                          >
+                                            {t("删除")}
+                                          </Button>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                          <Form.Item
+                                            {...field}
+                                            name={[field.name, "id"]}
+                                            label="模型 ID"
+                                            rules={[
+                                              {
+                                                required: true,
+                                                message: t("Model ID 不能为空"),
+                                              },
+                                            ]}
+                                          >
+                                            <Input placeholder="gpt-4.1-mini" />
+                                          </Form.Item>
+                                          <Form.Item
+                                            {...field}
+                                            name={[field.name, "name"]}
+                                            label="显示名称"
+                                          >
+                                            <Input placeholder="留空则使用 Model ID" />
+                                          </Form.Item>
+                                          <Form.Item
+                                            {...field}
+                                            name={[field.name, "contextWindow"]}
+                                            label="上下文窗口"
+                                            rules={[
+                                              {
+                                                required: true,
+                                                message: t("上下文窗口不能为空"),
+                                              },
+                                            ]}
+                                          >
+                                            <Input type="number" min={1} />
+                                          </Form.Item>
+                                          <Form.Item
+                                            {...field}
+                                            name={[field.name, "maxTokens"]}
+                                            label="最大输出 Token"
+                                            rules={[
+                                              {
+                                                required: true,
+                                                message: t("最大输出 Token 不能为空"),
+                                              },
+                                            ]}
+                                          >
+                                            <Input type="number" min={1} />
+                                          </Form.Item>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                          <Form.Item
+                                            {...field}
+                                            name={[field.name, "reasoning"]}
+                                            label="支持推理"
+                                            valuePropName="checked"
+                                          >
+                                            <Switch
+                                              checkedChildren="是"
+                                              unCheckedChildren="否"
+                                            />
+                                          </Form.Item>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    <Button
+                                      type="dashed"
+                                      onClick={() => {
+                                        add(DEFAULT_CUSTOM_MODEL_FORM_VALUE());
+                                      }}
+                                    >
+                                      {t("新增自定义模型")}
+                                    </Button>
+                                  </div>
+                                </Form.Item>
+                              )}
+                            </Form.List>
+                          </>
+                        ) : null}
 
                         <Form.Item
                           name="enabledModels"
@@ -1640,11 +2256,11 @@ export const SettingsPage = () => {
                         >
                           <ModelSwitchGrid
                             search={agentModelSearch}
-                            items={(availableModelsQuery.data ?? []).map(
+                            items={availableAgentModels.map(
                               (m) => ({
                                 id: m.id,
                                 title: m.name,
-                                description: `${m.id} · ctx ${Math.round(m.contextWindow / 1024)}k · max ${Math.round(m.maxTokens / 1024)}k${m.reasoning ? " · reasoning" : ""}`,
+                                description: `${m.id} · ctx ${Math.round(m.contextWindow / 1024)}k · max ${Math.round(m.maxTokens / 1024)}k${m.reasoning ? " · reasoning" : ""}${m.source === "custom" ? ` · ${t("自定义")}` : ""}`,
                               }),
                             )}
                             empty={
@@ -1697,7 +2313,7 @@ export const SettingsPage = () => {
                               if (String(value).length >= 10)
                                 return Promise.resolve();
                               return Promise.reject(
-                                new Error("凭证长度至少 10 位"),
+                                new Error(t("凭证长度至少 10 位")),
                               );
                             },
                           },
@@ -1738,7 +2354,7 @@ export const SettingsPage = () => {
                               if (Array.isArray(value) && value.length > 0)
                                 return Promise.resolve();
                               return Promise.reject(
-                                new Error("请至少启用一个模型"),
+                                new Error(t("请至少启用一个模型")),
                               );
                             },
                           },
@@ -1819,14 +2435,16 @@ export const SettingsPage = () => {
                                               return Promise.resolve();
                                             return Promise.reject(
                                               new Error(
-                                                "启用 Telegram 前请先输入 Bot Token",
+                                                t(
+                                                  "启用 Telegram 前请先输入 Bot Token",
+                                                ),
                                               ),
                                             );
                                           }
                                           if (String(value).length >= 10)
                                             return Promise.resolve();
                                           return Promise.reject(
-                                            new Error("凭证长度至少 10 位"),
+                                            new Error(t("凭证长度至少 10 位")),
                                           );
                                         },
                                       },
@@ -1856,7 +2474,9 @@ export const SettingsPage = () => {
                                           if (tokens.length === 0)
                                             return Promise.reject(
                                               new Error(
-                                                "启用 Telegram 前请先填写 user_id",
+                                                t(
+                                                  "启用 Telegram 前请先填写 user_id",
+                                                ),
                                               ),
                                             );
                                           if (
@@ -1865,7 +2485,7 @@ export const SettingsPage = () => {
                                             )
                                           ) {
                                             return Promise.reject(
-                                              new Error("user_id 必须为纯数字"),
+                                              new Error(t("user_id 必须为纯数字")),
                                             );
                                           }
                                           return Promise.resolve();
@@ -1941,14 +2561,16 @@ export const SettingsPage = () => {
                                               return Promise.resolve();
                                             return Promise.reject(
                                               new Error(
-                                                "启用 Discord 前请先输入 Bot Token",
+                                                t(
+                                                  "启用 Discord 前请先输入 Bot Token",
+                                                ),
                                               ),
                                             );
                                           }
                                           if (String(value).length >= 10)
                                             return Promise.resolve();
                                           return Promise.reject(
-                                            new Error("凭证长度至少 10 位"),
+                                            new Error(t("凭证长度至少 10 位")),
                                           );
                                         },
                                       },
@@ -1977,7 +2599,9 @@ export const SettingsPage = () => {
                                           if (tokens.length === 0)
                                             return Promise.reject(
                                               new Error(
-                                                "启用 Discord 前请先填写允许服务器 ID",
+                                                t(
+                                                  "启用 Discord 前请先填写允许服务器 ID",
+                                                ),
                                               ),
                                             );
                                           if (
@@ -1987,7 +2611,7 @@ export const SettingsPage = () => {
                                           ) {
                                             return Promise.reject(
                                               new Error(
-                                                "服务器 ID 必须为纯数字",
+                                                t("服务器 ID 必须为纯数字"),
                                               ),
                                             );
                                           }
@@ -2024,7 +2648,9 @@ export const SettingsPage = () => {
                                           if (tokens.length === 0)
                                             return Promise.reject(
                                               new Error(
-                                                "启用 Discord 前请先填写允许频道 ID",
+                                                t(
+                                                  "启用 Discord 前请先填写允许频道 ID",
+                                                ),
                                               ),
                                             );
                                           if (
@@ -2033,7 +2659,7 @@ export const SettingsPage = () => {
                                             )
                                           ) {
                                             return Promise.reject(
-                                              new Error("频道 ID 必须为纯数字"),
+                                              new Error(t("频道 ID 必须为纯数字")),
                                             );
                                           }
                                           return Promise.resolve();
@@ -2110,7 +2736,7 @@ export const SettingsPage = () => {
                                               return Promise.resolve();
                                             return Promise.reject(
                                               new Error(
-                                                "启用飞书前请先输入 AppID",
+                                                t("启用飞书前请先输入 AppID"),
                                               ),
                                             );
                                           }
@@ -2139,7 +2765,7 @@ export const SettingsPage = () => {
                                               return Promise.resolve();
                                             return Promise.reject(
                                               new Error(
-                                                "启用飞书前请先输入 AppSecret",
+                                                t("启用飞书前请先输入 AppSecret"),
                                               ),
                                             );
                                           }

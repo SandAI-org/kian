@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Input, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { SearchOutlined } from '@ant-design/icons';
+import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
+import { translateUiText } from '@renderer/i18n/uiTranslations';
 import type { AssetDTO } from '@shared/types';
 import { api } from '@renderer/lib/api';
 import { ScrollArea } from '@renderer/components/ScrollArea';
@@ -64,6 +66,8 @@ const resolveAssetPreviewUrl = (rawPath?: string | null): string => {
   return '';
 };
 export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) => {
+  const { language } = useAppI18n();
+  const t = (value: string): string => translateUiText(language, value);
   const [search, setSearch] = useState('');
   const [selectedTagFilters, setSelectedTagFilters] = useState<AssetTagFilter[]>([]);
 
@@ -102,11 +106,11 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
   const handleOpenAsset = (asset: AssetDTO): void => {
     const targetPath = asset.absolutePath?.trim();
     if (!targetPath) {
-      message.error('素材路径不可用，无法打开系统预览');
+      message.error(t('素材路径不可用，无法打开系统预览'));
       return;
     }
     void api.file.open(targetPath).catch((error) => {
-      message.error(error instanceof Error ? error.message : '打开系统预览失败');
+      message.error(error instanceof Error ? error.message : t('打开系统预览失败'));
     });
   };
 
