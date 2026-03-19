@@ -263,14 +263,8 @@ jobs:
 
           NOTES_FILE="release-body.md"
           {
-            echo "**Download: https://heykian.com**"
+            echo "**https://heykian.com**"
             echo
-            echo "Automated build from \`${GITHUB_REF_NAME}\`."
-            echo "Version: \`${APP_VERSION}\`"
-            echo "Tag: \`${RELEASE_TAG}\`"
-            echo "Commit: ${GITHUB_SHA}"
-            echo
-
             if [ "${IS_PRERELEASE}" = "false" ]; then
               echo "## What's Changed"
 
@@ -472,6 +466,15 @@ jobs:
           name: ${{ needs.prepare-release.outputs.release_name }}
           prerelease: ${{ needs.prepare-release.outputs.prerelease }}
           body: ${{ steps.notes.outputs.body }}
+          artifacts: |
+            dist/**/*.dmg
+            dist/**/*.zip
+            dist/**/*.zip.blockmap
+            dist/**/*.exe
+            dist/**/*.exe.blockmap
+            dist/**/latest-mac.yml
+            dist/**/latest.yml
+          artifactErrorsFailBuild: true
 
       - name: Install ossutil
         run: |
