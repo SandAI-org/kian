@@ -15,6 +15,12 @@ vi.mock("../../electron/main/services/workspacePaths", () => ({
   get INTERNAL_ROOT() {
     return path.join(state.workspaceRoot, ".kian");
   },
+  get GLOBAL_CONFIG_DIR() {
+    return path.join(state.workspaceRoot, ".global");
+  },
+  get GLOBAL_CONFIG_PATH() {
+    return path.join(state.workspaceRoot, ".global", "config.json");
+  },
 }));
 
 describe("skillService active visibility", () => {
@@ -121,6 +127,7 @@ describe("skillService active visibility", () => {
       ["docs-manager", { mainAgentVisible: true, projectAgentVisible: true }],
       ["app-creator", { mainAgentVisible: false, projectAgentVisible: true }],
       ["video-creator", { mainAgentVisible: false, projectAgentVisible: true }],
+      ["self-management", { mainAgentVisible: true, projectAgentVisible: false }],
       ["task-manager", { mainAgentVisible: true, projectAgentVisible: true }],
       ["programer", { mainAgentVisible: true, projectAgentVisible: true }],
       ["cronjob-scheduler", { mainAgentVisible: true, projectAgentVisible: true }],
@@ -268,6 +275,12 @@ describe("skillService active visibility", () => {
     expect(
       projectSkills.some((skill) => skill.title === "html-ppt-creator"),
     ).toBe(true);
+    expect(
+      mainSkills.some((skill) => skill.title === "self-management"),
+    ).toBe(true);
+    expect(
+      projectSkills.some((skill) => skill.title === "self-management"),
+    ).toBe(false);
     expect(
       mainSkills.every((skill) => skill.skillFilePath.includes(path.join(".kian", "skills", "installed"))),
     ).toBe(true);
