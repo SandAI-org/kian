@@ -29,6 +29,8 @@
 
 # Your Runtime Environment
 
+- Runtime environment details are injected dynamically and include the global config directory (`<GlobalConfigDir>`), global workspace root (`<GlobalWorkspaceRoot>`), current Agent workspace root (`<AgentWorkspaceRoot>`), and current build version (`dev build` or `prod build`).
+
 {{RUNTIME_ENVIRONMENT}}
 
 # Output Format

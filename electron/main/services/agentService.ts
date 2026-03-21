@@ -51,7 +51,11 @@ import {
 import { repositoryService } from "./repositoryService";
 import { settingsService } from "./settingsService";
 import { skillService } from "./skillService";
-import { INTERNAL_ROOT, WORKSPACE_ROOT } from "./workspacePaths";
+import {
+  GLOBAL_CONFIG_DIR,
+  INTERNAL_ROOT,
+  WORKSPACE_ROOT,
+} from "./workspacePaths";
 
 // ---------------------------------------------------------------------------
 // Agent Session Store — maps projectId+chatSessionId → AgentSession
@@ -101,6 +105,7 @@ type DeveloperMetadata = {
 const agentSessionStore = new Map<string, AgentSessionEntry>();
 const activeAgentRequestStore = new Map<string, ActiveAgentRequestState>();
 const freshSessionOnNextPrompt = new Set<string>();
+const refreshSessionOnNextPrompt = new Set<string>();
 let appDeveloperMetadataCache: DeveloperMetadata | null | undefined = undefined;
 const isDevelopmentMode =
   !app.isPackaged || process.env.NODE_ENV === "development";
@@ -616,10 +621,14 @@ const buildSoftwareInfoSection = (input: {
 const buildRuntimeEnvironmentSection = (input: {
   workspaceRoot: string;
   agentWorkspaceRoot: string;
+  globalConfigDir: string;
+  currentBuildVersion: string;
 }): string =>
   [
+    `- 全局配置目录（<GlobalConfigDir>）：${input.globalConfigDir}`,
     `- 全局工作区根目录（<GlobalWorkspaceRoot>）：${input.workspaceRoot}`,
     `- 当前 Agent 工作区根目录（<AgentWorkspaceRoot>）：${input.agentWorkspaceRoot}`,
+    `- 当前构建版本：${input.currentBuildVersion}`,
   ].join("\n");
 
 const disposeSessionEntry = (storeKey: string): void => {
@@ -646,6 +655,7 @@ const clearSessionInternal = (
   options?: { startFreshOnNextPrompt?: boolean },
 ): void => {
   const storeKey = getSessionStoreKey(scope, chatSessionId);
+  refreshSessionOnNextPrompt.delete(storeKey);
   if (options?.startFreshOnNextPrompt ?? true) {
     freshSessionOnNextPrompt.add(storeKey);
   }
@@ -1411,10 +1421,11 @@ const createOrResumeSession = async (
   });
   const sessionDir = getPersistentSessionDir(projectCwd, chatSessionId);
   const startFreshRequested = freshSessionOnNextPrompt.has(storeKey);
+  const refreshRequested = refreshSessionOnNextPrompt.has(storeKey);
   const mcpServers = await settingsService.getMcpServers();
   const mcpSignature = buildMcpServerSignature(mcpServers);
 
-  if (startFreshRequested) {
+  if (startFreshRequested || refreshRequested) {
     disposeSessionEntry(storeKey);
   }
 
@@ -1614,8 +1625,10 @@ const createOrResumeSession = async (
     developerMetadata,
   });
   const runtimeEnvironmentSection = buildRuntimeEnvironmentSection({
+    globalConfigDir: GLOBAL_CONFIG_DIR,
     workspaceRoot: WORKSPACE_ROOT,
     agentWorkspaceRoot: projectCwd,
+    currentBuildVersion: isDevelopmentMode ? "dev build" : "prod build",
   });
   const roleInstructionSection = buildRoleInstructionSection({
     scope,
@@ -1711,6 +1724,7 @@ const createOrResumeSession = async (
   };
   agentSessionStore.set(storeKey, entry);
   freshSessionOnNextPrompt.delete(storeKey);
+  refreshSessionOnNextPrompt.delete(storeKey);
 
   return {
     ...entry,
@@ -2215,6 +2229,7 @@ export const agentService = {
       );
 
       const shouldStartFreshAfterTurn = freshSessionOnNextPrompt.has(storeKey);
+      const shouldRefreshAfterTurn = refreshSessionOnNextPrompt.has(storeKey);
 
       // Persist session ID for future resume
       const sdkSessionId = session.sessionId;
@@ -2277,6 +2292,9 @@ export const agentService = {
         clearSessionInternal(payload.scope, payload.sessionId, {
           startFreshOnNextPrompt: true,
         });
+      } else if (shouldRefreshAfterTurn) {
+        disposeSessionEntry(storeKey);
+        refreshSessionOnNextPrompt.delete(storeKey);
       }
 
       logger.info("Agent prompt completed", {
@@ -2426,6 +2444,18 @@ export const agentService = {
     for (const storeKey of Array.from(agentSessionStore.keys())) {
       disposeSessionEntry(storeKey);
       freshSessionOnNextPrompt.delete(storeKey);
+      refreshSessionOnNextPrompt.delete(storeKey);
+    }
+  },
+
+  refreshAllSessionsForNextPrompt(): void {
+    for (const storeKey of Array.from(agentSessionStore.keys())) {
+      if (activeAgentRequestStore.has(storeKey)) {
+        refreshSessionOnNextPrompt.add(storeKey);
+        continue;
+      }
+      disposeSessionEntry(storeKey);
+      refreshSessionOnNextPrompt.delete(storeKey);
     }
   },
 

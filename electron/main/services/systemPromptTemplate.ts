@@ -21,7 +21,7 @@ const getPlatformRuntimeEnvironmentPrompt = (
   platform: NodeJS.Platform,
 ): string => {
   if (platform === "darwin") {
-    return "- MacOS：所以你可以通过 AppleScript 来操作 macOS 的系统。";
+    return "- macOS：所以你可以通过 AppleScript 来操作 macOS 的系统。";
   }
 
   if (platform === "win32") {

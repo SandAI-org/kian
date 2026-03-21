@@ -44,14 +44,16 @@ describe("buildSessionSystemPrompt", () => {
       {
         contextFiles,
         runtimeEnvironmentSection:
-          "- 全局工作区根目录（<GlobalWorkspaceRoot>）：/tmp/global\n- 当前 Agent 工作区根目录（<AgentWorkspaceRoot>）：/tmp/global/.kian/main-agent",
+          "- 全局配置目录（<GlobalConfigDir>）：/tmp/.kian-dev\n- 全局工作区根目录（<GlobalWorkspaceRoot>）：/tmp/global\n- 当前 Agent 工作区根目录（<AgentWorkspaceRoot>）：/tmp/global/.kian/main-agent\n- 当前构建版本：dev build",
         contextSnapshotSection: "当前模块：docs",
         softwareInfoSection: "作者：磊",
       },
     );
 
     expect(result).toContain("## 运行环境");
+    expect(result).toContain("- 全局配置目录（<GlobalConfigDir>）：/tmp/.kian-dev");
     expect(result).toContain("- 全局工作区根目录（<GlobalWorkspaceRoot>）：/tmp/global");
+    expect(result).toContain("- 当前构建版本：dev build");
     expect(result).toContain("## 概要信息\n当前模块：docs");
     expect(result).toContain("## 软件信息\n作者：磊");
     expect(result).toContain("## 身份\n全局规则 C");

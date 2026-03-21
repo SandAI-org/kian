@@ -89,6 +89,9 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 }));
 
 vi.mock("../../electron/main/services/workspacePaths", () => ({
+  get GLOBAL_CONFIG_DIR() {
+    return path.join(state.workspaceRoot, ".global");
+  },
   get WORKSPACE_ROOT() {
     return state.workspaceRoot;
   },
@@ -731,6 +734,100 @@ describe("agentService delegation reporting", () => {
       "Final system prompt Markdown (development)\n\n# 标题\n\n- 条目 A",
     );
     expect(markdownLog?.[0]).toContain("## 扩展\n内容");
+  });
+
+  it("passes global config dir and build version into runtime environment section", async () => {
+    state.buildSessionSystemPrompt.mockReset().mockImplementation((prompt) => prompt);
+    state.prompt.mockReset().mockImplementation(async () => {
+      state.sessionListener?.({ type: "agent_end" });
+    });
+
+    const { agentService } =
+      await import("../../electron/main/services/agentService");
+
+    await agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "main-session-runtime-env",
+      requestId: "main-request-runtime-env",
+      message: "测试运行环境字段",
+    });
+
+    expect(state.buildSessionSystemPrompt).toHaveBeenCalledWith(
+      "system prompt",
+      expect.objectContaining({
+        runtimeEnvironmentSection: expect.stringContaining(
+          `- 全局配置目录（<GlobalConfigDir>）：${path.join(state.workspaceRoot, ".global")}`,
+        ),
+      }),
+    );
+    expect(state.buildSessionSystemPrompt).toHaveBeenCalledWith(
+      "system prompt",
+      expect.objectContaining({
+        runtimeEnvironmentSection: expect.stringContaining(
+          "- 当前构建版本：dev build",
+        ),
+      }),
+    );
+  });
+
+  it("refreshes runtime sessions without dropping persisted history after the current turn", async () => {
+    const continuedSessionManager = {
+      buildSessionContext: () => ({
+        model: {
+          provider: "anthropic",
+          modelId: "claude-test",
+        },
+      }),
+    };
+    state.continueRecent.mockReset().mockReturnValue(continuedSessionManager);
+    state.createSessionManager.mockReset().mockReturnValue({
+      buildSessionContext: () => ({ model: null }),
+    });
+
+    const { agentService } =
+      await import("../../electron/main/services/agentService");
+
+    let promptCount = 0;
+    state.prompt.mockReset().mockImplementation(async () => {
+      promptCount += 1;
+      if (promptCount === 1) {
+        agentService.refreshAllSessionsForNextPrompt();
+      }
+      state.sessionListener?.({ type: "agent_end" });
+    });
+    state.setChatSessionSdkSessionId.mockClear();
+
+    await agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "main-session",
+      requestId: "main-request-before-settings-reload",
+      message: "第一轮对话",
+    });
+
+    await agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "main-session",
+      requestId: "main-request-after-settings-reload",
+      message: "继续刚才的话题",
+    });
+
+    expect(state.createAgentSession).toHaveBeenCalledTimes(2);
+    expect(state.continueRecent).toHaveBeenCalledTimes(2);
+    expect(state.createSessionManager).not.toHaveBeenCalled();
+    expect(state.setChatSessionSdkSessionId).toHaveBeenCalledTimes(2);
+    expect(state.setChatSessionSdkSessionId).toHaveBeenNthCalledWith(1, {
+      scope: { type: "main" },
+      sessionId: "main-session",
+      sdkSessionId: "sdk-session-1",
+    });
+    expect(state.setChatSessionSdkSessionId).toHaveBeenNthCalledWith(2, {
+      scope: { type: "main" },
+      sessionId: "main-session",
+      sdkSessionId: "sdk-session-1",
+    });
   });
 
   it("reuses delegated sessions and auto reports the latest output", async () => {

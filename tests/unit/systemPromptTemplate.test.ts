@@ -14,14 +14,18 @@ describe("renderDefaultSystemPromptTemplate", () => {
     const rendered = renderDefaultSystemPromptTemplate(template, {
       platform: "darwin",
       runtimeEnvironment:
-        "- 全局工作区根目录（<GlobalWorkspaceRoot>）：/tmp/global\n- 当前 Agent 工作区根目录（<AgentWorkspaceRoot>）：/tmp/global/.kian/main-agent",
+        "- 全局配置目录（<GlobalConfigDir>）：/tmp/.kian-dev\n- 全局工作区根目录（<GlobalWorkspaceRoot>）：/tmp/global\n- 当前 Agent 工作区根目录（<AgentWorkspaceRoot>）：/tmp/global/.kian/main-agent\n- 当前构建版本：dev build",
     });
+    expect(rendered).toContain(
+      "- 全局配置目录（<GlobalConfigDir>）：/tmp/.kian-dev",
+    );
     expect(rendered).toContain(
       "- 全局工作区根目录（<GlobalWorkspaceRoot>）：/tmp/global",
     );
     expect(rendered).toContain(
       "- 当前 Agent 工作区根目录（<AgentWorkspaceRoot>）：/tmp/global/.kian/main-agent",
     );
+    expect(rendered).toContain("- 当前构建版本：dev build");
   });
 
   it("renders Windows runtime guidance", () => {
