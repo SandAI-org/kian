@@ -376,4 +376,17 @@ export const weixinChannelService = {
     const currentClient = await ensureClient();
     await currentClient.sendText(input);
   },
+
+  async sendMedia(input: {
+    accountId: string;
+    toUserId: string;
+    contextToken?: string;
+    filePath?: string;
+    remoteUrl?: string;
+    fileName?: string;
+    text?: string;
+  }): Promise<void> {
+    const currentClient = await ensureClient();
+    await currentClient.sendMedia(input);
+  },
 };

@@ -62,8 +62,10 @@ export {
 } from "./client/polling-client.js";
 export type {
   CreateWeixinAdapterClientOptions,
+  SendMediaOptions,
   SendTextOptions,
   StartPollingOptions,
+  UploadLocalFileOptions,
   WeixinAdapterEvents,
   WeixinErrorEvent,
   WeixinRawEvent,
@@ -89,8 +91,10 @@ export {
   uploadLocalFile,
 } from "./media/upload.js";
 export type {
-  SendMediaOptions,
-  UploadLocalFileOptions,
+  UploadedWeixinMedia,
+  WeixinSendMediaKind,
+  WeixinSendMediaOptions,
+  WeixinUploadLocalFileOptions,
 } from "./media/upload.js";
 export { transcodeVoiceIfNeeded } from "./media/transcode.js";
 export type { TranscodeVoiceIfNeededOptions } from "./media/transcode.js";

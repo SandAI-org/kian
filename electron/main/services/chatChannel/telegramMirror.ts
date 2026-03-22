@@ -7,10 +7,21 @@ import {
 } from "../mediaMarkdown";
 
 const TELEGRAM_FILE_MARKDOWN_PATTERN =
-  /@\[(?:file|attachment)\]\(([^)\n]+)\)/gi;
+  /@\[(?:image|video|audio|file|attachment)(?:\|[^\]]*)?\]\(([^)\n]+)\)/gi;
 const TELEGRAM_TOOL_INPUT_MAX_LENGTH = 280;
 const TELEGRAM_TOOL_OUTPUT_MAX_LENGTH = 640;
 const TOOL_SUMMARY_NAME = "工具摘要";
+const REMOTE_ATTACHMENT_URL_PATTERN = /^https?:\/\//i;
+const DATA_IMAGE_URL_PATTERN = /^data:image\/[a-z0-9.+-]+;base64,/i;
+const FILE_URL_PATTERN = /^file:\/\//i;
+
+const resolveFileUrlPath = (value: string): string | null => {
+  try {
+    return decodeURIComponent(new URL(value).pathname);
+  } catch {
+    return null;
+  }
+};
 
 const inferCodeFenceLanguage = (value: string): string => {
   const trimmed = value.trim();
@@ -89,14 +100,41 @@ export interface TelegramAssistantProgressiveStreamer {
 export const extractTelegramFileAttachments = (
   content: string,
   scope: ChatScope,
+  options?: {
+    includeRemoteImages?: boolean;
+  },
 ): string[] => {
   if (!content.trim()) return [];
+  const includeRemoteImages = options?.includeRemoteImages ?? false;
   const unique = new Set<string>();
   const results: string[] = [];
   const tokens = extractExtendedMarkdownTokens(content);
   for (const token of tokens) {
-    if (token.kind !== "attachment") continue;
-    const absolutePath = resolveAttachmentAbsolutePath(scope, token.path);
+    const normalizedPath = token.path.trim();
+    if (!normalizedPath) continue;
+
+    if (
+      REMOTE_ATTACHMENT_URL_PATTERN.test(normalizedPath) ||
+      DATA_IMAGE_URL_PATTERN.test(normalizedPath)
+    ) {
+      if (
+        includeRemoteImages &&
+        token.kind === "image"
+      ) {
+        if (unique.has(normalizedPath)) continue;
+        unique.add(normalizedPath);
+        results.push(normalizedPath);
+      }
+      continue;
+    }
+
+    const fileUrlPath = FILE_URL_PATTERN.test(normalizedPath)
+      ? resolveFileUrlPath(normalizedPath)
+      : null;
+    const absolutePath = resolveAttachmentAbsolutePath(
+      scope,
+      fileUrlPath ?? normalizedPath,
+    );
     if (!absolutePath || unique.has(absolutePath)) continue;
     unique.add(absolutePath);
     results.push(absolutePath);

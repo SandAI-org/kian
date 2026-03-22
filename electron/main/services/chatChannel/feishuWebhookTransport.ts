@@ -19,7 +19,7 @@ interface FeishuWebhookResponse {
 }
 
 const FEISHU_IMAGE_MARKDOWN_MARKER_PATTERN =
-  /!\[[^\]]*\]\([^)]+\)|@\[(?:image)\]\([^)]+\)/i;
+  /!\[[^\]]*\]\([^)]+\)|@\[(?:image)(?:\|[^\]]*)?\]\([^)]+\)/i;
 
 const removeUnsupportedWebhookAttachmentTokens = (content: string): {
   text: string;

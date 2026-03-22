@@ -6,7 +6,8 @@ import { assertHttpOk, normalizeChatId, splitMessage } from "./transportCommon";
 const FEISHU_API_BASE = "https://open.feishu.cn/open-apis";
 const FEISHU_MESSAGE_MAX_LENGTH = 20_000;
 const FEISHU_MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)\n]+)\)/g;
-const FEISHU_EXTENDED_IMAGE_MARKDOWN_PATTERN = /@\[(image)\]\(([^)\n]+)\)/gi;
+const FEISHU_EXTENDED_IMAGE_MARKDOWN_PATTERN =
+  /@\[(image)(?:\|[^\]]*)?\]\(([^)\n]+)\)/gi;
 const FEISHU_IMAGE_KEY_PATTERN = /^img_[A-Za-z0-9_-]+$/;
 const FEISHU_CARD_FALLBACK_TEXT = "Agent 未返回文本内容。";
 

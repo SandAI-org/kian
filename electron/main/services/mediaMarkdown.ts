@@ -10,6 +10,7 @@ export type MediaKind = 'image' | 'video' | 'audio';
 export type ExtendedMarkdownKind = MediaKind | 'file' | 'attachment';
 export interface ExtendedMarkdownToken {
   kind: ExtendedMarkdownKind;
+  hint?: string;
   path: string;
   raw: string;
   index: number;
@@ -55,7 +56,8 @@ const MEDIA_PATH_PATTERN = new RegExp(
   `(?:[A-Za-z]:[\\\\/]|\\\\\\\\|/)[^\\s<>"'\\\`]+?(?:${ALL_MEDIA_EXTENSIONS.map(escapeRegex).join('|')})`,
   'gi'
 );
-const EXTENDED_MARKDOWN_PATTERN = /@\[(image|video|audio|file|attachment)\]\(([^)\n]+)\)/gi;
+const EXTENDED_MARKDOWN_PATTERN =
+  /@\[(image|video|audio|file|attachment)(?:\|([^\]]*))?\]\(([^)\n]+)\)/gi;
 const MARKDOWN_DESTINATION_PATTERN = /\]\(([^)\n]+)\)/g;
 
 const getScopeRootDir = (scope: ChatScope): string =>
@@ -158,7 +160,8 @@ export const extractExtendedMarkdownTokens = (content: string): ExtendedMarkdown
   const tokens: ExtendedMarkdownToken[] = [];
   for (const match of content.matchAll(EXTENDED_MARKDOWN_PATTERN)) {
     const kindRaw = match[1]?.toLowerCase().trim();
-    const pathRaw = match[2];
+    const hintRaw = match[2]?.trim();
+    const pathRaw = match[3];
     if (!kindRaw || !pathRaw) continue;
     if (kindRaw !== 'image' && kindRaw !== 'video' && kindRaw !== 'audio' && kindRaw !== 'file' && kindRaw !== 'attachment') {
       continue;
@@ -168,6 +171,7 @@ export const extractExtendedMarkdownTokens = (content: string): ExtendedMarkdown
     if (!normalizedPath) continue;
     tokens.push({
       kind: kindRaw,
+      ...(hintRaw ? { hint: hintRaw } : {}),
       path: normalizedPath,
       raw: match[0],
       index: match.index ?? 0

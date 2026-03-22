@@ -1043,8 +1043,11 @@ const setTelegramMessageReaction = async (
 const extractTelegramFileAttachments = (
   content: string,
   scope: ChatScope,
+  options?: {
+    includeRemoteImages?: boolean;
+  },
 ): string[] => {
-  return extractTelegramFileAttachmentsImpl(content, scope);
+  return extractTelegramFileAttachmentsImpl(content, scope, options);
 };
 
 const stripTelegramFileMarkdown = (content: string): string => {
@@ -1264,6 +1267,9 @@ const createDirectChannelReplyStreamer = (input: {
       const fileAttachments = extractTelegramFileAttachments(
         message,
         toChatScopeFromProjectId(input.projectId),
+        {
+          includeRemoteImages: input.provider === "weixin",
+        },
       );
       const assistantText = stripTelegramFileMarkdown(message);
       const messageText = formatTelegramAssistantBody({
@@ -2483,6 +2489,23 @@ const processWeixinMessage = async (
       contextToken: message.contextToken,
     });
   };
+  const replyDocument = async (filePath: string): Promise<void> => {
+    if (/^(?:https?:\/\/|data:image\/[a-z0-9.+-]+;base64,)/i.test(filePath)) {
+      await weixinChannelService.sendMedia({
+        accountId: message.accountId,
+        toUserId: chatId,
+        contextToken: message.contextToken,
+        remoteUrl: filePath,
+      });
+      return;
+    }
+    await weixinChannelService.sendMedia({
+      accountId: message.accountId,
+      toUserId: chatId,
+      contextToken: message.contextToken,
+      filePath,
+    });
+  };
 
   if (!text) {
     await replyText(WEIXIN_SUPPORTED_INPUT_MESSAGE);
@@ -2504,21 +2527,12 @@ const processWeixinMessage = async (
       accountId: message.accountId,
     });
 
-    const progressiveStreamer = createTelegramAssistantProgressiveStreamer({
-      sendToolRunningMessage: async (tool) => {
-        await replyText(formatTelegramToolRunningMessage(tool));
-      },
-      sendToolDoneMessage: async (tool) => {
-        await replyText(formatTelegramToolDoneMessage(tool));
-      },
-      sendAssistantMessage: async (assistantMessage, isError) => {
-        const messageText = formatTelegramAssistantBody({
-          message: assistantMessage,
-          hasAttachments: false,
-          isError,
-        });
-        await replyText(messageText || "已处理完成。");
-      },
+    const progressiveStreamer = createDirectChannelReplyStreamer({
+      provider: "weixin",
+      projectId: state.projectId,
+      chatId,
+      sendText: replyText,
+      sendDocument: replyDocument,
     });
 
     const requestId = randomUUID();
@@ -2995,6 +3009,21 @@ export const chatChannelService = {
             accountId: replyContext.accountId!,
             toUserId: replyContext.chatId,
             text,
+          });
+        },
+        sendDocument: async (filePath) => {
+          if (/^(?:https?:\/\/|data:image\/[a-z0-9.+-]+;base64,)/i.test(filePath)) {
+            await weixinChannelService.sendMedia({
+              accountId: replyContext.accountId!,
+              toUserId: replyContext.chatId,
+              remoteUrl: filePath,
+            });
+            return;
+          }
+          await weixinChannelService.sendMedia({
+            accountId: replyContext.accountId!,
+            toUserId: replyContext.chatId,
+            filePath,
           });
         },
       });

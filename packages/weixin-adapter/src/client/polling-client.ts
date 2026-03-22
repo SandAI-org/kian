@@ -25,7 +25,10 @@ import { startQrLogin, waitForQrLogin } from "../auth/login-qr.js";
 import type { WeixinInboundMessage } from "../parser/inbound.js";
 import { parseInboundMessage } from "../parser/inbound.js";
 import { downloadInboundMedia } from "../media/download.js";
-import { sendMedia, uploadLocalFile } from "../media/upload.js";
+import {
+  sendMedia as sendMediaImpl,
+  uploadLocalFile as uploadLocalFileImpl,
+} from "../media/upload.js";
 import { transcodeVoiceIfNeeded } from "../media/transcode.js";
 import { redactToken } from "../utils/redact.js";
 import { TypedEventEmitter } from "./events.js";
@@ -81,6 +84,23 @@ export interface SendTextOptions {
   toUserId: string;
   text: string;
   contextToken?: string;
+}
+
+export interface UploadLocalFileOptions {
+  accountId: string;
+  filePath: string;
+  toUserId: string;
+  fileName?: string;
+}
+
+export interface SendMediaOptions {
+  accountId: string;
+  toUserId: string;
+  contextToken?: string;
+  filePath?: string;
+  remoteUrl?: string;
+  fileName?: string;
+  text?: string;
 }
 
 type PollingSession = {
@@ -245,12 +265,61 @@ export class WeixinAdapterClient extends TypedEventEmitter<WeixinAdapterEvents> 
     return { messageId: clientId };
   }
 
-  async uploadLocalFile(...parameters: Parameters<typeof uploadLocalFile>): Promise<ReturnType<typeof uploadLocalFile>> {
-    return uploadLocalFile(...parameters);
+  async uploadLocalFile(
+    options: UploadLocalFileOptions,
+  ): Promise<ReturnType<typeof uploadLocalFileImpl>> {
+    const accountId = normalizeAccountId(options.accountId);
+    const account = await this.accountStore.loadAccount(accountId);
+    if (!account) {
+      throw new Error(`account ${accountId} not found`);
+    }
+
+    return uploadLocalFileImpl({
+      filePath: options.filePath,
+      toUserId: options.toUserId,
+      apiOptions: {
+        baseUrl: account.baseUrl,
+        token: account.token,
+      },
+      cdnBaseUrl: account.cdnBaseUrl,
+      logger: this.logger,
+      ...(options.fileName ? { fileName: options.fileName } : {}),
+    });
   }
 
-  async sendMedia(...parameters: Parameters<typeof sendMedia>): Promise<ReturnType<typeof sendMedia>> {
-    return sendMedia(...parameters);
+  async sendMedia(
+    options: SendMediaOptions,
+  ): Promise<ReturnType<typeof sendMediaImpl>> {
+    const accountId = normalizeAccountId(options.accountId);
+    const account = await this.accountStore.loadAccount(accountId);
+    if (!account) {
+      throw new Error(`account ${accountId} not found`);
+    }
+
+    const contextToken =
+      options.contextToken?.trim() ||
+      this.contextTokens.get(buildContextTokenKey(accountId, options.toUserId));
+
+    if (!contextToken) {
+      throw new Error(
+        `contextToken is required for account ${accountId} and user ${options.toUserId}`,
+      );
+    }
+
+    return sendMediaImpl({
+      toUserId: options.toUserId,
+      contextToken,
+      apiOptions: {
+        baseUrl: account.baseUrl,
+        token: account.token,
+      },
+      cdnBaseUrl: account.cdnBaseUrl,
+      logger: this.logger,
+      ...(options.filePath ? { filePath: options.filePath } : {}),
+      ...(options.remoteUrl ? { remoteUrl: options.remoteUrl } : {}),
+      ...(options.fileName ? { fileName: options.fileName } : {}),
+      ...(options.text ? { text: options.text } : {}),
+    });
   }
 
   async downloadInboundMedia(

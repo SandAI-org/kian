@@ -87,4 +87,16 @@ describe('normalizeMediaMarkdownInText', () => {
     expect(tokens[1]).toMatchObject({ kind: 'file', path: '/tmp/readme.md' });
     expect(tokens[2]).toMatchObject({ kind: 'attachment', path: '/tmp/archive.zip' });
   });
+
+  it('extracts extended markdown tokens with size hints', () => {
+    const tokens = extractExtendedMarkdownTokens(
+      '预览：@[image|960](https://cdn.example.com/demo.png)'
+    );
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).toMatchObject({
+      kind: 'image',
+      hint: '960',
+      path: 'https://cdn.example.com/demo.png'
+    });
+  });
 });
