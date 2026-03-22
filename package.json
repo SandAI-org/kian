@@ -20,7 +20,8 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build:weixin-adapter": "pnpm --filter @kian/weixin-adapter build",
+    "build": "pnpm run build:weixin-adapter && electron-vite build",
     "build:mac": "node ./scripts/package-app.js --mac --universal --config",
     "build:win": "node ./scripts/package-app.js --win --config",
     "build:linux": "node ./scripts/package-app.js --linux --config",
