@@ -20,6 +20,7 @@ import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
 import {
+  CHAT_INPUT_FOCUS_EVENT,
   MAIN_AGENT_INPUT_FOCUS_EVENT,
   formatKeyboardShortcut,
   matchesKeyboardShortcut,
@@ -2509,6 +2510,19 @@ export const ModuleChatPane = ({
     const cursorPosition = textarea.value.length;
     textarea.setSelectionRange(cursorPosition, cursorPosition);
   }, []);
+
+  useEffect(() => {
+    const handleFocusRequest = (): void => {
+      window.requestAnimationFrame(() => {
+        focusChatInput();
+      });
+    };
+
+    window.addEventListener(CHAT_INPUT_FOCUS_EVENT, handleFocusRequest);
+    return () => {
+      window.removeEventListener(CHAT_INPUT_FOCUS_EVENT, handleFocusRequest);
+    };
+  }, [focusChatInput]);
 
   useEffect(() => {
     if (chatVariant !== "main" || !acceptMainInputFocusEvents) {

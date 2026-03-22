@@ -5,6 +5,7 @@ import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
 import { CreationModule } from "@renderer/modules/creation/CreationModule";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import { api } from "@renderer/lib/api";
+import { CHAT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
 import type { ChatScope, ModuleType } from "@shared/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,9 +27,10 @@ const resolveProjectModule = (value: string | null): ModuleType => {
 
 export const ProjectWorkspacePage = () => {
   const { projectId = "" } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeModuleParam = searchParams.get("module");
   const activeDocumentParam = searchParams.get("doc") ?? undefined;
+  const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
   const [contexts, setContexts] = useState<Record<ModuleType, unknown>>({
     docs: {},
     creation: {},
@@ -93,6 +95,36 @@ export const ProjectWorkspacePage = () => {
       window.removeEventListener(NEW_PROJECT_SESSION_EVENT, onNewSession);
     };
   }, [handleNewSession]);
+
+  useEffect(() => {
+    if (!pendingRouteSessionId) {
+      return;
+    }
+
+    setCurrentSessionId(pendingRouteSessionId);
+    void queryClient.invalidateQueries({
+      queryKey: ["chat-sessions", scopeKey],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["chat-messages", scopeKey, pendingRouteSessionId],
+    });
+
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event(CHAT_INPUT_FOCUS_EVENT));
+    });
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("session");
+    nextParams.delete("source");
+    nextParams.delete("stamp");
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    pendingRouteSessionId,
+    queryClient,
+    scopeKey,
+    searchParams,
+    setSearchParams,
+  ]);
 
   useEffect(() => {
     let cancelled = false;

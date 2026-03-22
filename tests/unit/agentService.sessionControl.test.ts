@@ -1,11 +1,11 @@
-import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   workspaceRoot: "",
-  listMessages: vi.fn(),
+  getChatSession: vi.fn(),
+  createChatSession: vi.fn(),
+  emitAppOperation: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -28,27 +28,28 @@ vi.mock("../../electron/main/services/workspacePaths", () => ({
 
 vi.mock("../../electron/main/services/repositoryService", () => ({
   repositoryService: {
-    listMessages: (...args: unknown[]) => state.listMessages(...args),
+    getChatSession: (...args: unknown[]) => state.getChatSession(...args),
+    createChatSession: (...args: unknown[]) => state.createChatSession(...args),
+  },
+}));
+
+vi.mock("../../electron/main/services/appOperationEvents", () => ({
+  appOperationEvents: {
+    emit: (...args: unknown[]) => state.emitAppOperation(...args),
   },
 }));
 
 describe("agentService session control tools", () => {
-  let tempRoot = "";
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-09T10:00:00.000Z"));
-    state.listMessages.mockReset();
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kian-agent-service-"));
-    state.workspaceRoot = tempRoot;
+    state.getChatSession.mockReset();
+    state.createChatSession.mockReset();
+    state.emitAppOperation.mockReset();
+    state.workspaceRoot = "/tmp/kian-agent-service-test";
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.useRealTimers();
-    if (tempRoot) {
-      await fs.rm(tempRoot, { recursive: true, force: true });
-    }
   });
 
   it("exposes the same session reset tool for main and project agents", async () => {
@@ -59,68 +60,107 @@ describe("agentService session control tools", () => {
     const mainTools = createSessionControlTools({
       scope: { type: "main" },
       chatSessionId: "main-session",
-      agentCwd: path.join(tempRoot, ".kian", "main-agent"),
     });
     const projectTools = createSessionControlTools({
       scope: { type: "project", projectId: "p-2026-03-09-1" },
       chatSessionId: "project-session",
-      agentCwd: path.join(tempRoot, "p-2026-03-09-1"),
     });
 
     expect(mainTools.map((tool) => tool.name)).toEqual(["NewSession"]);
     expect(projectTools.map((tool) => tool.name)).toEqual(["NewSession"]);
+    expect(mainTools[0]?.description).toContain("新会话");
+    expect(mainTools[0]?.description).toContain("新话题");
+    expect(mainTools[0]?.description).toContain("重新开始一个话题");
   });
 
-  it("writes main agent session summaries under the main agent sessions directory", async () => {
-    state.listMessages.mockResolvedValue([
-      {
-        id: "m1",
-        sessionId: "main-session",
-        role: "user",
-        content: "请开启一个新的主 Agent 会话",
-        createdAt: "2026-03-09T09:59:00.000Z",
-      },
-      {
-        id: "m2",
-        sessionId: "main-session",
-        role: "assistant",
-        content: "已整理当前上下文。",
-        createdAt: "2026-03-09T09:59:30.000Z",
-      },
-    ]);
+  it("creates a new main-agent session and opens it immediately", async () => {
+    const { createSessionControlTools } = await import(
+      "../../electron/main/services/agentService"
+    );
 
-    const {
-      createSessionControlTools,
-      getSessionSummaryDir,
-    } = await import("../../electron/main/services/agentService");
-    const mainAgentDir = path.join(tempRoot, ".kian", "main-agent");
+    state.getChatSession.mockResolvedValue({
+      id: "main-session",
+      scopeType: "main",
+      module: "main",
+      title: "Current",
+      createdAt: "2026-03-09T09:59:00.000Z",
+      updatedAt: "2026-03-09T09:59:30.000Z",
+    });
+    state.createChatSession.mockResolvedValue({
+      id: "main-session-2",
+      scopeType: "main",
+      module: "main",
+      title: "",
+      createdAt: "2026-03-09T10:00:00.000Z",
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    });
+
     const [tool] = createSessionControlTools({
       scope: { type: "main" },
       chatSessionId: "main-session",
-      agentCwd: mainAgentDir,
     });
 
-    const result = await tool.handler({
-      file_title: "main-agent-reset",
-      summary: "整理完当前主 Agent 上下文，准备开始新一轮任务。",
-      key_points: ["保留最近任务结论"],
-      next_actions: ["等待新的用户指令"],
-    });
+    const result = await tool.handler({});
 
     expect(result.isError).toBeUndefined();
+    expect(state.createChatSession).toHaveBeenCalledWith({
+      scope: { type: "main" },
+      module: "main",
+      title: "",
+    });
+    expect(state.emitAppOperation).toHaveBeenCalledWith({
+      type: "open_chat_session",
+      scope: { type: "main" },
+      sessionId: "main-session-2",
+      module: "main",
+    });
+    expect(result.text).toContain("main-session-2");
+  });
 
-    const summaryDir = getSessionSummaryDir({ type: "main" }, mainAgentDir);
-    const expectedFilePath = path.join(
-      summaryDir,
-      "2026-03-09-main-agent-reset.md",
+  it("creates a new project session in the current module and opens it immediately", async () => {
+    const { createSessionControlTools } = await import(
+      "../../electron/main/services/agentService"
     );
 
-    await expect(fs.readFile(expectedFilePath, "utf8")).resolves.toContain(
-      "- 会话归属：主 Agent",
-    );
-    await expect(fs.readFile(expectedFilePath, "utf8")).resolves.toContain(
-      "整理完当前主 Agent 上下文，准备开始新一轮任务。",
-    );
-    expect(result.text).toContain(expectedFilePath);
+    state.getChatSession.mockResolvedValue({
+      id: "project-session",
+      scopeType: "project",
+      projectId: "p-2026-03-09-1",
+      module: "creation",
+      title: "Current",
+      createdAt: "2026-03-09T09:59:00.000Z",
+      updatedAt: "2026-03-09T09:59:30.000Z",
+    });
+    state.createChatSession.mockResolvedValue({
+      id: "project-session-2",
+      scopeType: "project",
+      projectId: "p-2026-03-09-1",
+      module: "creation",
+      title: "",
+      createdAt: "2026-03-09T10:00:00.000Z",
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    });
+
+    const scope = { type: "project" as const, projectId: "p-2026-03-09-1" };
+    const [tool] = createSessionControlTools({
+      scope,
+      chatSessionId: "project-session",
+    });
+
+    const result = await tool.handler({});
+
+    expect(result.isError).toBeUndefined();
+    expect(state.createChatSession).toHaveBeenCalledWith({
+      scope,
+      module: "creation",
+      title: "",
+    });
+    expect(state.emitAppOperation).toHaveBeenCalledWith({
+      type: "open_chat_session",
+      scope,
+      sessionId: "project-session-2",
+      module: "creation",
+    });
+    expect(result.text).toContain("project-session-2");
   });
 });

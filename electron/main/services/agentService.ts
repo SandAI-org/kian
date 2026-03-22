@@ -15,7 +15,6 @@ import type {
   ChatAttachmentDTO,
   ClaudeConfigStatus,
   ChatInterruptPayload,
-  ChatMessageDTO,
   ChatMessageMetadata,
   ChatModuleType,
   ChatScope,
@@ -28,13 +27,14 @@ import type {
 } from "@shared/types";
 import { app } from "electron";
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildSessionSystemPrompt,
   type SessionContextFile,
 } from "./agentPrompt";
 import { createAppOperationTools } from "./appOperationMcpServer";
+import { appOperationEvents } from "./appOperationEvents";
 import { createBuiltinTools } from "./builtinMcpServer";
 import { chatEvents } from "./chatEvents";
 import { buildContextSnapshotSection } from "./contextSnapshotFormatter";
@@ -482,89 +482,6 @@ export const getPersistentSessionDir = (
   chatSessionId: string,
 ): string => path.resolve(agentCwd, ".pi", "sessions", chatSessionId);
 
-export const getSessionSummaryDir = (
-  scope: ChatScope,
-  agentCwd: string,
-): string =>
-  scope.type === "main"
-    ? path.join(agentCwd, "sessions")
-    : path.join(agentCwd, "docs", "sessions");
-
-const pathExists = async (targetPath: string): Promise<boolean> => {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const normalizeSemanticFileNameSegment = (
-  input: string,
-  fallback: string,
-  maxLength = 40,
-): string => {
-  const normalized = input
-    .normalize("NFKC")
-    .replace(/[“”‘’"'`]/g, "")
-    .replace(/[^\p{Letter}\p{Number}\s-]+/gu, " ")
-    .replace(/[\s_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  if (!normalized) return fallback;
-  const safe = [...normalized].slice(0, maxLength).join("").replace(/-+$/g, "");
-  return safe || fallback;
-};
-
-const resolveUniqueSummaryFilePath = async (
-  summaryDir: string,
-  baseName: string,
-): Promise<string> => {
-  let candidate = path.join(summaryDir, `${baseName}.md`);
-  let suffix = 2;
-  while (await pathExists(candidate)) {
-    candidate = path.join(summaryDir, `${baseName}-${suffix}.md`);
-    suffix += 1;
-  }
-  return candidate;
-};
-
-const truncateText = (input: string, maxLength: number): string => {
-  const compact = input.replace(/\s+/g, " ").trim();
-  if (compact.length <= maxLength) return compact;
-  return `${compact.slice(0, maxLength)}...`;
-};
-
-const getRoleLabel = (role: ChatMessageDTO["role"]): string => {
-  if (role === "user") return "用户";
-  if (role === "assistant") return "助手";
-  if (role === "tool") return "工具";
-  return "系统";
-};
-
-const buildFallbackSessionSummary = (messages: ChatMessageDTO[]): string => {
-  const recent = messages
-    .filter((item) => item.role === "user" || item.role === "assistant")
-    .slice(-8)
-    .map(
-      (item) =>
-        `${getRoleLabel(item.role)}：${truncateText(item.content, 140)}`,
-    );
-  if (recent.length === 0) {
-    return "暂无可用历史消息，无法自动提炼总结。";
-  }
-  return `自动摘要（最近 ${recent.length} 条用户/助手消息）：\n${recent.join("\n")}`;
-};
-
-const toStringList = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter((item) => item.length > 0)
-    .slice(0, 20);
-};
-
 const readOptionalUtf8File = async (
   filePath: string,
 ): Promise<string | null> => {
@@ -668,136 +585,38 @@ const clearSessionInternal = (
   });
 };
 
-const writeSessionSummaryFile = async (input: {
-  scope: ChatScope;
-  chatSessionId: string;
-  agentCwd: string;
-  fileTitle: string;
-  summary: string;
-  keyPoints: string[];
-  nextActions: string[];
-}): Promise<{ filePath: string; messageCount: number }> => {
-  const messages = await repositoryService.listMessages(
-    input.scope,
-    input.chatSessionId,
-  );
-  const now = new Date();
-  const isoTime = now.toISOString();
-  const dayStamp = isoTime.slice(0, 10);
-  const summaryDir = getSessionSummaryDir(input.scope, input.agentCwd);
-  await mkdir(summaryDir, { recursive: true });
-  const semanticTitle = normalizeSemanticFileNameSegment(
-    input.fileTitle,
-    "session-summary",
-  );
-  const fileBaseName = `${dayStamp}-${semanticTitle}`;
-  const filePath = await resolveUniqueSummaryFilePath(summaryDir, fileBaseName);
-  const scopeTypeLabel = input.scope.type === "main" ? "主 Agent" : "子智能体";
-  const scopeIdLabel =
-    input.scope.type === "main" ? MAIN_AGENT_ID : input.scope.projectId;
-
-  const summaryText =
-    input.summary.trim() || buildFallbackSessionSummary(messages);
-  const lines: string[] = [
-    "# Session Summary",
-    "",
-    `- 时间：${isoTime}`,
-    `- 会话归属：${scopeTypeLabel}`,
-    `- 标识：${scopeIdLabel}`,
-    `- Chat Session：${input.chatSessionId}`,
-    `- 历史消息数：${messages.length}`,
-    "",
-    "## 会话总结",
-    summaryText,
-  ];
-
-  if (input.keyPoints.length > 0) {
-    lines.push(
-      "",
-      "## 关键要点",
-      ...input.keyPoints.map((item) => `- ${item}`),
-    );
-  }
-
-  if (input.nextActions.length > 0) {
-    lines.push(
-      "",
-      "## 下一步",
-      ...input.nextActions.map((item) => `- ${item}`),
-    );
-  }
-
-  await writeFile(filePath, `${lines.join("\n")}\n`, "utf8");
-  return { filePath, messageCount: messages.length };
-};
-
 const buildNewSessionTool = (input: {
   scope: ChatScope;
   chatSessionId: string;
-  agentCwd: string;
   description: string;
-  reloadHint: string;
 }): CustomToolDef => ({
   name: "NewSession",
   label: "NewSession",
   description: input.description,
-  parameters: Type.Object({
-    file_title: Type.String({
-      description:
-        "归档文件标题（必填）。由你基于会话内容生成，使用用户语言，简短且语义明确；不要带日期和扩展名。",
-    }),
-    summary: Type.String({
-      description:
-        "当前会话的总结（必填，建议包含目标、结论、约束、未完成事项）",
-    }),
-    key_points: Type.Optional(
-      Type.Array(Type.String({ description: "关键要点" })),
-    ),
-    next_actions: Type.Optional(
-      Type.Array(Type.String({ description: "后续建议动作" })),
-    ),
-  }),
-  async handler(params) {
+  parameters: Type.Object({}),
+  async handler() {
     try {
-      const fileTitle =
-        typeof params.file_title === "string" ? params.file_title.trim() : "";
-      const summary =
-        typeof params.summary === "string" ? params.summary.trim() : "";
-      if (!fileTitle) {
-        return {
-          text: `NewSession failed: file_title 不能为空，需先生成归档文件标题。`,
-          isError: true,
-        };
-      }
-      if (!summary) {
-        return {
-          text: `NewSession failed: summary 不能为空，调用前请先给出会话总结。`,
-          isError: true,
-        };
-      }
-
-      const keyPoints = toStringList(params.key_points);
-      const nextActions = toStringList(params.next_actions);
-      const storeKey = getSessionStoreKey(input.scope, input.chatSessionId);
-
-      const { filePath, messageCount } = await writeSessionSummaryFile({
+      const currentSession = await repositoryService.getChatSession(
+        input.scope,
+        input.chatSessionId,
+      );
+      const module =
+        currentSession?.module ?? (input.scope.type === "main" ? "main" : "docs");
+      const created = await repositoryService.createChatSession({
         scope: input.scope,
-        chatSessionId: input.chatSessionId,
-        agentCwd: input.agentCwd,
-        fileTitle,
-        summary,
-        keyPoints,
-        nextActions,
+        module,
+        title: "",
       });
 
-      freshSessionOnNextPrompt.add(storeKey);
+      appOperationEvents.emit({
+        type: "open_chat_session",
+        scope: input.scope,
+        sessionId: created.id,
+        module: created.module,
+      });
 
       return {
-        text: [
-          `会话总结已写入：${filePath}`,
-          `已归档历史消息：${messageCount} 条。`,
-          input.reloadHint,
-        ].join("\n"),
+        text: `已创建新会话并切换到该会话：${created.id}`,
       };
     } catch (error) {
       return {
@@ -813,24 +632,15 @@ const buildNewSessionTool = (input: {
 export const createSessionControlTools = (input: {
   scope: ChatScope;
   chatSessionId: string;
-  agentCwd: string;
 }): CustomToolDef[] => {
-  const sessionSummaryPathLabel =
-    input.scope.type === "main"
-      ? "当前 Agent 目录下的 sessions"
-      : "docs/sessions";
-
   return [
     buildNewSessionTool({
       scope: input.scope,
       chatSessionId: input.chatSessionId,
-      agentCwd: input.agentCwd,
       description: `
-        结束当前 Agent 会话，并在下次用户消息时启动一个全新的当前 Agent 会话。调用前必须总结当前上下文，并提供一个由你生成的、与用户语言一致的语义化文件标题；工具会把总结写入 ${sessionSummaryPathLabel}。
-        当用户明确要求开启当前 Agent 新会话，或者当前 Agent 工作区 docs 目录中的设定（docs/IDENTITY.md / docs/SOUL.md / docs/USER.md）发生变更时，执行该工具。
+        当用户明确要求开始一个新会话或新话题时调用此工具，例如“新会话”、“开个新会话”、“新话题”、“换个新话题”、“重新开始一个话题”。
+        调用后会创建一个新的当前 Agent 会话，并立即切换到新会话输入框。旧会话会保留在对话列表中，不会自动归档或总结。
       `.trim(),
-      reloadHint:
-        "当前 Agent 会话将在本轮结束后关闭；下一次对话将启动新会话并重新加载当前 Agent 工作区 docs 目录中的 IDENTITY.md / SOUL.md / USER.md。",
     }),
   ];
 };
@@ -1540,7 +1350,6 @@ const createOrResumeSession = async (
   const sessionControlTools = createSessionControlTools({
     scope,
     chatSessionId,
-    agentCwd: projectCwd,
   }).map(toToolDefinition);
   const delegationTools = createDelegationTools({
     scope,

@@ -321,6 +321,12 @@ export type AppOperationEvent =
       documentId?: string;
     }
   | {
+      type: 'open_chat_session';
+      scope: ChatScope;
+      sessionId: string;
+      module: ChatModuleType;
+    }
+  | {
       type: 'app_preview_refreshed';
       projectId: string;
     }

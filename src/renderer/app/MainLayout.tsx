@@ -180,6 +180,36 @@ export const MainLayout = () => {
           void queryClient.invalidateQueries({ queryKey: ['settings'] });
           return;
         }
+        if (event.type === 'open_chat_session') {
+          const params = new URLSearchParams();
+          params.set('session', event.sessionId);
+          params.set('source', 'tool');
+          params.set('stamp', String(Date.now()));
+
+          if (event.scope.type === 'main') {
+            navigate(
+              {
+                pathname: '/main-agent',
+                search: `?${params.toString()}`
+              },
+              { replace: false }
+            );
+            return;
+          }
+
+          if (event.module !== 'main') {
+            params.set('module', event.module);
+          }
+
+          navigate(
+            {
+              pathname: `/agent/${event.scope.projectId}`,
+              search: `?${params.toString()}`
+            },
+            { replace: false }
+          );
+          return;
+        }
         if (event.type !== 'navigate') return;
 
         const searchParams = new URLSearchParams();
