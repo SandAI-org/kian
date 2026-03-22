@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { handle } from './handlerUtils';
 import {
   assetImportSchema,
+  chatQueueSchema,
+  chatQueuedMessagesSchema,
   chatSendSchema,
   chatScopeSchema,
   chatInterruptSchema,
@@ -286,6 +288,12 @@ export const registerHandlers = (): void => {
       return err('UNKNOWN_ERROR', error instanceof Error ? error.message : 'unknown error');
     }
   });
+  handle('chat:queueMessage', chatQueueSchema, async (input) =>
+    agentService.queueMessage(input)
+  );
+  handle('chat:getQueuedMessages', chatQueuedMessagesSchema, async (input) =>
+    agentService.getQueuedMessages(input.scope, input.sessionId)
+  );
   handle('chat:interrupt', chatInterruptSchema, async (input) =>
     agentService.interrupt(input)
   );

@@ -114,10 +114,34 @@ export const chatSendSchema = z.object({
   }
 );
 
+export const chatQueueSchema = z.object({
+  scope: chatScopeSchema,
+  module: chatModuleSchema,
+  sessionId: z.string().min(1),
+  requestId: z.string().min(1),
+  message: z.string().default(''),
+  model: z.string().min(1).optional(),
+  thinkingLevel: z.enum(['low', 'medium', 'high']).optional(),
+  attachments: z.array(chatAttachmentSchema).max(20).optional(),
+  contextSnapshot: z.any().optional(),
+  deliveryMode: z.enum(['steer', 'followUp'])
+}).refine(
+  (input) => input.message.trim().length > 0 || (input.attachments?.length ?? 0) > 0,
+  {
+    message: '消息内容或附件至少填写一项',
+    path: ['message']
+  }
+);
+
 export const chatInterruptSchema = z.object({
   scope: chatScopeSchema,
   sessionId: z.string().min(1),
   requestId: z.string().min(1).optional()
+});
+
+export const chatQueuedMessagesSchema = z.object({
+  scope: chatScopeSchema,
+  sessionId: z.string().min(1)
 });
 
 const chatUploadFileSchema = z.object({

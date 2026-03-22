@@ -283,6 +283,77 @@ describe("repositoryService project management", () => {
     });
   });
 
+  it("preserves all messages when queued turns append concurrently", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const session = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "并发写入测试",
+    });
+    const messagesPath = path.join(
+      tempRoot,
+      ".kian",
+      "main-agent",
+      "chat",
+      "messages",
+      `${session.id}.json`,
+    );
+    const originalWriteFile = fs.writeFile.bind(fs);
+    let firstMessageWriteBlocked = true;
+    let releaseFirstMessageWrite: (() => void) | null = null;
+    let firstMessageWriteReady: (() => void) | null = null;
+    const firstWriteReached = new Promise<void>((resolve) => {
+      firstMessageWriteReady = resolve;
+    });
+    const allowFirstWrite = new Promise<void>((resolve) => {
+      releaseFirstMessageWrite = resolve;
+    });
+    const writeSpy = vi
+      .spyOn(fs, "writeFile")
+      .mockImplementation(async (...args: Parameters<typeof fs.writeFile>) => {
+        const [filePath] = args;
+        if (String(filePath) === messagesPath && firstMessageWriteBlocked) {
+          firstMessageWriteBlocked = false;
+          firstMessageWriteReady?.();
+          await allowFirstWrite;
+        }
+        return originalWriteFile(...args);
+      });
+
+    const firstAppend = repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: session.id,
+      role: "user",
+      content: "1",
+      createdAt: "2026-03-05T09:30:01.000Z",
+    });
+
+    await firstWriteReached;
+
+    const secondAppend = repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: session.id,
+      role: "assistant",
+      content: "1 的回答",
+      createdAt: "2026-03-05T09:30:02.000Z",
+    });
+
+    releaseFirstMessageWrite?.();
+
+    await Promise.all([firstAppend, secondAppend]);
+    writeSpy.mockRestore();
+
+    const messages = await repositoryService.listMessages(
+      { type: "main" },
+      session.id,
+    );
+
+    expect(messages.map((item) => item.content)).toEqual(["1", "1 的回答"]);
+  });
+
   it("stores main agent docs under the internal workspace and migrates legacy context files", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"

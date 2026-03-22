@@ -250,6 +250,27 @@ export interface ChatSendPayload {
   skipUserMessagePersistence?: boolean;
 }
 
+export type ChatQueueDeliveryMode = 'steer' | 'followUp';
+
+export interface ChatQueuePayload {
+  scope: ChatScope;
+  module: ChatModuleType;
+  sessionId: string;
+  requestId: string;
+  message: string;
+  model?: string;
+  thinkingLevel?: ChatThinkingLevel;
+  attachments?: ChatAttachmentDTO[];
+  contextSnapshot?: unknown;
+  deliveryMode: ChatQueueDeliveryMode;
+}
+
+export interface ChatQueuedMessageDTO {
+  requestId: string;
+  deliveryMode: ChatQueueDeliveryMode;
+  content: string;
+}
+
 export interface ChatInterruptPayload {
   scope: ChatScope;
   sessionId: string;
@@ -282,6 +303,7 @@ export interface ChatStreamEvent {
   module: ChatModuleType;
   createdAt?: string;
   type:
+    | 'request_started'
     | 'assistant_delta'
     | 'assistant_done'
     | 'thinking_start'

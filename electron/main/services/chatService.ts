@@ -1,6 +1,5 @@
 import { completeSimple } from "@mariozechner/pi-ai";
 import type {
-  ChatMessageMetadata,
   ChatSendPayload,
   ChatSendResponse,
   ChatStreamEvent,
@@ -9,99 +8,17 @@ import {
   deriveOptimisticChatSessionTitle,
   normalizeChatSessionTitleCandidate,
 } from "@shared/utils/chatSessionTitle";
-import { buildUserRequestMetadataJson } from "@shared/utils/chatPendingMessage";
 import { agentService } from "./agentService";
-import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
-import {
-  buildExtendedMarkdown,
-  detectAttachmentMarkdownKind,
-  normalizeMediaMarkdownInText,
-  resolveAttachmentAbsolutePath,
-} from "./mediaMarkdown";
+import { normalizeMediaMarkdownInText } from "./mediaMarkdown";
 import { repositoryService } from "./repositoryService";
 import { settingsService } from "./settingsService";
-
-const formatUserMessage = (payload: ChatSendPayload): string => {
-  const message = payload.message.trim();
-  const base = message.length > 0 ? message : "（仅上传了附件）";
-  const attachments = payload.attachments ?? [];
-  if (attachments.length === 0) {
-    return base;
-  }
-
-  const attachmentLines = attachments.map((file) => {
-    const absolutePath = resolveAttachmentAbsolutePath(
-      payload.scope,
-      file.path,
-    );
-    const markdownKind = detectAttachmentMarkdownKind(file);
-    return buildExtendedMarkdown(markdownKind, absolutePath);
-  });
-  return `${base}\n\n${attachmentLines.join("\n")}`;
-};
-
-type TimelineStep =
-  | {
-      type: "assistant";
-      createdAt: string;
-      content: string;
-    }
-  | {
-      type: "thinking";
-      createdAt: string;
-      content: string;
-    }
-  | {
-      type: "tool";
-      createdAt: string;
-      toolUseId?: string;
-      toolName: string;
-      toolInput?: string;
-      output?: string;
-    };
-
-const buildThinkingMetadataJson = (): string =>
-  JSON.stringify({
-    kind: "thinking",
-  } satisfies ChatMessageMetadata);
-
-const mergeToolOutput = (
-  existing: string | undefined,
-  incoming: string,
-): string => {
-  const next = incoming.trim();
-  if (!next) {
-    return existing ?? "";
-  }
-  if (!existing || !existing.trim()) {
-    return next;
-  }
-  if (existing === next || existing.includes(next)) {
-    return existing;
-  }
-  if (next.includes(existing)) {
-    return next;
-  }
-  return `${existing}\n${next}`;
-};
-
-const normalizeToolInput = (input: string | undefined): string | undefined => {
-  const trimmed = input?.trim();
-  return trimmed ? trimmed : undefined;
-};
-
-const findLastTimelineStepIndex = (
-  timeline: TimelineStep[],
-  type: TimelineStep["type"],
-): number => {
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    if (timeline[index]?.type === type) {
-      return index;
-    }
-  }
-  return -1;
-};
+import {
+  applyChatStreamEventToTimeline,
+  createChatTurnTimelineState,
+  persistChatTurnTimeline,
+  persistUserMessage,
+} from "./chatTurnTimeline";
 
 const buildAutoTitlePromptInput = async (
   payload: ChatSendPayload,
@@ -178,121 +95,6 @@ const maybeSetOptimisticSessionTitle = async (
   return optimisticTitle;
 };
 
-const appendTextDelta = (
-  timeline: TimelineStep[],
-  delta: string,
-  createdAt: string,
-  type: "assistant" | "thinking",
-): void => {
-  if (!delta) return;
-  const targetIndex = timeline.length - 1;
-  const target =
-    targetIndex >= 0 && targetIndex < timeline.length
-      ? timeline[targetIndex]
-      : undefined;
-
-  if (target?.type === type) {
-    target.content += delta;
-    return;
-  }
-  timeline.push({
-    type,
-    createdAt,
-    content: delta,
-  });
-};
-
-const appendAssistantDelta = (
-  timeline: TimelineStep[],
-  delta: string,
-  createdAt: string,
-): void => {
-  appendTextDelta(timeline, delta, createdAt, "assistant");
-};
-
-const appendThinkingDelta = (
-  timeline: TimelineStep[],
-  delta: string,
-  createdAt: string,
-): void => {
-  appendTextDelta(timeline, delta, createdAt, "thinking");
-};
-
-const ensureThinkingContent = (
-  timeline: TimelineStep[],
-  content: string,
-  createdAt: string,
-): void => {
-  const next = content.trim();
-  if (!next) return;
-
-  const targetIndex = findLastTimelineStepIndex(timeline, "thinking");
-  const target =
-    targetIndex >= 0 && targetIndex < timeline.length
-      ? timeline[targetIndex]
-      : undefined;
-
-  if (target?.type === "thinking") {
-    if (!target.content.trim() || next.includes(target.content)) {
-      target.content = next;
-      return;
-    }
-    if (target.content.includes(next)) {
-      return;
-    }
-    target.content = `${target.content}${next}`;
-    return;
-  }
-
-  timeline.push({
-    type: "thinking",
-    createdAt,
-    content: next,
-  });
-};
-
-const ensureToolStep = (
-  timeline: TimelineStep[],
-  toolStepByUseId: Map<string, Extract<TimelineStep, { type: "tool" }>>,
-  toolUseId: string | undefined,
-  toolName: string | undefined,
-  createdAt: string,
-): Extract<TimelineStep, { type: "tool" }> => {
-  const normalizedToolName = toolName?.trim() || "工具";
-
-  if (toolUseId) {
-    const existing = toolStepByUseId.get(toolUseId);
-    if (existing) {
-      if (!existing.toolName || existing.toolName === "工具") {
-        existing.toolName = normalizedToolName;
-      }
-      return existing;
-    }
-  }
-
-  const last = timeline[timeline.length - 1];
-  if (
-    !toolUseId &&
-    last?.type === "tool" &&
-    !last.toolUseId &&
-    !last.output &&
-    last.toolName === normalizedToolName
-  ) {
-    return last;
-  }
-
-  const next: Extract<TimelineStep, { type: "tool" }> = {
-    type: "tool",
-    createdAt,
-    toolUseId,
-    toolName: normalizedToolName,
-  };
-  timeline.push(next);
-  if (toolUseId) {
-    toolStepByUseId.set(toolUseId, next);
-  }
-  return next;
-};
 
 const resolveAutoTitleModel = (
   payload: ChatSendPayload,
@@ -490,89 +292,25 @@ export const chatService = {
   ): Promise<ChatSendResponse> {
     // Record user message
     if (!payload.skipUserMessagePersistence) {
-      await repositoryService.appendMessage({
+      await persistUserMessage({
         scope: payload.scope,
         sessionId: payload.sessionId,
-        role: "user",
-        content: formatUserMessage(payload),
-        metadataJson: payload.requestId
-          ? buildUserRequestMetadataJson(payload.requestId)
-          : undefined,
+        message: payload.message,
+        attachments: payload.attachments,
+        requestId: payload.requestId,
       });
     }
 
     await maybeSetOptimisticSessionTitle(payload);
 
-    const timeline: TimelineStep[] = [];
-    const toolStepByUseId = new Map<
-      string,
-      Extract<TimelineStep, { type: "tool" }>
-    >();
+    const timelineState = createChatTurnTimelineState();
 
     const streamProxy = (event: ChatStreamEvent): void => {
       onStream?.(event);
-      const eventCreatedAt = event.createdAt ?? new Date().toISOString();
-
-      if (event.type === "assistant_delta") {
-        appendAssistantDelta(timeline, event.delta ?? "", eventCreatedAt);
+      if (event.requestId !== (payload.requestId ?? event.requestId)) {
         return;
       }
-
-      if (event.type === "thinking_delta") {
-        appendThinkingDelta(timeline, event.delta ?? "", eventCreatedAt);
-        return;
-      }
-
-      if (event.type === "thinking_end" && event.thinking?.trim()) {
-        ensureThinkingContent(timeline, event.thinking, eventCreatedAt);
-        return;
-      }
-
-      if (event.type === "tool_start") {
-        const step = ensureToolStep(
-          timeline,
-          toolStepByUseId,
-          event.toolUseId,
-          event.toolName,
-          eventCreatedAt,
-        );
-        const toolInput = normalizeToolInput(event.toolInput);
-        if (toolInput) {
-          step.toolInput = toolInput;
-        }
-        return;
-      }
-
-      if (event.type === "tool_progress") {
-        const step = ensureToolStep(
-          timeline,
-          toolStepByUseId,
-          event.toolUseId,
-          event.toolName,
-          eventCreatedAt,
-        );
-        const toolInput = normalizeToolInput(event.toolInput);
-        if (toolInput && !step.toolInput) {
-          step.toolInput = toolInput;
-        }
-        return;
-      }
-
-      if (event.type === "tool_output") {
-        const step = ensureToolStep(
-          timeline,
-          toolStepByUseId,
-          event.toolUseId,
-          event.toolName,
-          eventCreatedAt,
-        );
-        if (event.toolName?.trim()) {
-          step.toolName = event.toolName.trim();
-        }
-        if (event.output?.trim()) {
-          step.output = mergeToolOutput(step.output, event.output);
-        }
-      }
+      applyChatStreamEventToTimeline(timelineState, event);
     };
 
     let result: ChatSendResponse;
@@ -594,93 +332,19 @@ export const chatService = {
       };
     }
 
-    const persistedMessages: Array<{
-      role: "assistant" | "tool" | "system";
-      createdAt: string;
-      content: string;
-      toolCallJson?: string;
-      metadataJson?: string;
-    }> = [];
-
-    for (const step of timeline) {
-      if (step.type === "assistant") {
-        const content = normalizeMediaMarkdownInText(step.content.trim());
-        if (!content) continue;
-        persistedMessages.push({
-          role: "assistant",
-          createdAt: step.createdAt,
-          content,
-        });
-        continue;
-      }
-
-      if (step.type === "thinking") {
-        const content = normalizeMediaMarkdownInText(step.content.trim());
-        if (!content) continue;
-        persistedMessages.push({
-          role: "system",
-          createdAt: step.createdAt,
-          content,
-          metadataJson: buildThinkingMetadataJson(),
-        });
-        continue;
-      }
-
-      const toolName = step.toolName?.trim() || "工具";
-      const toolInput = normalizeToolInput(step.toolInput);
-      const toolCallJson = JSON.stringify({
-        toolCall: {
-          toolUseId: step.toolUseId,
-          toolName,
-          input: toolInput,
-        },
-      });
-      if (step.output?.trim()) {
-        persistedMessages.push({
-          role: "tool",
-          createdAt: step.createdAt,
-          content: `工具输出（${toolName}）\n${step.output.trim()}`,
-          toolCallJson,
-        });
-      } else {
-        persistedMessages.push({
-          role: "tool",
-          createdAt: step.createdAt,
-          content: `调用工具：${toolName}`,
-          toolCallJson,
-        });
-      }
-    }
-
-    const hasAssistantMessage = persistedMessages.some(
-      (item) => item.role === "assistant",
-    );
-    if (!hasAssistantMessage) {
-      persistedMessages.push({
-        role: "assistant",
-        createdAt: new Date().toISOString(),
-        content: result.assistantMessage,
-      });
-    }
-
-    for (const item of persistedMessages) {
-      await repositoryService.appendMessage({
-        scope: payload.scope,
-        sessionId: payload.sessionId,
-        role: item.role,
-        content: item.content,
-        toolCallJson: item.role === "tool" ? item.toolCallJson : undefined,
-        metadataJson: item.metadataJson,
-        createdAt: item.createdAt,
-      });
-    }
+    const persistedMessageCount = await persistChatTurnTimeline({
+      scope: payload.scope,
+      sessionId: payload.sessionId,
+      timeline: timelineState.timeline,
+      fallbackAssistantMessage: result.assistantMessage,
+    });
 
     logger.info("Auto title queued", {
       sessionId: payload.sessionId,
       scope: payload.scope,
       module: payload.module,
       persistedMessageCount:
-        persistedMessages.length + (payload.skipUserMessagePersistence ? 0 : 1),
+        persistedMessageCount + (payload.skipUserMessagePersistence ? 0 : 1),
       userMessageLength: payload.message.trim().length,
     });
 

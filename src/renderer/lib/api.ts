@@ -15,6 +15,8 @@ import type {
   ChatAttachmentDTO,
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
+  ChatQueuedMessageDTO,
+  ChatQueuePayload,
   ChatSendPayload,
   ChatThinkingLevel,
   ChatStreamEvent,
@@ -135,10 +137,17 @@ export const api = {
       unwrap(await window.api.chat.getSessions(scope)),
     getMessages: async (scope: ChatScope, sessionId: string) =>
       unwrap(await window.api.chat.getMessages(scope, sessionId)),
+    getQueuedMessages: async (
+      scope: ChatScope,
+      sessionId: string,
+    ): Promise<ChatQueuedMessageDTO[]> =>
+      unwrap(await window.api.chat.getQueuedMessages(scope, sessionId)),
     uploadFiles: async (payload: { scope: ChatScope; files: ChatUploadFilePayload[] }): Promise<ChatAttachmentDTO[]> =>
       unwrap(await window.api.chat.uploadFiles(payload)),
     sendMessage: async (payload: ChatSendPayload) =>
       unwrap(await window.api.chat.sendMessage(payload)),
+    queueMessage: async (payload: ChatQueuePayload): Promise<boolean> =>
+      unwrap(await window.api.chat.queueMessage(payload)),
     interrupt: async (payload: ChatInterruptPayload): Promise<boolean> =>
       unwrap(await window.api.chat.interrupt(payload)),
     deleteSession: async (scope: ChatScope, sessionId: string) =>

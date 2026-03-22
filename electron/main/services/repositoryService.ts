@@ -70,6 +70,31 @@ const writeJson = async <T>(filePath: string, payload: T): Promise<void> => {
   await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 };
 
+const messageAppendQueueByPath = new Map<string, Promise<void>>();
+
+const enqueueMessageAppend = async <T>(
+  messagesPath: string,
+  task: () => Promise<T>,
+): Promise<T> => {
+  const previous = messageAppendQueueByPath.get(messagesPath) ?? Promise.resolve();
+  let releaseCurrent = (): void => {};
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+  const currentChain = previous.catch(() => undefined).then(() => current);
+  messageAppendQueueByPath.set(messagesPath, currentChain);
+
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    releaseCurrent();
+    if (messageAppendQueueByPath.get(messagesPath) === currentChain) {
+      messageAppendQueueByPath.delete(messagesPath);
+    }
+  }
+};
+
 const PROJECT_ID_PATTERN = /^p-(\d{4}-\d{2}-\d{2})-(\d+)$/;
 
 const normalizeProjectDisplayName = (name: string): string =>
@@ -3084,7 +3109,12 @@ export const repositoryService = {
     );
 
     return rows
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((item, index) => ({ item, index }))
+      .sort(
+        (a, b) =>
+          a.item.createdAt.localeCompare(b.item.createdAt) || a.index - b.index,
+      )
+      .map(({ item }) => item)
       .slice(-100);
   },
 
@@ -3107,6 +3137,7 @@ export const repositoryService = {
       throw new Error("会话不存在");
     }
     const createdAt = input.createdAt?.trim() || nowISO();
+    const messagesPath = getChatMessagesPathByScope(input.scope, input.sessionId);
 
     const next: ChatMessageDTO = {
       id: randomUUID(),
@@ -3118,31 +3149,27 @@ export const repositoryService = {
       createdAt,
     };
 
-    const rows = await readJson<ChatMessageDTO[]>(
-      getChatMessagesPathByScope(input.scope, input.sessionId),
-      [],
-    );
-    rows.push(next);
-    await writeJson(
-      getChatMessagesPathByScope(input.scope, input.sessionId),
-      rows,
-    );
+    return enqueueMessageAppend(messagesPath, async () => {
+      const rows = await readJson<ChatMessageDTO[]>(messagesPath, []);
+      rows.push(next);
+      await writeJson(messagesPath, rows);
 
-    const sessionUpdatedAt = nowISO();
-    await updateChatSessionTimestamp(input.scope, input.sessionId, sessionUpdatedAt);
-    if (input.scope.type === "project") {
-      await touchProject(input.scope.projectId);
-    }
-    chatEvents.emitHistoryUpdated({
-      scope: input.scope,
-      sessionId: input.sessionId,
-      messageId: next.id,
-      role: next.role,
-      createdAt: next.createdAt,
-      sessionUpdatedAt,
+      const sessionUpdatedAt = nowISO();
+      await updateChatSessionTimestamp(input.scope, input.sessionId, sessionUpdatedAt);
+      if (input.scope.type === "project") {
+        await touchProject(input.scope.projectId);
+      }
+      chatEvents.emitHistoryUpdated({
+        scope: input.scope,
+        sessionId: input.sessionId,
+        messageId: next.id,
+        role: next.role,
+        createdAt: next.createdAt,
+        sessionUpdatedAt,
+      });
+
+      return next;
     });
-
-    return next;
   },
 
   async logAgentAction(input: {

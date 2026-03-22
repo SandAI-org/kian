@@ -11,6 +11,7 @@ import {
   CHAT_THINKING_LEVEL_VALUES,
   ChatComposer,
   type LocalChatFile,
+  type QueuedComposerMessage,
 } from "@renderer/modules/chat/ChatComposer";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { ScrollArea } from "@renderer/components/ScrollArea";
@@ -28,6 +29,8 @@ import {
 import { useChatStreamStore } from "@renderer/store/chatStreamStore";
 import type {
   ChatAttachmentDTO,
+  ChatQueueDeliveryMode,
+  ChatQueuedMessageDTO,
   ChatHistoryUpdatedEvent,
   ChatMessageDTO,
   ChatMessageMetadata,
@@ -39,6 +42,7 @@ import {
   buildUserRequestMetadataJson,
   hasPersistedPendingUserMessage,
 } from "@shared/utils/chatPendingMessage";
+import { shouldRetainCompletedStreamingBlocks } from "@shared/utils/chatStreamRetention";
 import {
   detectMarkdownMediaKindFromSource,
   rewriteBareRemoteMediaUrlsInMarkdown,
@@ -71,6 +75,7 @@ import remarkGfm from "remark-gfm";
 import {
   formatToolDisplayName,
   normalizeToolDetailText,
+  type StreamingBlock,
   type ToolCallInfo,
 } from "./streamingState";
 
@@ -103,6 +108,7 @@ interface SendPayload {
 }
 
 interface QueuedSendPayload extends SendPayload {
+  deliveryMode: ChatQueueDeliveryMode;
   pendingMessage: ChatMessageDTO;
 }
 
@@ -375,6 +381,19 @@ const formatDraftMessage = (text: string, files: LocalChatFile[]): string => {
   });
   return `${base}\n\n${lines.join("\n")}`;
 };
+
+const buildPendingUserMessageFromQueuedSnapshot = (input: {
+  requestId: string;
+  sessionId: string;
+  content: string;
+}): ChatMessageDTO => ({
+  id: `pending-user-${input.requestId}`,
+  sessionId: input.sessionId,
+  role: "user",
+  content: input.content,
+  metadataJson: buildUserRequestMetadataJson(input.requestId),
+  createdAt: new Date().toISOString(),
+});
 
 const encodeExtendedMediaToken = (
   kind: ExtendedMarkdownKind,
@@ -1568,6 +1587,9 @@ export const ModuleChatPane = ({
   const [queuedSendPayloads, setQueuedSendPayloads] = useState<
     QueuedSendPayload[]
   >([]);
+  const [retainedStreamingBlocks, setRetainedStreamingBlocks] = useState<
+    StreamingBlock[]
+  >([]);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const thinkingLevelOptions = useMemo(
     () =>
@@ -1588,8 +1610,21 @@ export const ModuleChatPane = ({
   const forceScrollToBottomRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingFilesRef = useRef<LocalChatFile[]>([]);
+  const queuedSendPayloadsRef = useRef<QueuedSendPayload[]>([]);
+  const queuedMessagesSnapshotRef = useRef<ChatQueuedMessageDTO[]>([]);
   const hasHydratedThinkingLevelRef = useRef(false);
   const initializedScopeKeyRef = useRef<string | null>(null);
+  const previousStreamSnapshotRef = useRef<{
+    sessionId?: string;
+    activeRequestId?: string;
+    streamingInProgress: boolean;
+    streamingBlocks: StreamingBlock[];
+  }>({
+    sessionId: undefined,
+    activeRequestId: undefined,
+    streamingInProgress: false,
+    streamingBlocks: [],
+  });
 
   const streamSession = useChatStreamStore((state) =>
     currentSessionId ? state.sessions[currentSessionId] : undefined,
@@ -1609,6 +1644,10 @@ export const ModuleChatPane = ({
   const activeRequestId = streamSession?.activeRequestId;
 
   const queryClient = useQueryClient();
+  const queuedMessagesQueryKey = useMemo(
+    () => ["chat-queued", scopeKey, currentSessionId] as const,
+    [currentSessionId, scopeKey],
+  );
   const generalConfigQuery = useQuery({
     queryKey: ["settings", "general"],
     queryFn: api.settings.getGeneralConfig,
@@ -1737,6 +1776,8 @@ export const ModuleChatPane = ({
     setSelectedModel(undefined);
     setSelectedThinkingLevel("low");
     setPendingUserMessages([]);
+    queuedSendPayloadsRef.current = [];
+    queuedMessagesSnapshotRef.current = [];
     setQueuedSendPayloads([]);
     setIsCreatingSession(false);
     setPendingFiles((prev) => {
@@ -1753,6 +1794,8 @@ export const ModuleChatPane = ({
     sessionRef.current = currentSessionId;
     // Clean up per-session transient state on session switch
     setPendingUserMessages([]);
+    queuedSendPayloadsRef.current = [];
+    queuedMessagesSnapshotRef.current = [];
     setQueuedSendPayloads([]);
     hasInitialBottomPositionedRef.current = false;
     isBottomAnchorVisibleRef.current = true;
@@ -1763,6 +1806,9 @@ export const ModuleChatPane = ({
   useEffect(() => {
     pendingFilesRef.current = pendingFiles;
   }, [pendingFiles]);
+  useEffect(() => {
+    queuedSendPayloadsRef.current = queuedSendPayloads;
+  }, [queuedSendPayloads]);
   useEffect(() => {
     return () => {
       revokePreviewUrls(pendingFilesRef.current);
@@ -1788,6 +1834,46 @@ export const ModuleChatPane = ({
 
     const unsubscribe = api.chat.subscribeStream((event) => {
       if (!sessionRef.current || event.sessionId !== sessionRef.current) return;
+      if (event.type === "request_started") {
+        const startedQueuedPayload = queuedSendPayloadsRef.current.find(
+          (item) => item.requestId === event.requestId,
+        );
+        const startedQueuedSnapshot = queuedMessagesSnapshotRef.current.find(
+          (item) => item.requestId === event.requestId,
+        );
+        const pendingQueuedMessage =
+          startedQueuedPayload?.pendingMessage ??
+          (startedQueuedSnapshot
+            ? buildPendingUserMessageFromQueuedSnapshot({
+                requestId: startedQueuedSnapshot.requestId,
+                sessionId: event.sessionId,
+                content: startedQueuedSnapshot.content,
+              })
+            : undefined);
+        if (pendingQueuedMessage) {
+          setPendingUserMessages((prev) => {
+            if (
+              prev.some(
+                (item) => item.id === pendingQueuedMessage.id,
+              )
+            ) {
+              return prev;
+            }
+            return [...prev, pendingQueuedMessage];
+          });
+        }
+        setQueuedSendPayloads((prev) => {
+          const next = prev.filter((item) => item.requestId !== event.requestId);
+          queuedSendPayloadsRef.current = next;
+          return next;
+        });
+        queryClient.setQueryData<ChatQueuedMessageDTO[]>(
+          queuedMessagesQueryKey,
+          (prev) =>
+            (prev ?? []).filter((item) => item.requestId !== event.requestId),
+        );
+        return;
+      }
       if (requestRef.current && event.requestId !== requestRef.current) return;
       if (event.type === "assistant_done" || event.type === "tool_output") {
         invalidateDocsQueries();
@@ -1795,7 +1881,7 @@ export const ModuleChatPane = ({
     });
 
     return unsubscribe;
-  }, [docsQueryProjectId, queryClient]);
+  }, [docsQueryProjectId, queryClient, queuedMessagesQueryKey]);
 
   useEffect(() => {
     const unsubscribe = api.chat.subscribeHistoryUpdated(
@@ -1803,13 +1889,16 @@ export const ModuleChatPane = ({
         if (!isSameScope(event.scope, effectiveScope)) return;
         if (!sessionRef.current || event.sessionId !== sessionRef.current)
           return;
+        void queryClient.invalidateQueries({
+          queryKey: ["chat-messages", scopeKey, event.sessionId],
+        });
         if (event.role === "assistant" && !requestRef.current) {
           clearSessionStream(event.sessionId);
         }
       },
     );
     return unsubscribe;
-  }, [clearSessionStream, effectiveScope]);
+  }, [clearSessionStream, effectiveScope, queryClient, scopeKey]);
 
   // ---------------------------------------------------------------------------
   // Session bootstrap
@@ -1868,6 +1957,17 @@ export const ModuleChatPane = ({
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 10,
   });
+  const queuedMessagesQuery = useQuery({
+    queryKey: queuedMessagesQueryKey,
+    queryFn: () =>
+      api.chat.getQueuedMessages(effectiveScope, currentSessionId as string),
+    enabled: Boolean(currentSessionId),
+    staleTime: 0,
+    gcTime: 1000 * 60,
+  });
+  useEffect(() => {
+    queuedMessagesSnapshotRef.current = queuedMessagesQuery.data ?? [];
+  }, [queuedMessagesQuery.data]);
 
   const sendMutation = useMutation({
     mutationFn: async ({ sessionId, text, requestId, files }: SendPayload) => {
@@ -1926,6 +2026,74 @@ export const ModuleChatPane = ({
     },
   });
 
+  const queueMutation = useMutation({
+    mutationFn: async ({
+      sessionId,
+      text,
+      requestId,
+      files,
+      deliveryMode,
+    }: QueuedSendPayload) => {
+      let attachments: ChatAttachmentDTO[] | undefined;
+      if (files.length > 0) {
+        attachments = await api.chat.uploadFiles({
+          scope: effectiveScope,
+          files: files.map((file) => ({
+            name: file.name,
+            sourcePath: file.sourcePath,
+            mimeType: file.mimeType,
+            size: file.size,
+          })),
+        });
+      }
+
+      return api.chat.queueMessage({
+        scope: effectiveScope,
+        module,
+        sessionId,
+        requestId,
+        message: text,
+        model: selectedModel,
+        thinkingLevel: selectedThinkingLevel,
+        attachments,
+        contextSnapshot,
+        deliveryMode,
+      });
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.setQueryData<ChatQueuedMessageDTO[]>(
+        queuedMessagesQueryKey,
+        (prev) => {
+          const nextItem: ChatQueuedMessageDTO = {
+            requestId: variables.requestId,
+            deliveryMode: variables.deliveryMode,
+            content: variables.pendingMessage.content,
+          };
+          const current = prev ?? [];
+          if (current.some((item) => item.requestId === nextItem.requestId)) {
+            return current.map((item) =>
+              item.requestId === nextItem.requestId ? nextItem : item,
+            );
+          }
+          return [...current, nextItem];
+        },
+      );
+    },
+    onError: (error, variables) => {
+      setQueuedSendPayloads((prev) => {
+        const next = prev.filter((item) => item.requestId !== variables.requestId);
+        queuedSendPayloadsRef.current = next;
+        return next;
+      });
+      queryClient.setQueryData<ChatQueuedMessageDTO[]>(
+        queuedMessagesQueryKey,
+        (prev) =>
+          (prev ?? []).filter((item) => item.requestId !== variables.requestId),
+      );
+      message.error(error instanceof Error ? error.message : t("发送失败"));
+    },
+  });
+
   const interruptMutation = useMutation({
     mutationFn: async ({
       sessionId,
@@ -1942,12 +2110,51 @@ export const ModuleChatPane = ({
     onError: (error) => {
       message.error(error instanceof Error ? error.message : t("打断失败"));
     },
+    onSuccess: () => {
+      queuedSendPayloadsRef.current = [];
+      setQueuedSendPayloads([]);
+      queryClient.setQueryData<ChatQueuedMessageDTO[]>(queuedMessagesQueryKey, []);
+    },
   });
 
   const messages = useMemo<ChatMessageDTO[]>(
     () => messagesQuery.data ?? [],
     [messagesQuery.data],
   );
+  useEffect(() => {
+    setRetainedStreamingBlocks([]);
+    previousStreamSnapshotRef.current = {
+      sessionId: currentSessionId,
+      activeRequestId: undefined,
+      streamingInProgress: false,
+      streamingBlocks: [],
+    };
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    const previous = previousStreamSnapshotRef.current;
+    if (
+      shouldRetainCompletedStreamingBlocks({
+        previousSessionId: previous.sessionId,
+        currentSessionId,
+        previousActiveRequestId: previous.activeRequestId,
+        activeRequestId,
+        previousStreamingBlockCount: previous.streamingBlocks.length,
+      })
+    ) {
+      setRetainedStreamingBlocks((current) => [
+        ...current,
+        ...previous.streamingBlocks,
+      ]);
+    }
+    previousStreamSnapshotRef.current = {
+      sessionId: currentSessionId,
+      activeRequestId,
+      streamingInProgress,
+      streamingBlocks,
+    };
+  }, [activeRequestId, currentSessionId, streamingBlocks, streamingInProgress]);
+
   useEffect(() => {
     setPendingUserMessages((prev) => {
       const next = prev.filter(
@@ -1967,6 +2174,33 @@ export const ModuleChatPane = ({
     }
     return [...messages, ...optimisticMessages];
   }, [messages, pendingUserMessages]);
+
+  const visibleStreamingBlocks = useMemo<StreamingBlock[]>(() => {
+    let latestPersistedAssistantCreatedAt: string | undefined;
+    for (const item of messages) {
+      if (item.role !== "assistant") {
+        continue;
+      }
+      if (
+        !latestPersistedAssistantCreatedAt ||
+        item.createdAt.localeCompare(latestPersistedAssistantCreatedAt) > 0
+      ) {
+        latestPersistedAssistantCreatedAt = item.createdAt;
+      }
+    }
+
+    const retainedBlocks = latestPersistedAssistantCreatedAt
+      ? retainedStreamingBlocks.filter(
+          (block) =>
+            block.createdAt.localeCompare(latestPersistedAssistantCreatedAt) > 0,
+        )
+      : retainedStreamingBlocks;
+
+    if (retainedBlocks.length === 0) {
+      return streamingBlocks;
+    }
+    return [...retainedBlocks, ...streamingBlocks];
+  }, [messages, retainedStreamingBlocks, streamingBlocks]);
 
   const timelineBlocks = useMemo<MessageBlock[]>(() => {
     const sortedMessages = renderedMessages
@@ -2001,7 +2235,7 @@ export const ModuleChatPane = ({
       });
     }
 
-    for (const block of streamingBlocks) {
+    for (const block of visibleStreamingBlocks) {
       sortOrder += 1;
       if (block.kind === "assistant") {
         timelineItems.push({
@@ -2095,7 +2329,7 @@ export const ModuleChatPane = ({
 
     flushTools();
     return blocks;
-  }, [renderedMessages, streamingBlocks]);
+  }, [renderedMessages, visibleStreamingBlocks]);
 
   const hasPendingAssistantReply = useMemo(() => {
     let waitingForAssistant = false;
@@ -2323,29 +2557,9 @@ export const ModuleChatPane = ({
     [beginStreamRequest, sendMutation],
   );
 
-  useEffect(() => {
-    if (queuedSendPayloads.length === 0) return;
-    if (
-      sendMutation.isPending ||
-      streamingInProgress ||
-      Boolean(activeRequestId) ||
-      interruptMutation.isPending
-    ) {
-      return;
-    }
-    const [nextPayload, ...rest] = queuedSendPayloads;
-    setQueuedSendPayloads(rest);
-    startSend(nextPayload);
-  }, [
-    activeRequestId,
-    interruptMutation.isPending,
-    queuedSendPayloads,
-    sendMutation.isPending,
-    startSend,
-    streamingInProgress,
-  ]);
-
-  const handleSend = (): void => {
+  const handleSend = (
+    queuedDeliveryMode: ChatQueueDeliveryMode = "steer",
+  ): void => {
     void (async () => {
       const text = input.trim();
       const files = [...pendingFiles];
@@ -2418,6 +2632,7 @@ export const ModuleChatPane = ({
         sessionId,
         text,
         requestId,
+        deliveryMode: queuedDeliveryMode,
         files: files.map(({ previewUrl: _previewUrl, ...file }) => file),
         pendingMessage: {
           id: `pending-user-${requestId}`,
@@ -2428,22 +2643,20 @@ export const ModuleChatPane = ({
           createdAt: new Date().toISOString(),
         },
       };
-      setPendingUserMessages((prev) => [...prev, nextPayload.pendingMessage]);
 
       const hasActiveProcessing =
         sendMutation.isPending || streamingInProgress || Boolean(activeRequestId);
-      if (hasActiveProcessing || interruptMutation.isPending) {
-        setQueuedSendPayloads((prev) => [...prev, nextPayload]);
-        const currentRequestId = requestRef.current ?? activeRequestId;
-        if (currentRequestId && !interruptMutation.isPending) {
-          interruptMutation.mutate({
-            sessionId,
-            requestId: currentRequestId,
-          });
-        }
+      if (hasActiveProcessing) {
+        setQueuedSendPayloads((prev) => {
+          const next = [...prev, nextPayload];
+          queuedSendPayloadsRef.current = next;
+          return next;
+        });
+        queueMutation.mutate(nextPayload);
         return;
       }
 
+      setPendingUserMessages((prev) => [...prev, nextPayload.pendingMessage]);
       startSend({
         sessionId,
         text,
@@ -2458,15 +2671,7 @@ export const ModuleChatPane = ({
     if (!sessionId || interruptMutation.isPending) return;
     const requestId = requestRef.current ?? activeRequestId;
     if (!requestId) {
-      if (queuedSendPayloads.length === 0) return;
-      const queuedIds = new Set(
-        queuedSendPayloads.map((item) => item.pendingMessage.id),
-      );
-      setQueuedSendPayloads([]);
-      setPendingUserMessages((prev) =>
-        prev.filter((item) => !queuedIds.has(item.id)),
-      );
-      return;
+      if (queuedComposerMessages.length === 0) return;
     }
     interruptMutation.mutate({
       sessionId,
@@ -2562,13 +2767,41 @@ export const ModuleChatPane = ({
     (input.trim().length > 0 || pendingFiles.length > 0) &&
     hasHydratedSelectedModel &&
     !isCreatingSession;
+  const queuedComposerMessages = useMemo<QueuedComposerMessage[]>(
+    () => {
+      const localById = new Map(
+        queuedSendPayloads.map((item) => [
+          item.requestId,
+          {
+            id: item.requestId,
+            content: item.pendingMessage.content,
+            mode: item.deliveryMode,
+          } satisfies QueuedComposerMessage,
+        ]),
+      );
+      const restoredMessages = (queuedMessagesQuery.data ?? []).map((item) => {
+        const local = localById.get(item.requestId);
+        if (local) {
+          localById.delete(item.requestId);
+          return local;
+        }
+        return {
+          id: item.requestId,
+          content: item.content,
+          mode: item.deliveryMode,
+        } satisfies QueuedComposerMessage;
+      });
+      return [...restoredMessages, ...localById.values()];
+    },
+    [queuedMessagesQuery.data, queuedSendPayloads],
+  );
   const canInterrupt =
     Boolean(currentSessionId) &&
     ((sendMutation.isPending &&
       sendMutation.variables?.sessionId === currentSessionId) ||
       streamingInProgress ||
       Boolean(activeRequestId) ||
-      queuedSendPayloads.length > 0) &&
+      queuedComposerMessages.length > 0) &&
     !interruptMutation.isPending;
   const showStreamingPanel =
     (sendMutation.isPending &&
@@ -2599,6 +2832,10 @@ export const ModuleChatPane = ({
   const composer = (
     <ChatComposer
       variant={composerVariant}
+      queuedMessages={queuedComposerMessages}
+      queuedMessagesLabel={t("排队中的消息")}
+      steerQueuedLabel={t("继续修正")}
+      followUpQueuedLabel={t("稍后跟进")}
       pendingFiles={pendingFiles}
       onRemovePendingFile={handleRemovePendingFile}
       showInputShortcutTip={showInputShortcutTip}
@@ -2619,12 +2856,23 @@ export const ModuleChatPane = ({
           return;
         }
 
+        const isQueueingFollowUp =
+          canInterrupt &&
+          event.nativeEvent.key === "Enter" &&
+          event.nativeEvent.altKey;
+        if (isQueueingFollowUp) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSend("followUp");
+          return;
+        }
+
         if (
           matchesKeyboardShortcut(event.nativeEvent, shortcutConfig.sendMessage)
         ) {
           event.preventDefault();
           event.stopPropagation();
-          handleSend();
+          handleSend("steer");
           return;
         }
         if (

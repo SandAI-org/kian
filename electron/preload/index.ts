@@ -12,7 +12,9 @@ import type {
   ChatAttachmentDTO,
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
+  ChatQueuedMessageDTO,
   ChatMessageDTO,
+  ChatQueuePayload,
   ChatSendPayload,
   ChatSendResponse,
   ChatSessionDTO,
@@ -171,8 +173,15 @@ const api = {
       invoke<ChatSessionDTO[]>("chat:getSessions", { scope }),
     getMessages: (scope: ChatScope, sessionId: string) =>
       invoke<ChatMessageDTO[]>("chat:getMessages", { scope, sessionId }),
+    getQueuedMessages: (scope: ChatScope, sessionId: string) =>
+      invoke<ChatQueuedMessageDTO[]>("chat:getQueuedMessages", {
+        scope,
+        sessionId,
+      }),
     sendMessage: (payload: ChatSendPayload) =>
       invoke<ChatSendResponse>("chat:sendMessage", payload),
+    queueMessage: (payload: ChatQueuePayload) =>
+      invoke<boolean>("chat:queueMessage", payload),
     interrupt: (payload: ChatInterruptPayload) =>
       invoke<boolean>("chat:interrupt", payload),
     uploadFiles: (payload: {

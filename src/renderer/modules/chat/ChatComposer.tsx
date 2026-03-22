@@ -8,6 +8,7 @@ import {
   CompactSelect,
   type CompactSelectOption,
 } from "@renderer/components/CompactSelect";
+import { ScrollArea } from "@renderer/components/ScrollArea";
 import type { ChatThinkingLevel } from "@shared/types";
 import { Button, Input, Tooltip } from "antd";
 import type { ChangeEvent, KeyboardEvent, ReactNode, RefObject } from "react";
@@ -28,6 +29,12 @@ export const CHAT_THINKING_LEVEL_VALUES: ChatThinkingLevel[] = [
   "high",
 ];
 
+export interface QueuedComposerMessage {
+  id: string;
+  content: string;
+  mode: "steer" | "followUp";
+}
+
 const StopSquareIcon = (): ReactNode => (
   <span className="inline-flex h-[12px] w-[12px] items-center justify-center">
     <span className="inline-block h-[9px] w-[9px] rounded-[1px] bg-current" />
@@ -36,6 +43,10 @@ const StopSquareIcon = (): ReactNode => (
 
 interface ChatComposerProps {
   variant?: "default" | "embedded";
+  queuedMessages?: QueuedComposerMessage[];
+  queuedMessagesLabel?: string;
+  steerQueuedLabel?: string;
+  followUpQueuedLabel?: string;
   pendingFiles?: LocalChatFile[];
   onRemovePendingFile?: (key: string) => void;
   showInputShortcutTip?: boolean;
@@ -72,6 +83,10 @@ interface ChatComposerProps {
 
 export const ChatComposer = ({
   variant = "default",
+  queuedMessages = [],
+  queuedMessagesLabel = "",
+  steerQueuedLabel = "",
+  followUpQueuedLabel = "",
   pendingFiles = [],
   onRemovePendingFile,
   showInputShortcutTip = false,
@@ -117,6 +132,33 @@ export const ChatComposer = ({
 
   return (
     <div className={containerClassName}>
+      {queuedMessages.length > 0 ? (
+        <div className="mb-3 rounded-lg border border-[#dbe5f5] bg-[#f7faff]">
+          <div className="border-b border-[#dbe5f5] px-3 py-2 text-[12px] font-medium text-slate-600">
+            {queuedMessagesLabel}
+          </div>
+          <ScrollArea className="max-h-28 px-3 py-2">
+            <div className="space-y-2 pr-2">
+              {queuedMessages.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-md border border-[#d8e2f2] bg-white px-2.5 py-2"
+                >
+                  <div className="mb-1 text-[11px] font-medium text-slate-500">
+                    {item.mode === "followUp"
+                      ? followUpQueuedLabel
+                      : steerQueuedLabel}
+                  </div>
+                  <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-700">
+                    {item.content}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      ) : null}
+
       {pendingFiles.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {pendingFiles.map((file) => (

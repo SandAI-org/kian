@@ -14,6 +14,9 @@ import {
 import type {
   ChatAttachmentDTO,
   ClaudeConfigStatus,
+  ChatQueueDeliveryMode,
+  ChatQueuedMessageDTO,
+  ChatQueuePayload,
   ChatInterruptPayload,
   ChatMessageMetadata,
   ChatModuleType,
@@ -52,6 +55,14 @@ import { repositoryService } from "./repositoryService";
 import { settingsService } from "./settingsService";
 import { skillService } from "./skillService";
 import {
+  applyChatStreamEventToTimeline,
+  createChatTurnTimelineState,
+  formatUserMessageContent,
+  persistChatTurnTimeline,
+  persistUserMessage,
+  type ChatTurnTimelineState,
+} from "./chatTurnTimeline";
+import {
   GLOBAL_CONFIG_DIR,
   INTERNAL_ROOT,
   WORKSPACE_ROOT,
@@ -81,6 +92,26 @@ type ActiveAgentRequestState = {
   observedTurnLifecycle: boolean;
   agentEnded: boolean;
   resolvePromptDone?: () => void;
+  queuedRequests: QueuedAgentRequestState[];
+  activeQueuedRequest?: ActiveQueuedRequestTurnState;
+};
+
+type QueuedAgentRequestState = {
+  requestId: string;
+  deliveryMode: ChatQueueDeliveryMode;
+  message: string;
+  attachments?: ChatAttachmentDTO[];
+  matchText: string;
+};
+
+type ActiveQueuedRequestTurnState = {
+  requestId: string;
+  timelineState: ChatTurnTimelineState;
+  assistantText: string;
+  toolActions: Set<string>;
+  toolOutputCount: number;
+  assistantErrorMessage: string;
+  toolErrorMessage: string;
 };
 
 type DelegationReportState = {
@@ -317,6 +348,16 @@ type AttachmentBuildResult = {
   images: ImageContentBlock[];
 };
 
+type StructuredPromptContent = Array<
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+>;
+
+type PromptContentBuildResult = {
+  fullPromptText: string;
+  promptContent: string | StructuredPromptContent;
+};
+
 const buildAttachmentContent = async (
   scope: ChatScope,
   attachments: ChatSendPayload["attachments"],
@@ -371,6 +412,83 @@ const buildAttachmentContent = async (
     promptText: lines.join("\n"),
     images,
   };
+};
+
+const buildPromptContent = (input: {
+  message: string;
+  attachmentContent: AttachmentBuildResult;
+}): PromptContentBuildResult => {
+  const messageText = input.message.trim();
+  const fullPromptText = input.attachmentContent.promptText
+    ? `${messageText}\n\n${input.attachmentContent.promptText}`
+    : messageText;
+
+  if (input.attachmentContent.images.length === 0) {
+    return {
+      fullPromptText,
+      promptContent: fullPromptText,
+    };
+  }
+
+  const contentParts: StructuredPromptContent = [
+    { type: "text", text: fullPromptText },
+  ];
+  for (const img of input.attachmentContent.images) {
+    contentParts.push({
+      type: "image",
+      data: img.data,
+      mimeType: img.mimeType,
+    });
+  }
+  return {
+    fullPromptText,
+    promptContent: contentParts,
+  };
+};
+
+const buildFinalAssistantMessage = (input: {
+  assistantText: string;
+  assistantErrorMessage: string;
+  toolErrorMessage: string;
+  interrupted: boolean;
+  toolOutputCount: number;
+  toolActionsCount: number;
+}): string =>
+  normalizeMediaMarkdownInText(
+    input.assistantText.trim() ||
+      (input.interrupted
+        ? "已停止当前回答。"
+        : input.assistantErrorMessage
+          ? `处理失败：${input.assistantErrorMessage}`
+          : input.toolErrorMessage
+            ? `处理失败：${input.toolErrorMessage}`
+            : input.toolOutputCount > 0 || input.toolActionsCount > 0
+              ? SUCCESS_WITHOUT_TEXT_FINAL_MESSAGE
+              : EMPTY_AGENT_FINAL_MESSAGE),
+  );
+
+const getUserMessageText = (
+  message: { role?: string; content?: unknown } | undefined,
+): string => {
+  if (!message || message.role !== "user") return "";
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+  if (!Array.isArray(message.content)) {
+    return "";
+  }
+  return message.content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        Boolean(part) &&
+        typeof part === "object" &&
+        "type" in part &&
+        "text" in part &&
+        (part as { type?: unknown }).type === "text" &&
+        typeof (part as { text?: unknown }).text === "string",
+    )
+    .map((part) => part.text)
+    .join("");
 };
 
 const getScopeCwd = (scope: ChatScope): string =>
@@ -1595,6 +1713,7 @@ export const agentService = {
       pendingTurnCount: 0,
       observedTurnLifecycle: false,
       agentEnded: false,
+      queuedRequests: [],
     });
     const delegationReportState: DelegationReportState = { reported: false };
 
@@ -1610,6 +1729,46 @@ export const agentService = {
     };
     const buildInterruptedMessage = (): string =>
       normalizeMediaMarkdownInText(assistantText.trim() || "已停止当前回答。");
+    const finalizeQueuedRequestTurn = (
+      queuedTurn: ActiveQueuedRequestTurnState | undefined,
+      options?: {
+        interrupted?: boolean;
+        errorMessage?: string;
+      },
+    ): void => {
+      if (!queuedTurn) return;
+      const finalMessage = buildFinalAssistantMessage({
+        assistantText: queuedTurn.assistantText,
+        assistantErrorMessage:
+          queuedTurn.assistantErrorMessage || options?.errorMessage || "",
+        toolErrorMessage: queuedTurn.toolErrorMessage,
+        interrupted: options?.interrupted ?? isRequestInterrupted(),
+        toolOutputCount: queuedTurn.toolOutputCount,
+        toolActionsCount: queuedTurn.toolActions.size,
+      });
+      emit({
+        requestId: queuedTurn.requestId,
+        sessionId: payload.sessionId,
+        scope: payload.scope,
+        module: payload.module,
+        createdAt: nowISO(),
+        type: "assistant_done",
+        fullText: finalMessage,
+      });
+      void persistChatTurnTimeline({
+        scope: payload.scope,
+        sessionId: payload.sessionId,
+        timeline: queuedTurn.timelineState.timeline,
+        fallbackAssistantMessage: finalMessage,
+      }).catch((error) => {
+        logger.warn("Persist queued chat turn failed", {
+          requestId: queuedTurn.requestId,
+          scope: getScopeKey(payload.scope),
+          chatSessionId: payload.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    };
 
     try {
       const {
@@ -1671,6 +1830,29 @@ export const agentService = {
         activeState.resolvePromptDone = resolvePromptDone;
       }
 
+      const emitRequestEvent = (
+        targetRequestId: string,
+        event: Omit<ChatStreamEvent, "requestId" | "sessionId" | "scope" | "module">,
+        options?: { applyToTimeline?: boolean },
+      ): void => {
+        const nextEvent: ChatStreamEvent = {
+          requestId: targetRequestId,
+          sessionId: payload.sessionId,
+          scope: payload.scope,
+          module: payload.module,
+          ...event,
+        };
+        emit(nextEvent);
+        if (!options?.applyToTimeline) {
+          return;
+        }
+        const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+        if (!queuedTurn || queuedTurn.requestId !== targetRequestId) {
+          return;
+        }
+        applyChatStreamEventToTimeline(queuedTurn.timelineState, nextEvent);
+      };
+
       // Unsubscribe previous listener so stale subscriptions from earlier
       // send() calls don't fire duplicate events (e.g. tool messages sent
       // twice to Discord when the same session is reused).
@@ -1687,84 +1869,139 @@ export const agentService = {
 
       // Subscribe to agent events
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+        if (event.type === "message_start" && event.message.role === "user") {
+          const state = activeAgentRequestStore.get(storeKey);
+          const messageText = getUserMessageText(event.message);
+          const queuedIndex =
+            state?.queuedRequests.findIndex(
+              (item) => item.matchText === messageText,
+            ) ?? -1;
+          if (queuedIndex >= 0 && state) {
+            const [queuedRequest] = state.queuedRequests.splice(queuedIndex, 1);
+            const previousQueuedTurn = state.activeQueuedRequest;
+            state.activeQueuedRequest = {
+              requestId: queuedRequest.requestId,
+              timelineState: createChatTurnTimelineState(),
+              assistantText: "",
+              toolActions: new Set<string>(),
+              toolOutputCount: 0,
+              assistantErrorMessage: "",
+              toolErrorMessage: "",
+            };
+            finalizeQueuedRequestTurn(previousQueuedTurn);
+            emitRequestEvent(
+              queuedRequest.requestId,
+              {
+                createdAt: nowISO(),
+                type: "request_started",
+              },
+              { applyToTimeline: false },
+            );
+            void persistUserMessage({
+              scope: payload.scope,
+              sessionId: payload.sessionId,
+              message: queuedRequest.message,
+              attachments: queuedRequest.attachments,
+              requestId: queuedRequest.requestId,
+              createdAt: nowISO(),
+            }).catch((error) => {
+              logger.warn("Persist queued user message failed", {
+                requestId: queuedRequest.requestId,
+                scope: getScopeKey(payload.scope),
+                chatSessionId: payload.sessionId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }
+          return;
+        }
+
         // --- message_update: streaming text and tool call starts ---
         if (event.type === "message_update") {
           const llmEvent: AssistantMessageEvent = event.assistantMessageEvent;
+          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const targetRequestId = queuedTurn?.requestId ?? requestId;
 
           if (llmEvent.type === "text_delta") {
-            assistantText += llmEvent.delta;
-            streamedLength += llmEvent.delta.length;
-            emit({
-              requestId,
-              sessionId: payload.sessionId,
-              scope: payload.scope,
-              module: payload.module,
-              createdAt: nowISO(),
-              type: "assistant_delta",
-              delta: llmEvent.delta,
-            });
+            if (queuedTurn) {
+              queuedTurn.assistantText += llmEvent.delta;
+            } else {
+              assistantText += llmEvent.delta;
+              streamedLength += llmEvent.delta.length;
+            }
+            emitRequestEvent(
+              targetRequestId,
+              {
+                createdAt: nowISO(),
+                type: "assistant_delta",
+                delta: llmEvent.delta,
+              },
+              { applyToTimeline: Boolean(queuedTurn) },
+            );
             return;
           }
 
           if (llmEvent.type === "thinking_start") {
-            emit({
-              requestId,
-              sessionId: payload.sessionId,
-              scope: payload.scope,
-              module: payload.module,
-              createdAt: nowISO(),
-              type: "thinking_start",
-            });
+            emitRequestEvent(
+              targetRequestId,
+              {
+                createdAt: nowISO(),
+                type: "thinking_start",
+              },
+              { applyToTimeline: false },
+            );
             return;
           }
 
           if (llmEvent.type === "thinking_delta") {
-            streamedThinkingLength += llmEvent.delta.length;
-            emit({
-              requestId,
-              sessionId: payload.sessionId,
-              scope: payload.scope,
-              module: payload.module,
-              createdAt: nowISO(),
-              type: "thinking_delta",
-              delta: llmEvent.delta,
-            });
+            if (!queuedTurn) {
+              streamedThinkingLength += llmEvent.delta.length;
+            }
+            emitRequestEvent(
+              targetRequestId,
+              {
+                createdAt: nowISO(),
+                type: "thinking_delta",
+                delta: llmEvent.delta,
+              },
+              { applyToTimeline: Boolean(queuedTurn) },
+            );
             return;
           }
 
           if (llmEvent.type === "thinking_end") {
             const thinkingContent = llmEvent.content?.trim() ?? "";
-            if (thinkingContent) {
+            if (thinkingContent && !queuedTurn) {
               streamedThinkingLength = Math.max(
                 streamedThinkingLength,
                 thinkingContent.length,
               );
             }
-            emit({
-              requestId,
-              sessionId: payload.sessionId,
-              scope: payload.scope,
-              module: payload.module,
-              createdAt: nowISO(),
-              type: "thinking_end",
-              thinking: thinkingContent || undefined,
-            });
+            emitRequestEvent(
+              targetRequestId,
+              {
+                createdAt: nowISO(),
+                type: "thinking_end",
+                thinking: thinkingContent || undefined,
+              },
+              { applyToTimeline: Boolean(queuedTurn) },
+            );
             return;
           }
 
           if (llmEvent.type === "toolcall_end") {
             const toolCall = llmEvent.toolCall;
-            emit({
-              requestId,
-              sessionId: payload.sessionId,
-              scope: payload.scope,
-              module: payload.module,
-              createdAt: nowISO(),
-              type: "tool_start",
-              toolUseId: toolCall.id,
-              toolName: toolCall.name,
-              toolInput: safeStringifyInput(toolCall.arguments),
-            });
+            emitRequestEvent(
+              targetRequestId,
+              {
+                createdAt: nowISO(),
+                type: "tool_start",
+                toolUseId: toolCall.id,
+                toolName: toolCall.name,
+                toolInput: safeStringifyInput(toolCall.arguments),
+              },
+              { applyToTimeline: Boolean(queuedTurn) },
+            );
             toolStartTimes.set(toolCall.id, Date.now());
             return;
           }
@@ -1774,20 +2011,24 @@ export const agentService = {
 
         // --- tool_execution_start ---
         if (event.type === "tool_execution_start") {
-          toolProgressCount += 1;
+          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const targetRequestId = queuedTurn?.requestId ?? requestId;
+          if (!queuedTurn) {
+            toolProgressCount += 1;
+          }
           if (!toolStartTimes.has(event.toolCallId)) {
             // Tool was not announced via toolcall_end, emit tool_start now
-            emit({
-              requestId,
-              sessionId: payload.sessionId,
-              scope: payload.scope,
-              module: payload.module,
-              createdAt: nowISO(),
-              type: "tool_start",
-              toolUseId: event.toolCallId,
-              toolName: event.toolName,
-              toolInput: safeStringifyInput(event.args),
-            });
+            emitRequestEvent(
+              targetRequestId,
+              {
+                createdAt: nowISO(),
+                type: "tool_start",
+                toolUseId: event.toolCallId,
+                toolName: event.toolName,
+                toolInput: safeStringifyInput(event.args),
+              },
+              { applyToTimeline: Boolean(queuedTurn) },
+            );
             toolStartTimes.set(event.toolCallId, Date.now());
           }
           return;
@@ -1795,25 +2036,33 @@ export const agentService = {
 
         // --- tool_execution_update ---
         if (event.type === "tool_execution_update") {
+          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const targetRequestId = queuedTurn?.requestId ?? requestId;
           const startTime = toolStartTimes.get(event.toolCallId) ?? Date.now();
           const elapsedSeconds = (Date.now() - startTime) / 1000;
-          emit({
-            requestId,
-            sessionId: payload.sessionId,
-            scope: payload.scope,
-            module: payload.module,
-            createdAt: nowISO(),
-            type: "tool_progress",
-            toolUseId: event.toolCallId,
-            toolName: event.toolName,
-            elapsedSeconds,
-          });
+          emitRequestEvent(
+            targetRequestId,
+            {
+              createdAt: nowISO(),
+              type: "tool_progress",
+              toolUseId: event.toolCallId,
+              toolName: event.toolName,
+              elapsedSeconds,
+            },
+            { applyToTimeline: Boolean(queuedTurn) },
+          );
           return;
         }
 
         // --- tool_execution_end ---
         if (event.type === "tool_execution_end") {
-          toolOutputCount += 1;
+          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const targetRequestId = queuedTurn?.requestId ?? requestId;
+          if (queuedTurn) {
+            queuedTurn.toolOutputCount += 1;
+          } else {
+            toolOutputCount += 1;
+          }
           const result = event.result;
           let outputText = "";
           if (
@@ -1829,26 +2078,32 @@ export const agentService = {
               .trim();
           }
           if (event.isError) {
-            toolErrorMessage = outputText || `工具执行失败：${event.toolName}`;
+            if (queuedTurn) {
+              queuedTurn.toolErrorMessage =
+                outputText || `工具执行失败：${event.toolName}`;
+            } else {
+              toolErrorMessage = outputText || `工具执行失败：${event.toolName}`;
+            }
           }
           if (outputText) {
-            toolActionsFromAgent.add(
+            const targetToolActions = queuedTurn?.toolActions ?? toolActionsFromAgent;
+            targetToolActions.add(
               outputText.length > 200
                 ? `${outputText.slice(0, 200)}...`
                 : outputText,
             );
           }
-          emit({
-            requestId,
-            sessionId: payload.sessionId,
-            scope: payload.scope,
-            module: payload.module,
-            createdAt: nowISO(),
-            type: "tool_output",
-            toolUseId: event.toolCallId,
-            toolName: event.toolName,
-            output: outputText || undefined,
-          });
+          emitRequestEvent(
+            targetRequestId,
+            {
+              createdAt: nowISO(),
+              type: "tool_output",
+              toolUseId: event.toolCallId,
+              toolName: event.toolName,
+              output: outputText || undefined,
+            },
+            { applyToTimeline: Boolean(queuedTurn) },
+          );
           return;
         }
 
@@ -1866,23 +2121,29 @@ export const agentService = {
         if (event.type === "message_end") {
           const msg = event.message;
           if (msg.role === "assistant" && Array.isArray(msg.content)) {
+            const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+            const targetRequestId = queuedTurn?.requestId ?? requestId;
             const fullThinking = msg.content
               .map((c: { type?: string; thinking?: string }) =>
                 c?.type === "thinking" ? (c.thinking ?? "") : "",
               )
               .join("")
               .trim();
-            if (fullThinking && fullThinking.length > streamedThinkingLength) {
-              emit({
-                requestId,
-                sessionId: payload.sessionId,
-                scope: payload.scope,
-                module: payload.module,
-                createdAt: nowISO(),
-                type: "thinking_end",
-                thinking: fullThinking,
-              });
-              streamedThinkingLength = fullThinking.length;
+            if (fullThinking) {
+              if (queuedTurn || fullThinking.length > streamedThinkingLength) {
+                emitRequestEvent(
+                  targetRequestId,
+                  {
+                    createdAt: nowISO(),
+                    type: "thinking_end",
+                    thinking: fullThinking,
+                  },
+                  { applyToTimeline: Boolean(queuedTurn) },
+                );
+              }
+              if (!queuedTurn) {
+                streamedThinkingLength = fullThinking.length;
+              }
             }
             const fullText = msg.content
               .map((c: { type?: string; text?: string }) =>
@@ -1890,28 +2151,39 @@ export const agentService = {
               )
               .join("")
               .trim();
-            if (fullText && fullText.length > streamedLength) {
-              const remaining = fullText.slice(streamedLength);
+            const streamedTextLength = queuedTurn
+              ? queuedTurn.assistantText.length
+              : streamedLength;
+            if (fullText && fullText.length > streamedTextLength) {
+              const remaining = fullText.slice(streamedTextLength);
               if (remaining) {
-                emit({
-                  requestId,
-                  sessionId: payload.sessionId,
-                  scope: payload.scope,
-                  module: payload.module,
-                  createdAt: nowISO(),
-                  type: "assistant_delta",
-                  delta: remaining,
-                });
+                emitRequestEvent(
+                  targetRequestId,
+                  {
+                    createdAt: nowISO(),
+                    type: "assistant_delta",
+                    delta: remaining,
+                  },
+                  { applyToTimeline: Boolean(queuedTurn) },
+                );
               }
-              assistantText = fullText;
-              streamedLength = fullText.length;
+              if (queuedTurn) {
+                queuedTurn.assistantText = fullText;
+              } else {
+                assistantText = fullText;
+                streamedLength = fullText.length;
+              }
             }
             if (
-              !assistantText.trim() &&
+              !(queuedTurn ? queuedTurn.assistantText : assistantText).trim() &&
               typeof msg.errorMessage === "string" &&
               msg.errorMessage.trim()
             ) {
-              assistantErrorMessage = msg.errorMessage.trim();
+              if (queuedTurn) {
+                queuedTurn.assistantErrorMessage = msg.errorMessage.trim();
+              } else {
+                assistantErrorMessage = msg.errorMessage.trim();
+              }
             }
           }
           return;
@@ -1919,6 +2191,12 @@ export const agentService = {
 
         // --- agent_end: final event ---
         if (event.type === "agent_end") {
+          const state = activeAgentRequestStore.get(storeKey);
+          if (state?.activeQueuedRequest) {
+            const activeQueuedRequest = state.activeQueuedRequest;
+            state.activeQueuedRequest = undefined;
+            finalizeQueuedRequestTurn(activeQueuedRequest);
+          }
           if (!markActiveRequestAgentEnded(storeKey, requestId)) {
             resolvePromptDone?.();
           }
@@ -1932,39 +2210,10 @@ export const agentService = {
         entry.unsubscribe = unsubscribe;
       }
 
-      // Build the prompt content
-      let promptContent:
-        | string
-        | {
-            type: "text" | "image";
-            text?: string;
-            data?: string;
-            mimeType?: string;
-          }[];
-      const messageText = payload.message.trim();
-      const fullPromptText = attachmentContent.promptText
-        ? `${messageText}\n\n${attachmentContent.promptText}`
-        : messageText;
-
-      if (attachmentContent.images.length > 0) {
-        // Build content array with text + images
-        const contentParts: {
-          type: "text" | "image";
-          text?: string;
-          data?: string;
-          mimeType?: string;
-        }[] = [{ type: "text", text: fullPromptText }];
-        for (const img of attachmentContent.images) {
-          contentParts.push({
-            type: "image",
-            data: img.data,
-            mimeType: img.mimeType,
-          });
-        }
-        promptContent = contentParts;
-      } else {
-        promptContent = fullPromptText;
-      }
+      const { fullPromptText, promptContent } = buildPromptContent({
+        message: payload.message,
+        attachmentContent,
+      });
 
       // Send the prompt
       logger.info("Agent prompt starting", {
@@ -2126,6 +2375,14 @@ export const agentService = {
       };
     } catch (error) {
       if (isRequestInterrupted() || isAbortLikeError(error)) {
+        const state = activeAgentRequestStore.get(storeKey);
+        const activeQueuedRequest = state?.activeQueuedRequest;
+        if (state?.activeQueuedRequest) {
+          state.activeQueuedRequest = undefined;
+          finalizeQueuedRequestTurn(activeQueuedRequest, {
+            interrupted: true,
+          });
+        }
         const finalMessage = buildInterruptedMessage();
         emit({
           requestId,
@@ -2161,12 +2418,21 @@ export const agentService = {
         };
       }
 
+      const message = error instanceof Error ? error.message : String(error);
+      const state = activeAgentRequestStore.get(storeKey);
+      const activeQueuedRequest = state?.activeQueuedRequest;
+      if (state?.activeQueuedRequest) {
+        state.activeQueuedRequest = undefined;
+        finalizeQueuedRequestTurn(activeQueuedRequest, {
+          errorMessage: message,
+        });
+      }
+
       // On failure, clear session so next message starts fresh
       clearSessionInternal(payload.scope, payload.sessionId, {
         startFreshOnNextPrompt: true,
       });
 
-      const message = error instanceof Error ? error.message : String(error);
       if (
         payload.scope.type === "project" &&
         payload.delegationContext &&
@@ -2226,6 +2492,7 @@ export const agentService = {
     }
 
     requestState.interrupted = true;
+    requestState.queuedRequests = [];
 
     const entry = agentSessionStore.get(storeKey);
     if (!entry) {
@@ -2233,6 +2500,7 @@ export const agentService = {
     }
 
     try {
+      entry.session.clearQueue();
       await entry.session.abort();
       return true;
     } catch (error) {
@@ -2241,6 +2509,71 @@ export const agentService = {
       }
       throw error;
     }
+  },
+
+  async queueMessage(payload: ChatQueuePayload): Promise<boolean> {
+    const storeKey = getSessionStoreKey(payload.scope, payload.sessionId);
+    const requestState = activeAgentRequestStore.get(storeKey);
+    const entry = agentSessionStore.get(storeKey);
+    if (!requestState || !entry) {
+      throw new Error("当前没有可排队的运行中的对话");
+    }
+
+    const attachmentContent = await buildAttachmentContent(
+      payload.scope,
+      payload.attachments,
+    );
+    const { fullPromptText, promptContent } = buildPromptContent({
+      message: payload.message,
+      attachmentContent,
+    });
+
+    requestState.queuedRequests.push({
+      requestId: payload.requestId,
+      deliveryMode: payload.deliveryMode,
+      message: payload.message,
+      attachments: payload.attachments,
+      matchText: fullPromptText,
+    });
+
+    try {
+      if (typeof promptContent === "string") {
+        await entry.session.prompt(promptContent, {
+          streamingBehavior: payload.deliveryMode,
+        });
+      } else {
+        await entry.session.sendUserMessage(promptContent, {
+          deliverAs: payload.deliveryMode,
+        });
+      }
+      return true;
+    } catch (error) {
+      requestState.queuedRequests = requestState.queuedRequests.filter(
+        (item) => item.requestId !== payload.requestId,
+      );
+      throw error;
+    }
+  },
+
+  getQueuedMessages(
+    scope: ChatScope,
+    sessionId: string,
+  ): ChatQueuedMessageDTO[] {
+    const storeKey = getSessionStoreKey(scope, sessionId);
+    const requestState = activeAgentRequestStore.get(storeKey);
+    if (!requestState || requestState.queuedRequests.length === 0) {
+      return [];
+    }
+
+    return requestState.queuedRequests.map((item) => ({
+      requestId: item.requestId,
+      deliveryMode: item.deliveryMode,
+      content: formatUserMessageContent({
+        scope,
+        message: item.message,
+        attachments: item.attachments,
+      }),
+    }));
   },
 
   clearSession(scope: ChatScope, chatSessionId: string): void {

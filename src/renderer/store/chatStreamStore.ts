@@ -120,6 +120,26 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
         state.sessions,
         event.sessionId,
         (current): SessionStreamState => {
+          if (event.type === "request_started") {
+            const nextRequestId = event.requestId;
+            if (
+              current.activeRequestId === nextRequestId &&
+              current.streamingInProgress &&
+              current.streamingBlocks.length === 0 &&
+              !current.streamError
+            ) {
+              return current;
+            }
+            return {
+              streamingBlocks: [],
+              streamingInProgress: true,
+              streamingThinkingActive: false,
+              streamError: undefined,
+              activeRequestId: nextRequestId,
+              blockCounter: current.blockCounter,
+            };
+          }
+
           if (
             current.activeRequestId &&
             current.activeRequestId !== event.requestId

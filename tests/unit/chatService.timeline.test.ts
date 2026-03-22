@@ -196,4 +196,50 @@ describe("chatService timeline persistence", () => {
       createdAt: "2026-03-10T00:00:01.500Z",
     });
   });
+
+  it("ignores queued turn stream events from a different requestId", async () => {
+    state.appendMessage.mockReset().mockResolvedValue(undefined);
+    state.agentSend.mockReset().mockImplementation(async (_payload, onStream) => {
+      onStream?.({
+        requestId: "req-root",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
+        type: "assistant_delta",
+        delta: "根请求回复",
+        createdAt: "2026-03-10T00:00:01.000Z",
+      });
+      onStream?.({
+        requestId: "req-queued",
+        sessionId: "session-1",
+        scope: { type: "main" },
+        module: "main",
+        type: "assistant_delta",
+        delta: "排队请求回复",
+        createdAt: "2026-03-10T00:00:02.000Z",
+      });
+
+      return {
+        assistantMessage: "根请求回复",
+        toolActions: [],
+      };
+    });
+
+    const { chatService } = await import("../../electron/main/services/chatService");
+
+    await chatService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-1",
+      requestId: "req-root",
+      message: "处理主请求",
+    });
+
+    const persistedAssistantMessages = state.appendMessage.mock.calls
+      .map((call) => call[0])
+      .filter((message) => message.role === "assistant");
+
+    expect(persistedAssistantMessages).toHaveLength(1);
+    expect(persistedAssistantMessages[0]?.content).toBe("根请求回复");
+  });
 });
