@@ -2117,6 +2117,49 @@ const updateCachedChatMessages = (
   return nextMessages;
 };
 
+const buildSessionEmptyStateMap = async (
+  scope: ChatScope,
+  sessions: ChatSessionDTO[],
+): Promise<Map<string, boolean>> => {
+  const states = await Promise.all(
+    sessions.map(async (session) => {
+      const messages = await loadCachedChatMessages(scope, session.id);
+      return [session.id, messages.length === 0] as const;
+    }),
+  );
+  return new Map(states);
+};
+
+const sortChatSessionsForList = async (
+  scope: ChatScope,
+  sessions: ChatSessionDTO[],
+): Promise<ChatSessionDTO[]> => {
+  const emptyStateBySessionId = await buildSessionEmptyStateMap(scope, sessions);
+  return [...sessions].sort((a, b) => {
+    const leftEmpty = emptyStateBySessionId.get(a.id) === true;
+    const rightEmpty = emptyStateBySessionId.get(b.id) === true;
+    if (leftEmpty !== rightEmpty) {
+      return leftEmpty ? -1 : 1;
+    }
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
+};
+
+const findLatestEmptyChatSession = async (
+  scope: ChatScope,
+): Promise<ChatSessionDTO | null> => {
+  const sessions = await sortChatSessionsForList(
+    scope,
+    await loadCachedChatSessions(scope),
+  );
+  const candidate = sessions[0];
+  if (!candidate) {
+    return null;
+  }
+  const messages = await loadCachedChatMessages(scope, candidate.id);
+  return messages.length === 0 ? candidate : null;
+};
+
 const touchProject = async (projectId: string): Promise<void> => {
   if (projectId.trim() === MAIN_AGENT_SCOPE_ID) {
     return;
@@ -3039,6 +3082,10 @@ export const repositoryService = {
     title: string;
   }): Promise<ChatSessionDTO> {
     await ensureChatScopeStructure(input.scope);
+    const reusableSession = await findLatestEmptyChatSession(input.scope);
+    if (reusableSession) {
+      return reusableSession;
+    }
     const rows = [...(await loadCachedChatSessions(input.scope))];
 
     const timestamp = nowISO();
@@ -3075,8 +3122,10 @@ export const repositoryService = {
   },
 
   async listChatSessions(scope: ChatScope): Promise<ChatSessionDTO[]> {
-    return [...(await loadCachedChatSessions(scope))]
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return await sortChatSessionsForList(
+      scope,
+      await loadCachedChatSessions(scope),
+    );
   },
 
   async getChatSession(

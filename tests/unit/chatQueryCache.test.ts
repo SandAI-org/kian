@@ -80,7 +80,14 @@ describe("chatQueryCache", () => {
         createdAt: "2026-03-23T00:00:01.000Z",
       },
     ]);
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: sessionsKey,
+      exact: true,
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: messagesKey,
+      exact: true,
+    });
   });
 
   it("invalidates the message query instead of fabricating partial history when the list is not loaded", () => {

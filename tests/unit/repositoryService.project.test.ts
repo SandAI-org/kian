@@ -253,6 +253,76 @@ describe("repositoryService project management", () => {
     ).resolves.toBeTruthy();
   });
 
+  it("sorts empty chat sessions before non-empty sessions", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const nonEmpty = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "non-empty",
+    });
+    await repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: nonEmpty.id,
+      role: "assistant",
+      content: "hello",
+      createdAt: "2026-03-05T09:30:01.000Z",
+    });
+
+    vi.setSystemTime(new Date("2026-03-05T09:31:00.000Z"));
+    const empty = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "empty",
+    });
+
+    vi.setSystemTime(new Date("2026-03-05T09:32:00.000Z"));
+    await repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: nonEmpty.id,
+      role: "assistant",
+      content: "latest update",
+      createdAt: "2026-03-05T09:32:00.000Z",
+    });
+
+    const sessions = await repositoryService.listChatSessions({
+      type: "main",
+    });
+
+    expect(sessions.map((session) => session.id)).toEqual([
+      empty.id,
+      nonEmpty.id,
+    ]);
+  });
+
+  it("reuses the latest empty chat session when creating a new session", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const first = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "",
+    });
+
+    vi.setSystemTime(new Date("2026-03-05T09:31:00.000Z"));
+    const reused = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "",
+    });
+
+    const sessions = await repositoryService.listChatSessions({
+      type: "main",
+    });
+
+    expect(reused.id).toBe(first.id);
+    expect(sessions).toHaveLength(1);
+  });
+
   it("prefers cached chat sessions and messages over later disk mutations", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"

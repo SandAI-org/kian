@@ -150,12 +150,10 @@ export const applyChatHistoryUpdateToCache = (
     };
   });
 
-  if (!existingSession || typeof event.sessionTitle === "string") {
-    void queryClient.invalidateQueries({
-      queryKey: sessionsQueryKey,
-      exact: true,
-    });
-  }
+  void queryClient.invalidateQueries({
+    queryKey: sessionsQueryKey,
+    exact: true,
+  });
 
   if (!event.messageId.trim()) {
     return;

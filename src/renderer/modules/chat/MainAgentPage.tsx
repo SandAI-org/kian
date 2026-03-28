@@ -55,17 +55,6 @@ export const MainAgentPage = () => {
   );
 
   const handleNewSession = useCallback(async () => {
-    // If current session has no messages, don't create a new one
-    if (currentSessionId) {
-      const cachedMessages = queryClient.getQueryData<unknown[]>([
-        "chat-messages",
-        "main",
-        currentSessionId,
-      ]);
-      if (cachedMessages && cachedMessages.length === 0) {
-        return;
-      }
-    }
     const created = await api.chat.createSession({
       scope: MAIN_SCOPE,
       module: "main",
@@ -73,7 +62,7 @@ export const MainAgentPage = () => {
     });
     setCurrentSessionId(created.id);
     void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "main"] });
-  }, [queryClient, currentSessionId]);
+  }, [queryClient]);
 
   const handleSelectSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId);
