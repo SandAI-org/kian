@@ -71,6 +71,11 @@ const writeJson = async <T>(filePath: string, payload: T): Promise<void> => {
 };
 
 const messageAppendQueueByPath = new Map<string, Promise<void>>();
+type ChatScopeCacheState = {
+  sessions?: ChatSessionDTO[];
+  messagesBySession: Map<string, ChatMessageDTO[]>;
+};
+const chatScopeCacheByKey = new Map<string, ChatScopeCacheState>();
 
 const enqueueMessageAppend = async <T>(
   messagesPath: string,
@@ -1986,6 +1991,22 @@ const ensureDocsOwnerStructure = async (projectId: string): Promise<void> => {
 const getScopeType = (scope: ChatScope): ChatSessionDTO["scopeType"] =>
   scope.type === "main" ? "main" : "project";
 
+const getChatScopeCacheKey = (scope: ChatScope): string =>
+  scope.type === "main" ? "main" : `project:${scope.projectId}`;
+
+const getOrCreateChatScopeCache = (scope: ChatScope): ChatScopeCacheState => {
+  const cacheKey = getChatScopeCacheKey(scope);
+  const existing = chatScopeCacheByKey.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+  const created: ChatScopeCacheState = {
+    messagesBySession: new Map(),
+  };
+  chatScopeCacheByKey.set(cacheKey, created);
+  return created;
+};
+
 const getChatSessionsPathByScope = (scope: ChatScope): string =>
   scope.type === "main"
     ? getMainAgentChatSessionsPath()
@@ -2031,6 +2052,71 @@ const normalizeChatSession = (
   sdkSessionId: row.sdkSessionId ?? null,
 });
 
+const sortMessagesForRead = (messages: ChatMessageDTO[]): ChatMessageDTO[] =>
+  messages
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) =>
+        a.item.createdAt.localeCompare(b.item.createdAt) || a.index - b.index,
+    )
+    .map(({ item }) => item);
+
+const loadCachedChatSessions = async (scope: ChatScope): Promise<ChatSessionDTO[]> => {
+  await ensureChatScopeStructure(scope);
+  const cache = getOrCreateChatScopeCache(scope);
+  if (cache.sessions) {
+    return cache.sessions;
+  }
+
+  const rows = await readJson<ChatSessionDTO[]>(
+    getChatSessionsPathByScope(scope),
+    [],
+  );
+  const sessions = rows.map((row) => normalizeChatSession(row, scope));
+  cache.sessions = sessions;
+  return sessions;
+};
+
+const loadCachedChatMessages = async (
+  scope: ChatScope,
+  sessionId: string,
+): Promise<ChatMessageDTO[]> => {
+  await loadCachedChatSessions(scope);
+  const cache = getOrCreateChatScopeCache(scope);
+  const cachedMessages = cache.messagesBySession.get(sessionId);
+  if (cachedMessages) {
+    return cachedMessages;
+  }
+
+  const rows = await readJson<ChatMessageDTO[]>(
+    getChatMessagesPathByScope(scope, sessionId),
+    [],
+  );
+  const messages = sortMessagesForRead(rows);
+  cache.messagesBySession.set(sessionId, messages);
+  return messages;
+};
+
+const updateCachedChatSessions = (
+  scope: ChatScope,
+  sessions: ChatSessionDTO[],
+): ChatSessionDTO[] => {
+  const cache = getOrCreateChatScopeCache(scope);
+  cache.sessions = sessions.map((row) => normalizeChatSession(row, scope));
+  return cache.sessions;
+};
+
+const updateCachedChatMessages = (
+  scope: ChatScope,
+  sessionId: string,
+  messages: ChatMessageDTO[],
+): ChatMessageDTO[] => {
+  const cache = getOrCreateChatScopeCache(scope);
+  const nextMessages = sortMessagesForRead(messages);
+  cache.messagesBySession.set(sessionId, nextMessages);
+  return nextMessages;
+};
+
 const touchProject = async (projectId: string): Promise<void> => {
   if (projectId.trim() === MAIN_AGENT_SCOPE_ID) {
     return;
@@ -2073,16 +2159,14 @@ const updateChatSessionTimestamp = async (
   sessionId: string,
   updatedAt: string,
 ): Promise<void> => {
-  const sessions = await readJson<ChatSessionDTO[]>(
-    getChatSessionsPathByScope(scope),
-    [],
-  );
+  const sessions = [...(await loadCachedChatSessions(scope))];
   const target = sessions.find((item) => item.id === sessionId);
   if (!target) {
     throw new Error("会话不存在");
   }
 
   target.updatedAt = updatedAt;
+  updateCachedChatSessions(scope, sessions);
   await writeJson(getChatSessionsPathByScope(scope), sessions);
 };
 
@@ -2955,11 +3039,7 @@ export const repositoryService = {
     title: string;
   }): Promise<ChatSessionDTO> {
     await ensureChatScopeStructure(input.scope);
-
-    const rows = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(input.scope),
-      [],
-    );
+    const rows = [...(await loadCachedChatSessions(input.scope))];
 
     const timestamp = nowISO();
 
@@ -2974,7 +3054,9 @@ export const repositoryService = {
       updatedAt: timestamp,
     };
 
-    await writeJson(getChatSessionsPathByScope(input.scope), [...rows, next]);
+    const nextRows = [...rows, next];
+    updateCachedChatSessions(input.scope, nextRows);
+    await writeJson(getChatSessionsPathByScope(input.scope), nextRows);
     if (input.scope.type === "project") {
       await touchProject(input.scope.projectId);
     }
@@ -2993,15 +3075,7 @@ export const repositoryService = {
   },
 
   async listChatSessions(scope: ChatScope): Promise<ChatSessionDTO[]> {
-    await ensureChatScopeStructure(scope);
-
-    const rows = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(scope),
-      [],
-    );
-
-    return rows
-      .map((row) => normalizeChatSession(row, scope))
+    return [...(await loadCachedChatSessions(scope))]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
@@ -3009,14 +3083,9 @@ export const repositoryService = {
     scope: ChatScope,
     sessionId: string,
   ): Promise<ChatSessionDTO | null> {
-    await ensureChatScopeStructure(scope);
-    const rows = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(scope),
-      [],
+    const session = (await loadCachedChatSessions(scope)).find(
+      (item) => item.id === sessionId,
     );
-    const session = rows
-      .map((row) => normalizeChatSession(row, scope))
-      .find((item) => item.id === sessionId);
     if (!session) {
       return null;
     }
@@ -3029,15 +3098,13 @@ export const repositoryService = {
     sdkSessionId?: string | null;
   }): Promise<void> {
     await ensureChatScopeStructure(input.scope);
-    const rows = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(input.scope),
-      [],
-    );
+    const rows = [...(await loadCachedChatSessions(input.scope))];
     const session = rows.find((item) => item.id === input.sessionId);
     if (!session) {
       return;
     }
     session.sdkSessionId = input.sdkSessionId ?? null;
+    updateCachedChatSessions(input.scope, rows);
     await writeJson(getChatSessionsPathByScope(input.scope), rows);
   },
 
@@ -3046,15 +3113,14 @@ export const repositoryService = {
     sessionId: string;
   }): Promise<void> {
     await ensureChatScopeStructure(input.scope);
-    const rows = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(input.scope),
-      [],
-    );
+    const rows = await loadCachedChatSessions(input.scope);
     const filtered = rows.filter((item) => item.id !== input.sessionId);
+    updateCachedChatSessions(input.scope, filtered);
     await writeJson(getChatSessionsPathByScope(input.scope), filtered);
 
     // Also remove the messages file for this session
     const messagesPath = getChatMessagesPathByScope(input.scope, input.sessionId);
+    getOrCreateChatScopeCache(input.scope).messagesBySession.delete(input.sessionId);
     try {
       await fs.unlink(messagesPath);
     } catch {
@@ -3072,10 +3138,7 @@ export const repositoryService = {
     title: string;
   }): Promise<void> {
     await ensureChatScopeStructure(input.scope);
-    const rows = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(input.scope),
-      [],
-    );
+    const rows = [...(await loadCachedChatSessions(input.scope))];
     const session = rows.find((item) => item.id === input.sessionId);
     if (!session) {
       return;
@@ -3084,6 +3147,7 @@ export const repositoryService = {
     const updatedAt = nowISO();
     session.title = title;
     session.updatedAt = updatedAt;
+    updateCachedChatSessions(input.scope, rows);
     await writeJson(getChatSessionsPathByScope(input.scope), rows);
     chatEvents.emitHistoryUpdated({
       scope: input.scope,
@@ -3101,21 +3165,7 @@ export const repositoryService = {
     scope: ChatScope,
     sessionId: string,
   ): Promise<ChatMessageDTO[]> {
-    await ensureChatScopeStructure(scope);
-
-    const rows = await readJson<ChatMessageDTO[]>(
-      getChatMessagesPathByScope(scope, sessionId),
-      [],
-    );
-
-    return rows
-      .map((item, index) => ({ item, index }))
-      .sort(
-        (a, b) =>
-          a.item.createdAt.localeCompare(b.item.createdAt) || a.index - b.index,
-      )
-      .map(({ item }) => item)
-      .slice(-100);
+    return [...(await loadCachedChatMessages(scope, sessionId))].slice(-100);
   },
 
   async appendMessage(input: {
@@ -3128,10 +3178,7 @@ export const repositoryService = {
     createdAt?: string;
   }): Promise<ChatMessageDTO> {
     await ensureChatScopeStructure(input.scope);
-    const sessions = await readJson<ChatSessionDTO[]>(
-      getChatSessionsPathByScope(input.scope),
-      [],
-    );
+    const sessions = await loadCachedChatSessions(input.scope);
     const sessionExists = sessions.some((item) => item.id === input.sessionId);
     if (!sessionExists) {
       throw new Error("会话不存在");
@@ -3150,8 +3197,13 @@ export const repositoryService = {
     };
 
     return enqueueMessageAppend(messagesPath, async () => {
-      const rows = await readJson<ChatMessageDTO[]>(messagesPath, []);
+      const rows = [...(await loadCachedChatMessages(input.scope, input.sessionId))];
       rows.push(next);
+      const cachedMessages = updateCachedChatMessages(
+        input.scope,
+        input.sessionId,
+        rows,
+      );
       await writeJson(messagesPath, rows);
 
       const sessionUpdatedAt = nowISO();
@@ -3166,6 +3218,7 @@ export const repositoryService = {
         role: next.role,
         createdAt: next.createdAt,
         sessionUpdatedAt,
+        message: cachedMessages.find((item) => item.id === next.id) ?? next,
       });
 
       return next;

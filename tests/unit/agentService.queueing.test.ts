@@ -313,10 +313,7 @@ describe("agentService queued delivery", () => {
     expect(queuedUserCall).toMatchObject({
       role: "user",
       content: "改成新的方向",
-      metadataJson: JSON.stringify({
-        kind: "user_request",
-        requestId: "req-queued",
-      }),
+      metadataJson: expect.stringContaining('"requestId":"req-queued"'),
     });
     expect(queuedUserCall?.createdAt).not.toBe("2026-03-22T07:00:00.000Z");
     expect(state.appendMessage).toHaveBeenCalledWith(
@@ -360,11 +357,12 @@ describe("agentService queued delivery", () => {
     expect(
       agentService.getQueuedMessages({ type: "main" }, "session-1"),
     ).toEqual([
-      {
+      expect.objectContaining({
         requestId: "req-queued",
         deliveryMode: "followUp",
         content: "改成新的方向",
-      },
+        persistUserMessage: true,
+      }),
     ]);
 
     state.sessionListener?.({

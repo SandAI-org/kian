@@ -253,6 +253,75 @@ describe("repositoryService project management", () => {
     ).resolves.toBeTruthy();
   });
 
+  it("prefers cached chat sessions and messages over later disk mutations", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const session = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "缓存优先",
+    });
+    await repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: session.id,
+      role: "assistant",
+      content: "缓存中的消息",
+      createdAt: "2026-03-05T09:30:01.000Z",
+    });
+
+    const initialSessions = await repositoryService.listChatSessions({
+      type: "main",
+    });
+    const initialMessages = await repositoryService.listMessages(
+      { type: "main" },
+      session.id,
+    );
+
+    const sessionsPath = path.join(
+      tempRoot,
+      ".kian",
+      "main-agent",
+      "chat",
+      "sessions.json",
+    );
+    const messagesPath = path.join(
+      tempRoot,
+      ".kian",
+      "main-agent",
+      "chat",
+      "messages",
+      `${session.id}.json`,
+    );
+
+    await fs.writeFile(sessionsPath, "[]\n", "utf8");
+    await fs.writeFile(
+      messagesPath,
+      JSON.stringify(
+        [
+          {
+            id: "disk-only-message",
+            sessionId: session.id,
+            role: "assistant",
+            content: "磁盘篡改后的消息",
+            createdAt: "2026-03-05T09:30:02.000Z",
+          },
+        ],
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
+    expect(await repositoryService.listChatSessions({ type: "main" })).toEqual(
+      initialSessions,
+    );
+    expect(
+      await repositoryService.listMessages({ type: "main" }, session.id),
+    ).toEqual(initialMessages);
+  });
+
   it("rejects appending messages to a missing session without creating a message file", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"
@@ -352,6 +421,47 @@ describe("repositoryService project management", () => {
     );
 
     expect(messages.map((item) => item.content)).toEqual(["1", "1 的回答"]);
+  });
+
+  it("emits the appended message payload for incremental renderer cache updates", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const session = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "事件补丁测试",
+    });
+
+    state.emitHistoryUpdated.mockClear();
+
+    const appended = await repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: session.id,
+      role: "assistant",
+      content: "增量同步消息",
+      metadataJson: '{"requestStartedAt":"2026-03-05T09:30:05.000Z"}',
+      createdAt: "2026-03-05T09:30:06.000Z",
+    });
+
+    expect(state.emitHistoryUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: { type: "main" },
+        sessionId: session.id,
+        messageId: appended.id,
+        role: "assistant",
+        createdAt: "2026-03-05T09:30:06.000Z",
+        message: expect.objectContaining({
+          id: appended.id,
+          sessionId: session.id,
+          role: "assistant",
+          content: "增量同步消息",
+          metadataJson: '{"requestStartedAt":"2026-03-05T09:30:05.000Z"}',
+          createdAt: "2026-03-05T09:30:06.000Z",
+        }),
+      }),
+    );
   });
 
   it("stores main agent docs under the internal workspace and migrates legacy context files", async () => {

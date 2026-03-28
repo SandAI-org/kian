@@ -32,7 +32,8 @@ export const CHAT_THINKING_LEVEL_VALUES: ChatThinkingLevel[] = [
 export interface QueuedComposerMessage {
   id: string;
   content: string;
-  mode: "steer" | "followUp";
+  queuedAt: string;
+  sourceName?: string;
 }
 
 const StopSquareIcon = (): ReactNode => (
@@ -45,8 +46,8 @@ interface ChatComposerProps {
   variant?: "default" | "embedded";
   queuedMessages?: QueuedComposerMessage[];
   queuedMessagesLabel?: string;
-  steerQueuedLabel?: string;
-  followUpQueuedLabel?: string;
+  queuedSourcePrefix?: string;
+  queuedSourceSuffix?: string;
   pendingFiles?: LocalChatFile[];
   onRemovePendingFile?: (key: string) => void;
   showInputShortcutTip?: boolean;
@@ -85,8 +86,8 @@ export const ChatComposer = ({
   variant = "default",
   queuedMessages = [],
   queuedMessagesLabel = "",
-  steerQueuedLabel = "",
-  followUpQueuedLabel = "",
+  queuedSourcePrefix = "",
+  queuedSourceSuffix = "",
   pendingFiles = [],
   onRemovePendingFile,
   showInputShortcutTip = false,
@@ -144,14 +145,19 @@ export const ChatComposer = ({
                   key={item.id}
                   className="rounded-md border border-[#d8e2f2] bg-white px-2.5 py-2"
                 >
-                  <div className="mb-1 text-[11px] font-medium text-slate-500">
-                    {item.mode === "followUp"
-                      ? followUpQueuedLabel
-                      : steerQueuedLabel}
-                  </div>
-                  <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-700">
-                    {item.content}
-                  </div>
+                  {item.sourceName ? (
+                    <div className="flex items-center gap-1 text-[12px] text-slate-700">
+                      <span>{queuedSourcePrefix}</span>
+                      <span className="inline-flex rounded-full border border-[#d8e2f2] bg-[#f7faff] px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                        {item.sourceName}
+                      </span>
+                      <span>{queuedSourceSuffix}</span>
+                    </div>
+                  ) : (
+                    <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-700">
+                      {item.content}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

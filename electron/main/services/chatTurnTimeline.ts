@@ -51,6 +51,21 @@ const buildThinkingMetadataJson = (): string =>
     kind: "thinking",
   } satisfies ChatMessageMetadata);
 
+const buildRequestStartedMetadataJson = (
+  requestStartedAt: string,
+): string =>
+  JSON.stringify({
+    requestStartedAt,
+  });
+
+const buildThinkingMetadataWithRequestStartedAtJson = (
+  requestStartedAt: string,
+): string =>
+  JSON.stringify({
+    kind: "thinking",
+    requestStartedAt,
+  } satisfies ChatMessageMetadata & { requestStartedAt: string });
+
 const mergeToolOutput = (
   existing: string | undefined,
   incoming: string,
@@ -191,6 +206,7 @@ const ensureToolStep = (
 const collectPersistedTimelineMessages = (input: {
   timeline: TimelineStep[];
   fallbackAssistantMessage: string;
+  requestStartedAt: string;
 }): PersistedTimelineMessage[] => {
   const persistedMessages: PersistedTimelineMessage[] = [];
 
@@ -202,6 +218,7 @@ const collectPersistedTimelineMessages = (input: {
         role: "assistant",
         createdAt: step.createdAt,
         content,
+        metadataJson: buildRequestStartedMetadataJson(input.requestStartedAt),
       });
       continue;
     }
@@ -213,7 +230,9 @@ const collectPersistedTimelineMessages = (input: {
         role: "system",
         createdAt: step.createdAt,
         content,
-        metadataJson: buildThinkingMetadataJson(),
+        metadataJson: buildThinkingMetadataWithRequestStartedAtJson(
+          input.requestStartedAt,
+        ),
       });
       continue;
     }
@@ -233,6 +252,7 @@ const collectPersistedTimelineMessages = (input: {
         createdAt: step.createdAt,
         content: `工具输出（${toolName}）\n${step.output.trim()}`,
         toolCallJson,
+        metadataJson: buildRequestStartedMetadataJson(input.requestStartedAt),
       });
     } else {
       persistedMessages.push({
@@ -240,6 +260,7 @@ const collectPersistedTimelineMessages = (input: {
         createdAt: step.createdAt,
         content: `调用工具：${toolName}`,
         toolCallJson,
+        metadataJson: buildRequestStartedMetadataJson(input.requestStartedAt),
       });
     }
   }
@@ -252,6 +273,7 @@ const collectPersistedTimelineMessages = (input: {
       role: "assistant",
       createdAt: new Date().toISOString(),
       content: input.fallbackAssistantMessage,
+      metadataJson: buildRequestStartedMetadataJson(input.requestStartedAt),
     });
   }
 
@@ -336,10 +358,12 @@ export const persistChatTurnTimeline = async (input: {
   sessionId: string;
   timeline: TimelineStep[];
   fallbackAssistantMessage: string;
+  requestStartedAt: string;
 }): Promise<number> => {
   const persistedMessages = collectPersistedTimelineMessages({
     timeline: input.timeline,
     fallbackAssistantMessage: input.fallbackAssistantMessage,
+    requestStartedAt: input.requestStartedAt,
   });
 
   for (const item of persistedMessages) {
@@ -384,6 +408,7 @@ export const persistUserMessage = async (input: {
   attachments?: ChatAttachmentDTO[];
   requestId?: string;
   createdAt?: string;
+  requestStartedAt?: string;
 }): Promise<void> => {
   await repositoryService.appendMessage({
     scope: input.scope,
@@ -395,7 +420,10 @@ export const persistUserMessage = async (input: {
       attachments: input.attachments,
     }),
     metadataJson: input.requestId
-      ? buildUserRequestMetadataJson(input.requestId)
+      ? buildUserRequestMetadataJson(
+          input.requestId,
+          input.requestStartedAt ?? input.createdAt,
+        )
       : undefined,
     createdAt: input.createdAt,
   });

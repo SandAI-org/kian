@@ -42,10 +42,14 @@ const normalizeMessageContentForComparison = (content: string): string =>
       }
     );
 
-export const buildUserRequestMetadataJson = (requestId: string): string =>
+export const buildUserRequestMetadataJson = (
+  requestId: string,
+  requestStartedAt?: string,
+): string =>
   JSON.stringify({
     kind: USER_REQUEST_METADATA_KIND,
     requestId,
+    requestStartedAt,
   });
 
 export const extractUserRequestIdFromMetadataJson = (

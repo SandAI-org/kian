@@ -2933,44 +2933,10 @@ body {
   color: #2b6b4b;
 }
 
-.sub-agent-card__pill--report {
-  border-color: #bfd5ff;
-  background: #ffffff;
-  color: #2458c7;
-}
-
 .sub-agent-card__pill--agent {
   border-color: #d5e1f5;
   background: #ffffff;
   color: #475569;
-}
-
-.sub-agent-card__pill--success {
-  border-color: #c5e4d2;
-  background: #f6fcf8;
-  color: #2b6b4b;
-}
-
-.sub-agent-card__pill--failed {
-  border-color: #f3c7c2;
-  background: #fff5f4;
-  color: #bb4d3e;
-}
-
-.sub-agent-report-card__summary {
-  color: #334155;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.sub-agent-report-card__toggle {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  color: #4d7bd6;
-  font-size: 11px;
-  font-weight: 600;
 }
 
 :root.theme-dark .ant-app,
@@ -3599,34 +3565,8 @@ body {
   color: #8fdbb4;
 }
 
-:root.theme-dark .sub-agent-card__pill--report {
-  border-color: #395b8c;
-  background: rgba(255, 255, 255, 0.04);
-  color: #8ab5ff;
-}
-
 :root.theme-dark .sub-agent-card__pill--agent {
   border-color: #334155;
   background: rgba(255, 255, 255, 0.04);
   color: #cbd5e1;
-}
-
-:root.theme-dark .sub-agent-card__pill--success {
-  border-color: #33594d;
-  background: rgba(62, 129, 97, 0.16);
-  color: #8fdbb4;
-}
-
-:root.theme-dark .sub-agent-card__pill--failed {
-  border-color: #6e3c39;
-  background: rgba(187, 77, 62, 0.18);
-  color: #ffb4a8;
-}
-
-:root.theme-dark .sub-agent-report-card__summary {
-  color: #cbd5e1;
-}
-
-:root.theme-dark .sub-agent-report-card__toggle {
-  color: #8ab5ff;
 }

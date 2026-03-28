@@ -39,7 +39,6 @@ import {
 import { createAppOperationTools } from "./appOperationMcpServer";
 import { appOperationEvents } from "./appOperationEvents";
 import { createBuiltinTools } from "./builtinMcpServer";
-import { chatEvents } from "./chatEvents";
 import { buildContextSnapshotSection } from "./contextSnapshotFormatter";
 import { toToolDefinition, type CustomToolDef } from "./customTools";
 import { logger } from "./logger";
@@ -102,6 +101,7 @@ type QueuedAgentRequestState = {
   message: string;
   attachments?: ChatAttachmentDTO[];
   matchText: string;
+  queuedAt: string;
 };
 
 type ActiveQueuedRequestTurnState = {
@@ -137,11 +137,12 @@ const agentSessionStore = new Map<string, AgentSessionEntry>();
 const activeAgentRequestStore = new Map<string, ActiveAgentRequestState>();
 const freshSessionOnNextPrompt = new Set<string>();
 const refreshSessionOnNextPrompt = new Set<string>();
+const delegatedSessionStore = new Map<string, string>();
 let appDeveloperMetadataCache: DeveloperMetadata | null | undefined = undefined;
 const isDevelopmentMode =
   !app.isPackaged || process.env.NODE_ENV === "development";
 const DEFAULT_CHAT_THINKING_LEVEL: ChatThinkingLevel = "low";
-const DEFAULT_STREAMING_BEHAVIOR = "steer" as const;
+const DEFAULT_STREAMING_BEHAVIOR = "followUp" as const;
 const MAIN_AGENT_ID = "main-agent";
 const MAIN_AGENT_NAME = "主 Agent";
 const EMPTY_AGENT_FINAL_MESSAGE = "已处理请求，但未收到 Agent 文本回复。";
@@ -769,21 +770,6 @@ const describeProject = (projectId: string, projectName: string): string =>
 const buildChatMessageMetadataJson = (metadata: ChatMessageMetadata): string =>
   JSON.stringify(metadata);
 
-const parseChatMessageMetadata = (
-  raw: string | null | undefined,
-): ChatMessageMetadata | null => {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    return parsed as ChatMessageMetadata;
-  } catch {
-    return null;
-  }
-};
-
 const buildDelegationMessageContent = (input: {
   delegationId: string;
   module: ModuleType;
@@ -843,36 +829,25 @@ const findReusableDelegatedSession = async (input: {
   mainSessionId: string;
   targetProjectId: string;
 }): Promise<{ id: string } | null> => {
-  const mainMessages = await repositoryService.listMessages(
-    { type: "main" },
-    input.mainSessionId,
+  const reusedSessionId = delegatedSessionStore.get(
+    `${input.mainSessionId}:${input.targetProjectId}`,
   );
-
-  for (let index = mainMessages.length - 1; index >= 0; index -= 1) {
-    const message = mainMessages[index];
-    const metadata = parseChatMessageMetadata(message?.metadataJson);
-    if (metadata?.kind !== "delegation_receipt") {
-      continue;
-    }
-    if (metadata.targetProjectId !== input.targetProjectId) {
-      continue;
-    }
-
-    const targetSessionId = metadata.targetSessionId?.trim();
-    if (!targetSessionId) {
-      continue;
-    }
-
-    const session = await repositoryService.getChatSession(
-      { type: "project", projectId: input.targetProjectId },
-      targetSessionId,
-    );
-    if (session) {
-      return { id: session.id };
-    }
+  if (!reusedSessionId) {
+    return null;
   }
 
-  return null;
+  const session = await repositoryService.getChatSession(
+    { type: "project", projectId: input.targetProjectId },
+    reusedSessionId,
+  );
+  if (!session) {
+    delegatedSessionStore.delete(
+      `${input.mainSessionId}:${input.targetProjectId}`,
+    );
+    return null;
+  }
+
+  return { id: session.id };
 };
 
 const appendSubAgentReport = async (input: {
@@ -881,6 +856,7 @@ const appendSubAgentReport = async (input: {
   sourceProjectName: string;
   status: "completed" | "failed";
   result: string;
+  requestStartedAt?: string;
 }): Promise<void> => {
   const content = [
     `来自 Agent ${describeProject(input.sourceProjectId, input.sourceProjectName)} 的回报`,
@@ -893,13 +869,15 @@ const appendSubAgentReport = async (input: {
     sessionId: input.delegationContext.mainSessionId,
     role: "system",
     content,
-    metadataJson: buildChatMessageMetadataJson({
+    metadataJson: JSON.stringify({
       kind: "sub_agent_report",
       delegationId: input.delegationContext.delegationId,
       sourceProjectId: input.sourceProjectId,
       sourceProjectName: input.sourceProjectName,
       status: input.status,
+      requestStartedAt: input.requestStartedAt,
     }),
+    createdAt: input.requestStartedAt,
   });
 };
 
@@ -911,27 +889,16 @@ const triggerMainAgentReportProcessing = async (input: {
   result: string;
 }): Promise<void> => {
   const mainScope: ChatScope = { type: "main" };
-  const storeKey = getSessionStoreKey(
-    mainScope,
-    input.delegationContext.mainSessionId,
-  );
   const reportPrompt = [
     `子智能体 ${describeProject(input.sourceProjectId, input.sourceProjectName)} 收到任务回报。`,
     `委派编号：${input.delegationContext.delegationId}`,
     `状态：${input.status === "completed" ? "completed" : "failed"}`,
     "",
     "请基于这条回报继续处理当前用户任务，并在需要时决定是否继续委派或直接给出答复。",
+    "不要逐字复述子智能体的完整回报，只需用一两句简短总结关键信息，或直接继续回应用户请求。",
     "",
     input.result.trim(),
   ].join("\n");
-
-  const activeRequest = activeAgentRequestStore.get(storeKey);
-  const entry = agentSessionStore.get(storeKey);
-
-  if (activeRequest && entry) {
-    await entry.session.followUp(reportPrompt);
-    return;
-  }
 
   const [{ chatService }, { chatChannelService }] = await Promise.all([
     import("./chatService"),
@@ -949,6 +916,7 @@ const triggerMainAgentReportProcessing = async (input: {
       module: "main",
       sessionId: input.delegationContext.mainSessionId,
     });
+  let reportPersisted = false;
   const result = await chatService.send(
     {
       scope: mainScope,
@@ -956,10 +924,27 @@ const triggerMainAgentReportProcessing = async (input: {
       sessionId: input.delegationContext.mainSessionId,
       requestId: `main-report-${input.delegationContext.delegationId}`,
       message: reportPrompt,
+      queuedSourceName: input.sourceProjectName,
       skipUserMessagePersistence: true,
     },
     (event) => {
-      chatEvents.emitStream(event);
+      if (!reportPersisted && event.type === "request_started") {
+        reportPersisted = true;
+        void appendSubAgentReport({
+          delegationContext: input.delegationContext,
+          sourceProjectId: input.sourceProjectId,
+          sourceProjectName: input.sourceProjectName,
+          status: input.status,
+          result: input.result,
+          requestStartedAt: event.createdAt,
+        }).catch((error) => {
+          logger.warn("Persist sub-agent report failed", {
+            delegationId: input.delegationContext.delegationId,
+            sessionId: input.delegationContext.mainSessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
       assistantMirrorStreamer.pushEvent(event);
     },
   );
@@ -1073,17 +1058,8 @@ export const deliverDelegationReportToMainAgent = async (input: {
     result: input.result,
   };
 
-  if (!existingReport) {
-    await appendSubAgentReport({
-      delegationContext: input.delegationContext,
-      sourceProjectId: input.sourceProjectId,
-      sourceProjectName: input.sourceProjectName,
-      status: effectiveReport.status,
-      result: effectiveReport.result,
-    });
-    if (input.delegationReportState) {
-      input.delegationReportState.appendedReport = effectiveReport;
-    }
+  if (!existingReport && input.delegationReportState) {
+    input.delegationReportState.appendedReport = effectiveReport;
   }
 
   await triggerMainAgentReportProcessing({
@@ -1189,20 +1165,10 @@ export const createDelegationTools = (input: {
               targetSessionId: session.id,
             }),
           });
-
-          await repositoryService.appendMessage({
-            scope: { type: "main" },
-            sessionId: input.runtime.chatSessionId,
-            role: "system",
-            content: `已委派给：**${project.name}**`,
-            metadataJson: buildChatMessageMetadataJson({
-              kind: "delegation_receipt",
-              delegationId,
-              targetProjectId: project.id,
-              targetProjectName: project.name,
-              targetSessionId: session.id,
-            }),
-          });
+          delegatedSessionStore.set(
+            `${input.runtime.chatSessionId}:${project.id}`,
+            session.id,
+          );
 
           void (async () => {
             try {
@@ -1222,9 +1188,6 @@ export const createDelegationTools = (input: {
                     projectId: project.id,
                     projectName: project.name,
                   },
-                },
-                (event) => {
-                  chatEvents.emitStream(event);
                 },
               );
             } catch (error) {
@@ -1760,6 +1723,8 @@ export const agentService = {
         sessionId: payload.sessionId,
         timeline: queuedTurn.timelineState.timeline,
         fallbackAssistantMessage: finalMessage,
+        requestStartedAt:
+          queuedTurn.timelineState.timeline[0]?.createdAt ?? nowISO(),
       }).catch((error) => {
         logger.warn("Persist queued chat turn failed", {
           requestId: queuedTurn.requestId,
@@ -1879,6 +1844,7 @@ export const agentService = {
           if (queuedIndex >= 0 && state) {
             const [queuedRequest] = state.queuedRequests.splice(queuedIndex, 1);
             const previousQueuedTurn = state.activeQueuedRequest;
+            const requestStartedAt = nowISO();
             state.activeQueuedRequest = {
               requestId: queuedRequest.requestId,
               timelineState: createChatTurnTimelineState(),
@@ -1892,7 +1858,7 @@ export const agentService = {
             emitRequestEvent(
               queuedRequest.requestId,
               {
-                createdAt: nowISO(),
+                createdAt: requestStartedAt,
                 type: "request_started",
               },
               { applyToTimeline: false },
@@ -1903,7 +1869,8 @@ export const agentService = {
               message: queuedRequest.message,
               attachments: queuedRequest.attachments,
               requestId: queuedRequest.requestId,
-              createdAt: nowISO(),
+              createdAt: requestStartedAt,
+              requestStartedAt,
             }).catch((error) => {
               logger.warn("Persist queued user message failed", {
                 requestId: queuedRequest.requestId,
@@ -2534,6 +2501,7 @@ export const agentService = {
       message: payload.message,
       attachments: payload.attachments,
       matchText: fullPromptText,
+      queuedAt: nowISO(),
     });
 
     try {
@@ -2573,6 +2541,8 @@ export const agentService = {
         message: item.message,
         attachments: item.attachments,
       }),
+      queuedAt: item.queuedAt,
+      persistUserMessage: true,
     }));
   },
 

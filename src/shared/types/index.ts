@@ -242,6 +242,7 @@ export interface ChatSendPayload {
   sessionId: string;
   requestId?: string;
   message: string;
+  queuedSourceName?: string;
   model?: string;
   thinkingLevel?: ChatThinkingLevel;
   attachments?: ChatAttachmentDTO[];
@@ -269,6 +270,9 @@ export interface ChatQueuedMessageDTO {
   requestId: string;
   deliveryMode: ChatQueueDeliveryMode;
   content: string;
+  queuedAt: string;
+  persistUserMessage: boolean;
+  sourceName?: string;
 }
 
 export interface ChatInterruptPayload {
@@ -294,6 +298,11 @@ export interface ChatUploadFilePayload {
 export interface ChatSendResponse {
   assistantMessage: string;
   toolActions: string[];
+}
+
+export interface ChatSendDispatchResponse {
+  requestId: string;
+  queued: boolean;
 }
 
 export interface ChatStreamEvent {
@@ -333,6 +342,13 @@ export interface ChatHistoryUpdatedEvent {
   sessionTitle?: string;
   sessionUpdatedAt?: string;
   sessionModule?: ChatModuleType;
+  message?: ChatMessageDTO;
+}
+
+export interface ChatQueueUpdatedEvent {
+  scope: ChatScope;
+  sessionId: string;
+  queuedMessages: ChatQueuedMessageDTO[];
 }
 
 export type AppOperationEvent =

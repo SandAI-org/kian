@@ -401,7 +401,7 @@ describe("agentService delegation reporting", () => {
     expect(tools.find((item) => item.name === "callMainAgent")).toBeUndefined();
   });
 
-  it("keeps an active main-agent request open for merged follow-up turns", async () => {
+  it("routes sub-agent reports through chatService while the main request is still active", async () => {
     const { agentService, deliverDelegationReportToMainAgent } =
       await import("../../electron/main/services/agentService");
 
@@ -426,29 +426,9 @@ describe("agentService delegation reporting", () => {
           },
           toolResults: [],
         });
-      }, 0);
-    });
-    state.followUp.mockImplementation(async () => {
-      setTimeout(() => {
-        state.sessionListener?.({ type: "turn_start" });
-        state.sessionListener?.({
-          type: "message_update",
-          assistantMessageEvent: {
-            type: "text_delta",
-            delta: "，已合并子智能体 回报",
-          },
-        });
-        state.sessionListener?.({
-          type: "turn_end",
-          message: {
-            role: "assistant",
-          },
-          toolResults: [],
-        });
         state.sessionListener?.({ type: "agent_end" });
       }, 0);
     });
-
     const sendPromise = agentService.send({
       scope: { type: "main" },
       module: "main",
@@ -481,10 +461,15 @@ describe("agentService delegation reporting", () => {
 
     const result = await sendPromise;
 
-    expect(state.followUp).toHaveBeenCalledTimes(1);
-    expect(state.followUp.mock.calls[0]?.[0]).toContain("子智能体 已完成");
+    expect(state.chatSend).toHaveBeenCalledTimes(1);
+    expect(state.chatSend.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: "main-session",
+      requestId: "main-report-delegation-1",
+    });
+    expect(state.chatSend.mock.calls[0]?.[0].message).toContain(
+      "子智能体 已完成",
+    );
     expect(result.assistantMessage).toContain("主 Agent 初始回复");
-    expect(result.assistantMessage).toContain("已合并子智能体 回报");
   });
 
   it("retries main-agent processing without appending the report twice", async () => {
@@ -529,6 +514,57 @@ describe("agentService delegation reporting", () => {
     expect(delegationReportState.reported).toBe(true);
   });
 
+  it("persists the sub-agent report when main-agent processing actually starts", async () => {
+    const { deliverDelegationReportToMainAgent } =
+      await import("../../electron/main/services/agentService");
+
+    state.chatSend.mockImplementationOnce(
+      async (
+        _payload: unknown,
+        onStream?: (event: {
+          type: string;
+          createdAt?: string;
+        }) => void,
+      ) => {
+        onStream?.({
+          type: "request_started",
+          createdAt: "2026-03-22T08:00:00.000Z",
+        });
+        await Promise.resolve();
+        return {
+          assistantMessage: "主 Agent 已处理回报",
+          toolActions: [],
+        };
+      },
+    );
+
+    await deliverDelegationReportToMainAgent({
+      delegationContext: {
+        delegationId: "delegation-1",
+        mainSessionId: "main-session",
+        source: "main",
+        projectId: "agent-a",
+        projectName: "Agent A",
+      },
+      sourceProjectId: "agent-a",
+      sourceProjectName: "Agent A",
+      status: "completed",
+      result: "子智能体 已完成",
+      delegationReportState: { reported: false },
+    });
+
+    expect(state.appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "main-session",
+        role: "system",
+        createdAt: "2026-03-22T08:00:00.000Z",
+        metadataJson: expect.stringContaining(
+          '"requestStartedAt":"2026-03-22T08:00:00.000Z"',
+        ),
+      }),
+    );
+  });
+
   it("dispatches delegation tasks to sub agents without persisting a duplicate user message", async () => {
     state.listProjects.mockResolvedValue([
       {
@@ -555,19 +591,12 @@ describe("agentService delegation reporting", () => {
     });
 
     expect(result.isError).toBeUndefined();
-    expect(state.appendMessage).toHaveBeenCalledTimes(2);
+    expect(state.appendMessage).toHaveBeenCalledTimes(1);
     expect(state.appendMessage.mock.calls[0]?.[0]).toMatchObject({
       scope: { type: "project", projectId: "agent-a" },
       sessionId: "sub-session-1",
       role: "system",
       content: expect.stringContaining("委派编号："),
-    });
-    expect(state.appendMessage.mock.calls[1]?.[0]).toMatchObject({
-      scope: { type: "main" },
-      sessionId: "main-session",
-      role: "system",
-      content: "已委派给：**Agent A**",
-      metadataJson: expect.stringContaining('"kind":"delegation_receipt"'),
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(state.chatSend).toHaveBeenCalledTimes(1);
@@ -591,24 +620,6 @@ describe("agentService delegation reporting", () => {
         updatedAt: "2026-03-09T10:00:00.000Z",
       },
     ]);
-    state.listMessages
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: "msg-1",
-          sessionId: "main-session",
-          role: "system",
-          content: "已委派给：**Agent A**",
-          metadataJson: JSON.stringify({
-            kind: "delegation_receipt",
-            delegationId: "delegation-1",
-            targetProjectId: "agent-a",
-            targetProjectName: "Agent A",
-            targetSessionId: "sub-session-1",
-          }),
-          createdAt: "2026-03-09T10:00:00.000Z",
-        },
-      ]);
     state.getChatSession.mockResolvedValue({
       id: "sub-session-1",
       scopeType: "project",
@@ -654,7 +665,6 @@ describe("agentService delegation reporting", () => {
         sessionId: "sub-session-1",
         message: "第二次委派",
       }),
-      expect.any(Function),
     );
   });
 
@@ -851,6 +861,24 @@ describe("agentService delegation reporting", () => {
 
     state.appendMessage.mockClear();
     state.chatSend.mockClear();
+    state.chatSend.mockImplementationOnce(
+      async (
+        _payload: unknown,
+        onStream?: (event: {
+          type: string;
+          createdAt?: string;
+        }) => void,
+      ) => {
+        onStream?.({
+          type: "request_started",
+          createdAt: "2026-03-22T08:00:00.000Z",
+        });
+        return {
+          assistantMessage: "主 Agent 已处理回报",
+          toolActions: [],
+        };
+      },
+    );
     state.sendCustomMessage.mockReset().mockImplementation(async () => {
       state.sendCustomMessageCallCount += 1;
       state.sessionListener?.({

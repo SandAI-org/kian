@@ -16,8 +16,10 @@ import type {
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
   ChatQueuedMessageDTO,
+  ChatQueueUpdatedEvent,
   ChatQueuePayload,
   ChatSendPayload,
+  ChatSendDispatchResponse,
   ChatThinkingLevel,
   ChatStreamEvent,
   ChatUploadFilePayload,
@@ -144,7 +146,7 @@ export const api = {
       unwrap(await window.api.chat.getQueuedMessages(scope, sessionId)),
     uploadFiles: async (payload: { scope: ChatScope; files: ChatUploadFilePayload[] }): Promise<ChatAttachmentDTO[]> =>
       unwrap(await window.api.chat.uploadFiles(payload)),
-    sendMessage: async (payload: ChatSendPayload) =>
+    sendMessage: async (payload: ChatSendPayload): Promise<ChatSendDispatchResponse> =>
       unwrap(await window.api.chat.sendMessage(payload)),
     queueMessage: async (payload: ChatQueuePayload): Promise<boolean> =>
       unwrap(await window.api.chat.queueMessage(payload)),
@@ -156,7 +158,9 @@ export const api = {
       unwrap(await window.api.chat.updateSessionTitle({ scope, sessionId, title })),
     subscribeStream: (handler: (event: ChatStreamEvent) => void) => window.api.chat.subscribeStream(handler),
     subscribeHistoryUpdated: (handler: (event: ChatHistoryUpdatedEvent) => void) =>
-      window.api.chat.subscribeHistoryUpdated(handler)
+      window.api.chat.subscribeHistoryUpdated(handler),
+    subscribeQueueUpdated: (handler: (event: ChatQueueUpdatedEvent) => void) =>
+      window.api.chat.subscribeQueueUpdated(handler)
   },
   appOperation: {
     subscribe: (handler: (event: AppOperationEvent) => void) => window.api.appOperation.subscribe(handler)

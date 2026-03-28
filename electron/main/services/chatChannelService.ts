@@ -63,7 +63,6 @@ import {
   markFeishuWsHeartbeatPong,
   type FeishuWsHeartbeatState,
 } from "./chatChannel/feishuWsHeartbeat";
-import { chatEvents } from "./chatEvents";
 import { chatService } from "./chatService";
 import { logger } from "./logger";
 import { repositoryService } from "./repositoryService";
@@ -2000,7 +1999,6 @@ const processTelegramUpdate = async (
           attachments: attachments.length > 0 ? attachments : undefined,
         },
         (streamEvent) => {
-          chatEvents.emitStream(streamEvent);
           progressiveStreamer.pushEvent(streamEvent);
         },
       );
@@ -2445,7 +2443,6 @@ const processBotIncomingMessage = async (input: {
         attachments: attachments.length > 0 ? attachments : undefined,
       },
       (streamEvent) => {
-        chatEvents.emitStream(streamEvent);
         progressiveStreamer.pushEvent(streamEvent);
       },
     );
@@ -2545,7 +2542,6 @@ const processWeixinMessage = async (
         message: text,
       },
       (streamEvent) => {
-        chatEvents.emitStream(streamEvent);
         progressiveStreamer.pushEvent(streamEvent);
       },
     );

@@ -1132,6 +1132,13 @@ app
       }
     });
 
+    chatEvents.onQueueUpdated((payload) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue;
+        window.webContents.send('chat:queueUpdated', payload);
+      }
+    });
+
     appOperationEvents.on((payload) => {
       for (const window of BrowserWindow.getAllWindows()) {
         if (window.isDestroyed()) continue;

@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatModuleType, ChatScope, CronJobDTO } from '@shared/types';
-import { chatEvents } from './chatEvents';
 import { chatChannelService } from './chatChannelService';
 import { chatService } from './chatService';
 import { logger } from './logger';
@@ -338,7 +337,6 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
       message
     },
     (streamEvent) => {
-      chatEvents.emitStream(streamEvent);
       assistantMirrorStreamer.pushEvent(streamEvent);
     }
   );

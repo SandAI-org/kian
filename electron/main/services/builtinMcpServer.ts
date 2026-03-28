@@ -783,9 +783,11 @@ export const createBuiltinTools = (
         } else {
           computerName = os.hostname();
         }
-        const fullMessage = `📢 消息来自：${computerName}\n-------------------\n${message}`;
         if (channel.type === "wechat") {
-          await sendWechatWebhookMessage(channel.webhook, fullMessage);
+          await sendWechatWebhookMessage(
+            channel.webhook,
+            `${message}\n\n<font color="comment">来自 ${computerName}</font>`,
+          );
         } else {
           const feishuRuntime =
             await settingsService.getFeishuChatChannelRuntime();
@@ -793,9 +795,13 @@ export const createBuiltinTools = (
             feishuRuntime.appId?.trim() && feishuRuntime.appSecret?.trim()
               ? `${feishuRuntime.appId.trim()}:${feishuRuntime.appSecret.trim()}`
               : undefined;
-          await sendFeishuWebhookMessage(channel.webhook, fullMessage, {
-            token: feishuToken,
-          });
+          await sendFeishuWebhookMessage(
+            channel.webhook,
+            `${message}\n\n*来自 ${computerName}*`,
+            {
+              token: feishuToken,
+            },
+          );
         }
         return {
           text: `广播发送成功：渠道「${channel.name}」(${channel.id})`,

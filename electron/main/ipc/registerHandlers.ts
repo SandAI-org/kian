@@ -60,7 +60,6 @@ import { chatService } from '../services/chatService';
 import { settingsService } from '../services/settingsService';
 import { skillService } from '../services/skillService';
 import { chatChannelService } from '../services/chatChannelService';
-import { chatEvents } from '../services/chatEvents';
 import { err, ok } from '@shared/utils/result';
 import { logger } from '../services/logger';
 import { taskService } from '../services/taskService';
@@ -276,9 +275,7 @@ export const registerHandlers = (): void => {
   ipcMain.handle('chat:sendMessage', async (_event, payload) => {
     try {
       const input = chatSendSchema.parse(payload);
-      const result = await chatService.send(input, (streamEvent) => {
-        chatEvents.emitStream(streamEvent);
-      });
+      const result = await chatService.sendFromRenderer(input);
       return ok(result);
     } catch (error) {
       logger.error('IPC failed: chat:sendMessage', error);
@@ -289,13 +286,13 @@ export const registerHandlers = (): void => {
     }
   });
   handle('chat:queueMessage', chatQueueSchema, async (input) =>
-    agentService.queueMessage(input)
+    chatService.queueMessage(input)
   );
   handle('chat:getQueuedMessages', chatQueuedMessagesSchema, async (input) =>
-    agentService.getQueuedMessages(input.scope, input.sessionId)
+    chatService.getQueuedMessages(input.scope, input.sessionId)
   );
   handle('chat:interrupt', chatInterruptSchema, async (input) =>
-    agentService.interrupt(input)
+    chatService.interrupt(input)
   );
   handle('chat:uploadFiles', chatUploadFilesSchema, async (input) =>
     repositoryService.uploadChatFiles(input)

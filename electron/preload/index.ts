@@ -13,10 +13,11 @@ import type {
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
   ChatQueuedMessageDTO,
+  ChatQueueUpdatedEvent,
   ChatMessageDTO,
   ChatQueuePayload,
   ChatSendPayload,
-  ChatSendResponse,
+  ChatSendDispatchResponse,
   ChatSessionDTO,
   ChatStreamEvent,
   ChatUploadFilePayload,
@@ -179,7 +180,7 @@ const api = {
         sessionId,
       }),
     sendMessage: (payload: ChatSendPayload) =>
-      invoke<ChatSendResponse>("chat:sendMessage", payload),
+      invoke<ChatSendDispatchResponse>("chat:sendMessage", payload),
     queueMessage: (payload: ChatQueuePayload) =>
       invoke<boolean>("chat:queueMessage", payload),
     interrupt: (payload: ChatInterruptPayload) =>
@@ -219,6 +220,20 @@ const api = {
       ipcRenderer.on("chat:historyUpdated", listener);
       return (): void => {
         ipcRenderer.removeListener("chat:historyUpdated", listener);
+      };
+    },
+    subscribeQueueUpdated: (
+      handler: (event: ChatQueueUpdatedEvent) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: ChatQueueUpdatedEvent,
+      ): void => {
+        handler(payload);
+      };
+      ipcRenderer.on("chat:queueUpdated", listener);
+      return (): void => {
+        ipcRenderer.removeListener("chat:queueUpdated", listener);
       };
     },
   },

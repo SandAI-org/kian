@@ -38,6 +38,40 @@ export const formatToolDisplayName = (rawName: string): string => {
   return toFriendlyToolName(rawName);
 };
 
+const formatStreamingToolDisplayName = (
+  rawName: string,
+  toolInput?: string,
+): string => {
+  const normalizedName = rawName.trim() || "工具";
+  if (normalizedName !== "callSubAgent") {
+    return formatToolDisplayName(normalizedName);
+  }
+
+  const rawInput = toolInput?.trim();
+  if (!rawInput) {
+    return formatToolDisplayName(normalizedName);
+  }
+
+  try {
+    const parsed = JSON.parse(rawInput) as {
+      agent?: unknown;
+      project?: unknown;
+    };
+    const targetName =
+      typeof parsed.agent === "string"
+        ? parsed.agent.trim()
+        : typeof parsed.project === "string"
+          ? parsed.project.trim()
+          : "";
+    if (!targetName) {
+      return formatToolDisplayName(normalizedName);
+    }
+    return `${formatToolDisplayName(normalizedName)}（${targetName}）`;
+  } catch {
+    return formatToolDisplayName(normalizedName);
+  }
+};
+
 const mergeToolStatus = (
   current: ToolCallInfo["status"],
   incoming: ToolCallInfo["status"],
@@ -217,7 +251,10 @@ export const upsertStreamingTool = (
 ): StreamingBlock[] => {
   const normalizedIncoming: ToolCallInfo = {
     ...incoming,
-    toolName: formatToolDisplayName(incoming.toolName || "工具"),
+    toolName: formatStreamingToolDisplayName(
+      incoming.toolName || "工具",
+      incoming.toolInput,
+    ),
     toolInput: normalizeToolDetailText(incoming.toolInput),
     output: normalizeToolDetailText(incoming.output),
   };

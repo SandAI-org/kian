@@ -41,8 +41,8 @@ export const sendWechatWebhookMessage = async (
   const requestPayload =
     parsedPayload ??
     ({
-      msgtype: "text",
-      text: {
+      msgtype: "markdown",
+      markdown: {
         content: payload,
       },
     } as const);

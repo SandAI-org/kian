@@ -1,6 +1,9 @@
 import { completeSimple } from "@mariozechner/pi-ai";
+import { randomUUID } from "node:crypto";
 import type {
+  ChatQueuedMessageDTO,
   ChatSendPayload,
+  ChatSendDispatchResponse,
   ChatSendResponse,
   ChatStreamEvent,
 } from "@shared/types";
@@ -9,6 +12,7 @@ import {
   normalizeChatSessionTitleCandidate,
 } from "@shared/utils/chatSessionTitle";
 import { agentService } from "./agentService";
+import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
 import { normalizeMediaMarkdownInText } from "./mediaMarkdown";
 import { repositoryService } from "./repositoryService";
@@ -16,9 +20,82 @@ import { settingsService } from "./settingsService";
 import {
   applyChatStreamEventToTimeline,
   createChatTurnTimelineState,
+  formatUserMessageContent,
   persistChatTurnTimeline,
   persistUserMessage,
 } from "./chatTurnTimeline";
+
+type SessionQueueItem = {
+  payload: ChatSendPayload;
+  deliveryMode: "steer" | "followUp";
+  queuedAt: string;
+  onStream?: (event: ChatStreamEvent) => void;
+  resolve: (result: ChatSendResponse) => void;
+  reject: (error: unknown) => void;
+};
+
+type SessionQueueState = {
+  processing: boolean;
+  currentRequestId?: string;
+  items: SessionQueueItem[];
+};
+
+const sessionQueueStore = new Map<string, SessionQueueState>();
+
+const getQueueStoreKey = (payload: Pick<ChatSendPayload, "scope" | "sessionId">): string =>
+  payload.scope.type === "main"
+    ? `main:${payload.sessionId}`
+    : `${payload.scope.projectId}:${payload.sessionId}`;
+
+const getOrCreateQueueState = (
+  payload: Pick<ChatSendPayload, "scope" | "sessionId">,
+): SessionQueueState => {
+  const storeKey = getQueueStoreKey(payload);
+  const existing = sessionQueueStore.get(storeKey);
+  if (existing) {
+    return existing;
+  }
+  const created: SessionQueueState = {
+    processing: false,
+    items: [],
+  };
+  sessionQueueStore.set(storeKey, created);
+  return created;
+};
+
+const buildQueuedMessageDto = (item: SessionQueueItem): ChatQueuedMessageDTO => ({
+  requestId: item.payload.requestId ?? "",
+  deliveryMode: item.deliveryMode,
+  content: formatUserMessageContent({
+    scope: item.payload.scope,
+    message: item.payload.message,
+    attachments: item.payload.attachments,
+  }),
+  queuedAt: item.queuedAt,
+  persistUserMessage: !item.payload.skipUserMessagePersistence,
+  sourceName: item.payload.queuedSourceName?.trim() || undefined,
+});
+
+const emitQueueUpdated = (
+  payload: Pick<ChatSendPayload, "scope" | "sessionId">,
+): void => {
+  const state = sessionQueueStore.get(getQueueStoreKey(payload));
+  if (typeof chatEvents.emitQueueUpdated !== "function") {
+    return;
+  }
+  chatEvents.emitQueueUpdated({
+    scope: payload.scope,
+    sessionId: payload.sessionId,
+    queuedMessages: (state?.items ?? []).map(buildQueuedMessageDto),
+  });
+};
+
+const emitStreamEvent = (event: ChatStreamEvent): void => {
+  if (typeof chatEvents.emitStream !== "function") {
+    return;
+  }
+  chatEvents.emitStream(event);
+};
 
 const buildAutoTitlePromptInput = async (
   payload: ChatSendPayload,
@@ -285,72 +362,250 @@ const generateSessionTitle = async (
   }
 };
 
+const processQueuedMessage = async (
+  item: SessionQueueItem,
+  requestStartedAt: string,
+): Promise<ChatSendResponse> => {
+  const { payload, onStream } = item;
+
+  if (!payload.skipUserMessagePersistence) {
+    await persistUserMessage({
+      scope: payload.scope,
+      sessionId: payload.sessionId,
+      message: payload.message,
+      attachments: payload.attachments,
+      requestId: payload.requestId,
+      createdAt: requestStartedAt,
+      requestStartedAt,
+    });
+  }
+
+  await maybeSetOptimisticSessionTitle(payload);
+
+  const timelineState = createChatTurnTimelineState();
+
+  const streamProxy = (event: ChatStreamEvent): void => {
+    emitStreamEvent(event);
+    onStream?.(event);
+    if (event.requestId !== (payload.requestId ?? event.requestId)) {
+      return;
+    }
+    applyChatStreamEventToTimeline(timelineState, event);
+  };
+
+  let result: ChatSendResponse;
+  try {
+    result = await agentService.send(payload, streamProxy);
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    logger.error("Agent send failed", {
+      scope: payload.scope,
+      sessionId: payload.sessionId,
+      module: payload.module,
+      error: errorMessage,
+    });
+
+    result = {
+      assistantMessage: errorMessage,
+      toolActions: [],
+    };
+  }
+
+  const persistedMessageCount = await persistChatTurnTimeline({
+    scope: payload.scope,
+    sessionId: payload.sessionId,
+    timeline: timelineState.timeline,
+    fallbackAssistantMessage: result.assistantMessage,
+    requestStartedAt,
+  });
+
+  logger.info("Auto title queued", {
+    sessionId: payload.sessionId,
+    scope: payload.scope,
+    module: payload.module,
+    persistedMessageCount:
+      persistedMessageCount + (payload.skipUserMessagePersistence ? 0 : 1),
+    userMessageLength: payload.message.trim().length,
+  });
+
+  void generateSessionTitle(payload).catch(() => {});
+
+  return result;
+};
+
+const processSessionQueue = async (
+  payload: Pick<ChatSendPayload, "scope" | "sessionId">,
+): Promise<void> => {
+  const storeKey = getQueueStoreKey(payload);
+  const state = sessionQueueStore.get(storeKey);
+  if (!state || state.processing) {
+    return;
+  }
+
+  state.processing = true;
+
+  try {
+    while (state.items.length > 0) {
+      const item = state.items.shift();
+      if (!item) {
+        continue;
+      }
+      state.currentRequestId = item.payload.requestId;
+      emitQueueUpdated(item.payload);
+
+      const requestStartedAt = new Date().toISOString();
+      const requestStartedEvent: ChatStreamEvent = {
+        requestId: item.payload.requestId ?? "",
+        sessionId: item.payload.sessionId,
+        scope: item.payload.scope,
+        module: item.payload.module,
+        createdAt: requestStartedAt,
+        type: "request_started",
+      };
+      emitStreamEvent(requestStartedEvent);
+      item.onStream?.(requestStartedEvent);
+
+      try {
+        const result = await processQueuedMessage(item, requestStartedAt);
+        item.resolve(result);
+      } catch (error) {
+        item.reject(error);
+      } finally {
+        state.currentRequestId = undefined;
+      }
+    }
+  } finally {
+    state.processing = false;
+    state.currentRequestId = undefined;
+    if (state.items.length === 0) {
+      sessionQueueStore.delete(storeKey);
+    }
+    emitQueueUpdated(payload);
+  }
+};
+
 export const chatService = {
+  dispatch(
+    payload: ChatSendPayload,
+    onStream?: (event: ChatStreamEvent) => void,
+    deliveryMode: "steer" | "followUp" = "followUp",
+  ): {
+    queued: boolean;
+    completion: Promise<ChatSendResponse>;
+    requestId: string;
+  } {
+    const requestId =
+      payload.requestId?.trim() ||
+      randomUUID();
+    const normalizedPayload: ChatSendPayload = {
+      ...payload,
+      requestId,
+    };
+    const state = getOrCreateQueueState(normalizedPayload);
+    const queued = state.processing || state.items.length > 0;
+    const queuedAt = new Date().toISOString();
+
+    let resolve!: (result: ChatSendResponse) => void;
+    let reject!: (error: unknown) => void;
+    const completion = new Promise<ChatSendResponse>((nextResolve, nextReject) => {
+      resolve = nextResolve;
+      reject = nextReject;
+    });
+
+    state.items.push({
+      payload: normalizedPayload,
+      deliveryMode,
+      queuedAt,
+      onStream,
+      resolve,
+      reject,
+    });
+    if (queued) {
+      emitQueueUpdated(normalizedPayload);
+    }
+    void processSessionQueue(normalizedPayload);
+
+    return {
+      queued,
+      completion,
+      requestId,
+    };
+  },
+
   async send(
     payload: ChatSendPayload,
     onStream?: (event: ChatStreamEvent) => void,
   ): Promise<ChatSendResponse> {
-    // Record user message
-    if (!payload.skipUserMessagePersistence) {
-      await persistUserMessage({
-        scope: payload.scope,
-        sessionId: payload.sessionId,
-        message: payload.message,
-        attachments: payload.attachments,
-        requestId: payload.requestId,
-      });
-    }
+    return chatService.dispatch(payload, onStream).completion;
+  },
 
-    await maybeSetOptimisticSessionTitle(payload);
-
-    const timelineState = createChatTurnTimelineState();
-
-    const streamProxy = (event: ChatStreamEvent): void => {
-      onStream?.(event);
-      if (event.requestId !== (payload.requestId ?? event.requestId)) {
-        return;
-      }
-      applyChatStreamEventToTimeline(timelineState, event);
+  async sendFromRenderer(
+    payload: ChatSendPayload,
+  ): Promise<ChatSendDispatchResponse> {
+    const dispatched = chatService.dispatch(payload);
+    return {
+      requestId: dispatched.requestId,
+      queued: dispatched.queued,
     };
+  },
 
-    let result: ChatSendResponse;
-    try {
-      result = await agentService.send(payload, streamProxy);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      logger.error("Agent send failed", {
-        scope: payload.scope,
-        sessionId: payload.sessionId,
-        module: payload.module,
-        error: errorMessage,
-      });
+  async queueMessage(payload: ChatSendPayload & { deliveryMode?: "steer" | "followUp" }): Promise<boolean> {
+    chatService.dispatch(payload, undefined, payload.deliveryMode ?? "followUp");
+    return true;
+  },
 
-      result = {
-        assistantMessage: `处理失败：${errorMessage}`,
-        toolActions: [],
+  getQueuedMessages(
+    scope: ChatSendPayload["scope"],
+    sessionId: string,
+  ): ChatQueuedMessageDTO[] {
+    const state = sessionQueueStore.get(
+      getQueueStoreKey({ scope, sessionId }),
+    );
+    if (!state || state.items.length === 0) {
+      return [];
+    }
+    return state.items.map(buildQueuedMessageDto);
+  },
+
+  async interrupt(
+    payload: Pick<ChatSendPayload, "scope" | "sessionId"> & {
+      requestId?: string;
+    },
+  ): Promise<boolean> {
+    const storeKey = getQueueStoreKey(payload);
+    const state = sessionQueueStore.get(storeKey);
+    const hasQueuedMessages = Boolean(state && state.items.length > 0);
+
+    if (state && state.items.length > 0) {
+      const shouldKeepQueuedItem = (requestId: string): boolean => {
+        if (!payload.requestId) {
+          return false;
+        }
+        if (state.currentRequestId === payload.requestId) {
+          return false;
+        }
+        return requestId !== payload.requestId;
       };
+      const preserved = state.items.filter((item) =>
+        shouldKeepQueuedItem(item.payload.requestId ?? ""),
+      );
+      const cancelled = state.items.filter(
+        (item) => !shouldKeepQueuedItem(item.payload.requestId ?? ""),
+      );
+      state.items = preserved;
+      for (const item of cancelled) {
+        item.reject(new Error("已取消排队消息"));
+      }
+      emitQueueUpdated(payload);
     }
 
-    const persistedMessageCount = await persistChatTurnTimeline({
+    const interrupted = await agentService.interrupt({
       scope: payload.scope,
       sessionId: payload.sessionId,
-      timeline: timelineState.timeline,
-      fallbackAssistantMessage: result.assistantMessage,
+      requestId: payload.requestId,
     });
 
-    logger.info("Auto title queued", {
-      sessionId: payload.sessionId,
-      scope: payload.scope,
-      module: payload.module,
-      persistedMessageCount:
-        persistedMessageCount + (payload.skipUserMessagePersistence ? 0 : 1),
-      userMessageLength: payload.message.trim().length,
-    });
-
-    // Fire-and-forget: auto-generate session title
-    void generateSessionTitle(payload).catch(() => {});
-
-    return result;
+    return interrupted || hasQueuedMessages;
   },
 };

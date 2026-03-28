@@ -110,7 +110,7 @@ describe("chatService timeline persistence", () => {
     expect(state.appendMessage.mock.calls[1]?.[0]).toMatchObject({
       role: "system",
       createdAt: "2026-03-10T00:00:00.500Z",
-      metadataJson: JSON.stringify({ kind: "thinking" }),
+      metadataJson: expect.stringContaining('"kind":"thinking"'),
     });
     expect(state.appendMessage.mock.calls[2]?.[0]).toMatchObject({
       role: "tool",
@@ -183,7 +183,7 @@ describe("chatService timeline persistence", () => {
       .filter(
         (message) =>
           message.role === "system" &&
-          message.metadataJson === JSON.stringify({ kind: "thinking" }),
+          String(message.metadataJson).includes('"kind":"thinking"'),
       );
 
     expect(thinkingMessages).toHaveLength(2);

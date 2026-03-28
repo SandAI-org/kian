@@ -5,6 +5,7 @@ import {
   appendStreamingThinkingDelta,
   ensureStreamingThinkingDone,
   type StreamingBlock,
+  upsertStreamingTool,
 } from "../../src/renderer/modules/chat/streamingState";
 
 describe("streamingState thinking blocks", () => {
@@ -73,6 +74,27 @@ describe("streamingState thinking blocks", () => {
     expect(blocks[0]).toMatchObject({
       kind: "thinking",
       content: "partial with suffix",
+    });
+  });
+
+  it("shows the target agent name for callSubAgent while streaming", () => {
+    const blocks = upsertStreamingTool(
+      [],
+      {
+        toolUseId: "tool-1",
+        toolName: "callSubAgent",
+        status: "starting",
+        toolInput: JSON.stringify({ agent: "老婆" }),
+      },
+      "2026-03-17T00:00:00.000Z",
+      createKey,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      kind: "tool",
+      tool: {
+        toolName: "Call Sub Agent（老婆）",
+      },
     });
   });
 });

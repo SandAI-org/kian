@@ -2,6 +2,8 @@ import { api } from "@renderer/lib/api";
 import type { QueryClient } from "@tanstack/react-query";
 import type {
   ChatHistoryUpdatedEvent,
+  ChatMessageDTO,
+  ChatQueueUpdatedEvent,
   ChatScope,
   ChatSessionDTO,
 } from "@shared/types";
@@ -16,6 +18,11 @@ export const getChatSessionsQueryKey = (scopeKey: string) =>
 
 export const getChatMessagesQueryKey = (scopeKey: string, sessionId: string) =>
   ["chat-messages", scopeKey, sessionId] as const;
+
+export const getChatQueuedMessagesQueryKey = (
+  scopeKey: string,
+  sessionId: string,
+) => ["chat-queued", scopeKey, sessionId] as const;
 
 const sortSessionsByUpdatedAt = (
   sessions: ChatSessionDTO[],
@@ -153,6 +160,26 @@ export const applyChatHistoryUpdateToCache = (
   if (!event.messageId.trim()) {
     return;
   }
+  if (event.message) {
+    const messagesQueryKey = getChatMessagesQueryKey(
+      getChatScopeKey(event.scope),
+      event.sessionId,
+    );
+    const currentMessages =
+      queryClient.getQueryData<ChatMessageDTO[]>(messagesQueryKey);
+    if (currentMessages !== undefined) {
+      queryClient.setQueryData<ChatMessageDTO[] | undefined>(
+        messagesQueryKey,
+        (current) => {
+          if (!current || current.some((item) => item.id === event.message!.id)) {
+            return current;
+          }
+          return [...current, event.message!];
+        },
+      );
+      return;
+    }
+  }
 
   void queryClient.invalidateQueries({
     queryKey: getChatMessagesQueryKey(
@@ -163,6 +190,19 @@ export const applyChatHistoryUpdateToCache = (
   });
 };
 
+export const applyChatQueueUpdateToCache = (
+  queryClient: QueryClient,
+  event: ChatQueueUpdatedEvent,
+): void => {
+  queryClient.setQueryData(
+    getChatQueuedMessagesQueryKey(
+      getChatScopeKey(event.scope),
+      event.sessionId,
+    ),
+    event.queuedMessages,
+  );
+};
+
 export const initializeChatQueryBridge = (queryClient: QueryClient): void => {
   if (typeof window === "undefined" || chatQueryBridgeInitialized) {
     return;
@@ -171,5 +211,8 @@ export const initializeChatQueryBridge = (queryClient: QueryClient): void => {
   chatQueryBridgeInitialized = true;
   api.chat.subscribeHistoryUpdated((event) => {
     applyChatHistoryUpdateToCache(queryClient, event);
+  });
+  api.chat.subscribeQueueUpdated((event) => {
+    applyChatQueueUpdateToCache(queryClient, event);
   });
 };

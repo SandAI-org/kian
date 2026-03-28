@@ -1,5 +1,4 @@
 import {
-  ArrowUpOutlined,
   CaretDownFilled,
   CheckCircleOutlined,
   FileOutlined,
@@ -40,6 +39,7 @@ import type {
 } from "@shared/types";
 import {
   buildUserRequestMetadataJson,
+  extractUserRequestIdFromMetadataJson,
   hasPersistedPendingUserMessage,
 } from "@shared/utils/chatPendingMessage";
 import { shouldRetainCompletedStreamingBlocks } from "@shared/utils/chatStreamRetention";
@@ -78,6 +78,7 @@ import {
   type StreamingBlock,
   type ToolCallInfo,
 } from "./streamingState";
+import { getChatQueuedMessagesQueryKey } from "./chatQueryCache";
 
 // ---------------------------------------------------------------------------
 // Props & Internal Types
@@ -105,11 +106,12 @@ interface SendPayload {
   text: string;
   requestId: string;
   files: LocalChatFile[];
+  pendingMessage: ChatMessageDTO;
+  localDisposition: "process_now" | "queue";
 }
 
 interface QueuedSendPayload extends SendPayload {
   deliveryMode: ChatQueueDeliveryMode;
-  pendingMessage: ChatMessageDTO;
 }
 
 type MessageBlock =
@@ -386,14 +388,38 @@ const buildPendingUserMessageFromQueuedSnapshot = (input: {
   requestId: string;
   sessionId: string;
   content: string;
+  startedAt: string;
 }): ChatMessageDTO => ({
   id: `pending-user-${input.requestId}`,
   sessionId: input.sessionId,
   role: "user",
   content: input.content,
-  metadataJson: buildUserRequestMetadataJson(input.requestId),
-  createdAt: new Date().toISOString(),
+  metadataJson: buildUserRequestMetadataJson(input.requestId, input.startedAt),
+  createdAt: input.startedAt,
 });
+
+const extractRequestStartedAtFromMetadataJson = (
+  raw: string | null | undefined,
+): string | null => {
+  const value = raw?.trim();
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { requestStartedAt?: unknown };
+    if (
+      typeof parsed.requestStartedAt === "string" &&
+      parsed.requestStartedAt.trim()
+    ) {
+      return parsed.requestStartedAt.trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const getMessageSortCreatedAt = (message: ChatMessageDTO): string =>
+  extractRequestStartedAtFromMetadataJson(message.metadataJson) ??
+  message.createdAt;
 
 const encodeExtendedMediaToken = (
   kind: ExtendedMarkdownKind,
@@ -1109,32 +1135,6 @@ const getDisplayMessageContent = (
   );
 };
 
-const getSubAgentReportSummary = (content: string): string => {
-  const normalized = content.replace(/\r\n/g, "\n");
-  const lines = normalized
-    .split("\n")
-    .map((line) =>
-      line
-        .trim()
-        .replace(/^#{1,6}\s+/, "")
-        .replace(/^>\s*/, "")
-        .replace(/^[-*+]\s+/, "")
-        .replace(/^\d+\.\s+/, "")
-        .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-        .replace(/`([^`]+)`/g, "$1"),
-    )
-    .filter((line) => line.length > 0);
-  const summary = lines.slice(0, 2).join(" ");
-  if (!summary) {
-    return "暂无摘要";
-  }
-  if (summary.length <= 110) {
-    return summary;
-  }
-  return `${summary.slice(0, 109).trimEnd()}…`;
-};
-
 const formatThinkingQuoteMarkdown = (content: string): string =>
   content
     .replace(/\r\n/g, "\n")
@@ -1156,56 +1156,24 @@ const SubAgentReportCard = memo(
       metadata?.sourceProjectName?.trim() ||
       metadata?.sourceProjectId?.trim() ||
       "未知 Agent";
-    const statusLabel = metadata?.status === "failed" ? "失败" : "已完成";
-    const statusClassName =
-      metadata?.status === "failed"
-        ? "sub-agent-card__pill--failed"
-        : "sub-agent-card__pill--success";
     const bodyContent = useMemo(
       () => getDisplayMessageContent(content, metadata),
       [content, metadata],
     );
-    const summary = useMemo(
-      () => getSubAgentReportSummary(bodyContent),
-      [bodyContent],
-    );
 
     return (
-      <details className="sub-agent-report-card group w-full px-3 py-3">
-        <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="sub-agent-card__pill sub-agent-card__pill--report">
-                  子智能体 回报
-                </span>
-                <span className="sub-agent-card__pill sub-agent-card__pill--agent">
-                  {sourceLabel}
-                </span>
-                <span
-                  className={`sub-agent-card__pill ${statusClassName}`}
-                >
-                  {statusLabel}
-                </span>
-              </div>
-              <p className="sub-agent-report-card__summary group-open:hidden">
-                {summary}
-              </p>
-            </div>
-            <span className="sub-agent-report-card__toggle">
-              查看详情
-              <ArrowUpOutlined className="rotate-180 transition-transform group-open:rotate-0" />
-            </span>
-          </div>
-        </summary>
-        <div className="mt-1 pt-1">
-          <MarkdownMessage
-            content={bodyContent}
-            projectId={projectId}
-            user={false}
-          />
+      <div className="sub-agent-report-card w-full px-3 py-3">
+        <div className="mb-2">
+          <span className="sub-agent-card__pill sub-agent-card__pill--agent">
+            {sourceLabel}
+          </span>
         </div>
-      </details>
+        <MarkdownMessage
+          content={bodyContent}
+          projectId={projectId}
+          user={false}
+        />
+      </div>
     );
   },
 );
@@ -1311,11 +1279,39 @@ const extractToolOutputFromContent = (content: string): string | undefined => {
   return normalizeToolDetailText(match[1]);
 };
 
+const getCallSubAgentTargetName = (
+  toolInput: string | undefined,
+): string | undefined => {
+  const raw = toolInput?.trim();
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as {
+      agent?: unknown;
+      project?: unknown;
+    };
+    const target =
+      typeof parsed.agent === "string"
+        ? parsed.agent.trim()
+        : typeof parsed.project === "string"
+          ? parsed.project.trim()
+          : "";
+    return target || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const toToolCallInfoFromMessage = (item: ChatMessageDTO): ToolCallInfo => {
   const parsed = parseToolCallJson(item.toolCallJson);
-  const toolName = formatToolDisplayName(
-    parsed.toolName?.trim() || extractToolDisplayName(item.content),
-  );
+  const rawToolName =
+    parsed.toolName?.trim() || extractToolDisplayName(item.content);
+  const targetName =
+    rawToolName === "callSubAgent"
+      ? getCallSubAgentTargetName(parsed.toolInput)
+      : undefined;
+  const toolName = targetName
+    ? `${formatToolDisplayName(rawToolName)}（${targetName}）`
+    : formatToolDisplayName(rawToolName);
   return {
     toolUseId: parsed.toolUseId?.trim() || item.id,
     toolName,
@@ -1630,9 +1626,6 @@ export const ModuleChatPane = ({
     currentSessionId ? state.sessions[currentSessionId] : undefined,
   );
   const beginStreamRequest = useChatStreamStore((state) => state.beginRequest);
-  const releaseStreamRequest = useChatStreamStore(
-    (state) => state.releaseRequest,
-  );
   const clearSessionStream = useChatStreamStore(
     (state) => state.clearSessionStream,
   );
@@ -1645,7 +1638,8 @@ export const ModuleChatPane = ({
 
   const queryClient = useQueryClient();
   const queuedMessagesQueryKey = useMemo(
-    () => ["chat-queued", scopeKey, currentSessionId] as const,
+    () =>
+      getChatQueuedMessagesQueryKey(scopeKey, currentSessionId ?? ""),
     [currentSessionId, scopeKey],
   );
   const generalConfigQuery = useQuery({
@@ -1835,19 +1829,44 @@ export const ModuleChatPane = ({
     const unsubscribe = api.chat.subscribeStream((event) => {
       if (!sessionRef.current || event.sessionId !== sessionRef.current) return;
       if (event.type === "request_started") {
+        setPendingUserMessages((prev) =>
+          prev.map((item) => {
+            const itemRequestId = extractUserRequestIdFromMetadataJson(
+              item.metadataJson,
+            );
+            if (itemRequestId !== event.requestId) {
+              return item;
+            }
+            return buildPendingUserMessageFromQueuedSnapshot({
+              requestId: event.requestId,
+              sessionId: event.sessionId,
+              content: item.content,
+              startedAt: event.createdAt ?? new Date().toISOString(),
+            });
+          }),
+        );
         const startedQueuedPayload = queuedSendPayloadsRef.current.find(
           (item) => item.requestId === event.requestId,
         );
         const startedQueuedSnapshot = queuedMessagesSnapshotRef.current.find(
           (item) => item.requestId === event.requestId,
         );
+        const requestStartedAt = event.createdAt ?? new Date().toISOString();
         const pendingQueuedMessage =
-          startedQueuedPayload?.pendingMessage ??
-          (startedQueuedSnapshot
+          (startedQueuedPayload
+            ? buildPendingUserMessageFromQueuedSnapshot({
+                requestId: startedQueuedPayload.requestId,
+                sessionId: event.sessionId,
+                content: startedQueuedPayload.pendingMessage.content,
+                startedAt: requestStartedAt,
+              })
+            : undefined) ??
+          (startedQueuedSnapshot?.persistUserMessage
             ? buildPendingUserMessageFromQueuedSnapshot({
                 requestId: startedQueuedSnapshot.requestId,
                 sessionId: event.sessionId,
                 content: startedQueuedSnapshot.content,
+                startedAt: requestStartedAt,
               })
             : undefined);
         if (pendingQueuedMessage) {
@@ -1889,16 +1908,13 @@ export const ModuleChatPane = ({
         if (!isSameScope(event.scope, effectiveScope)) return;
         if (!sessionRef.current || event.sessionId !== sessionRef.current)
           return;
-        void queryClient.invalidateQueries({
-          queryKey: ["chat-messages", scopeKey, event.sessionId],
-        });
         if (event.role === "assistant" && !requestRef.current) {
           clearSessionStream(event.sessionId);
         }
       },
     );
     return unsubscribe;
-  }, [clearSessionStream, effectiveScope, queryClient, scopeKey]);
+  }, [clearSessionStream, effectiveScope]);
 
   // ---------------------------------------------------------------------------
   // Session bootstrap
@@ -1970,7 +1986,12 @@ export const ModuleChatPane = ({
   }, [queuedMessagesQuery.data]);
 
   const sendMutation = useMutation({
-    mutationFn: async ({ sessionId, text, requestId, files }: SendPayload) => {
+    mutationFn: async ({
+      sessionId,
+      text,
+      requestId,
+      files,
+    }: QueuedSendPayload) => {
       let attachments: ChatAttachmentDTO[] | undefined;
       if (files.length > 0) {
         attachments = await api.chat.uploadFiles({
@@ -1996,100 +2017,72 @@ export const ModuleChatPane = ({
         contextSnapshot,
       });
     },
-    onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: ["chat-messages", scopeKey, variables.sessionId],
-      });
-      releaseStreamRequest(variables.sessionId, variables.requestId);
-      const streamState =
-        useChatStreamStore.getState().sessions[variables.sessionId];
-      if (!streamState?.activeRequestId) {
-        clearSessionStream(variables.sessionId);
-      }
-    },
-    onError: async (error, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: ["chat-messages", scopeKey, variables.sessionId],
-      });
-      setPendingUserMessages((prev) =>
-        prev.filter(
-          (item) => item.id !== `pending-user-${variables.requestId}`,
-        ),
-      );
-      releaseStreamRequest(variables.sessionId, variables.requestId);
-      const streamState =
-        useChatStreamStore.getState().sessions[variables.sessionId];
-      if (!streamState?.activeRequestId) {
-        clearSessionStream(variables.sessionId);
-      }
-      message.error(error instanceof Error ? error.message : t("发送失败"));
-    },
-  });
-
-  const queueMutation = useMutation({
-    mutationFn: async ({
-      sessionId,
-      text,
-      requestId,
-      files,
-      deliveryMode,
-    }: QueuedSendPayload) => {
-      let attachments: ChatAttachmentDTO[] | undefined;
-      if (files.length > 0) {
-        attachments = await api.chat.uploadFiles({
-          scope: effectiveScope,
-          files: files.map((file) => ({
-            name: file.name,
-            sourcePath: file.sourcePath,
-            mimeType: file.mimeType,
-            size: file.size,
-          })),
+    onSuccess: (data, variables) => {
+      if (variables.localDisposition === "process_now" && data.queued) {
+        setPendingUserMessages((prev) =>
+          prev.filter((item) => item.id !== variables.pendingMessage.id),
+        );
+        setQueuedSendPayloads((prev) => {
+          const next: QueuedSendPayload[] = [
+            ...prev,
+            {
+              ...variables,
+              localDisposition: "queue",
+            },
+          ];
+          queuedSendPayloadsRef.current = next;
+          return next;
         });
+        useChatStreamStore
+          .getState()
+          .releaseRequest(variables.sessionId, variables.requestId);
+        if (requestRef.current === variables.requestId) {
+          requestRef.current = undefined;
+        }
+        clearSessionStream(variables.sessionId);
+        return;
       }
 
-      return api.chat.queueMessage({
-        scope: effectiveScope,
-        module,
-        sessionId,
-        requestId,
-        message: text,
-        model: selectedModel,
-        thinkingLevel: selectedThinkingLevel,
-        attachments,
-        contextSnapshot,
-        deliveryMode,
-      });
-    },
-    onSuccess: (_data, variables) => {
-      queryClient.setQueryData<ChatQueuedMessageDTO[]>(
-        queuedMessagesQueryKey,
-        (prev) => {
-          const nextItem: ChatQueuedMessageDTO = {
+      if (variables.localDisposition === "queue" && !data.queued) {
+        setQueuedSendPayloads((prev) => {
+          const next = prev.filter((item) => item.requestId !== variables.requestId);
+          queuedSendPayloadsRef.current = next;
+          return next;
+        });
+        setPendingUserMessages((prev) => {
+          const pendingMessage = buildPendingUserMessageFromQueuedSnapshot({
             requestId: variables.requestId,
-            deliveryMode: variables.deliveryMode,
+            sessionId: variables.sessionId,
             content: variables.pendingMessage.content,
-          };
-          const current = prev ?? [];
-          if (current.some((item) => item.requestId === nextItem.requestId)) {
-            return current.map((item) =>
-              item.requestId === nextItem.requestId ? nextItem : item,
-            );
+            startedAt: new Date().toISOString(),
+          });
+          if (prev.some((item) => item.id === variables.pendingMessage.id)) {
+            return prev;
           }
-          return [...current, nextItem];
-        },
-      );
+          return [...prev, pendingMessage];
+        });
+        requestRef.current = variables.requestId;
+        forceScrollToBottomRef.current = true;
+        isBottomAnchorVisibleRef.current = true;
+        beginStreamRequest(variables.sessionId, variables.requestId);
+      }
     },
     onError: (error, variables) => {
+      setPendingUserMessages((prev) =>
+        prev.filter((item) => item.id !== variables.pendingMessage.id),
+      );
       setQueuedSendPayloads((prev) => {
         const next = prev.filter((item) => item.requestId !== variables.requestId);
         queuedSendPayloadsRef.current = next;
         return next;
       });
-      queryClient.setQueryData<ChatQueuedMessageDTO[]>(
-        queuedMessagesQueryKey,
-        (prev) =>
-          (prev ?? []).filter((item) => item.requestId !== variables.requestId),
-      );
+      useChatStreamStore
+        .getState()
+        .releaseRequest(variables.sessionId, variables.requestId);
+      if (requestRef.current === variables.requestId) {
+        requestRef.current = undefined;
+      }
+      clearSessionStream(variables.sessionId);
       message.error(error instanceof Error ? error.message : t("发送失败"));
     },
   });
@@ -2110,10 +2103,21 @@ export const ModuleChatPane = ({
     onError: (error) => {
       message.error(error instanceof Error ? error.message : t("打断失败"));
     },
-    onSuccess: () => {
-      queuedSendPayloadsRef.current = [];
-      setQueuedSendPayloads([]);
-      queryClient.setQueryData<ChatQueuedMessageDTO[]>(queuedMessagesQueryKey, []);
+    onSuccess: (_result, variables) => {
+      const nextQueuedPayloads = variables.requestId
+        ? queuedSendPayloadsRef.current.filter(
+            (item) => item.requestId !== variables.requestId,
+          )
+        : [];
+      queuedSendPayloadsRef.current = nextQueuedPayloads;
+      setQueuedSendPayloads(nextQueuedPayloads);
+      queryClient.setQueryData<ChatQueuedMessageDTO[]>(
+        queuedMessagesQueryKey,
+        (prev) =>
+          variables.requestId
+            ? (prev ?? []).filter((item) => item.requestId !== variables.requestId)
+            : [],
+      );
     },
   });
 
@@ -2207,7 +2211,9 @@ export const ModuleChatPane = ({
       .map((item, index) => ({ item, index }))
       .sort(
         (left, right) =>
-          left.item.createdAt.localeCompare(right.item.createdAt) ||
+          getMessageSortCreatedAt(left.item).localeCompare(
+            getMessageSortCreatedAt(right.item),
+          ) ||
           left.index - right.index,
       );
     const timelineItems: TimelineItem[] = [];
@@ -2459,7 +2465,7 @@ export const ModuleChatPane = ({
     const shouldUseSmoothScroll =
       !shouldForceScroll &&
       !isInitialBottomPositioning &&
-      !sendMutation.isPending &&
+      !activeRequestId &&
       !streamingInProgress &&
       !hasPendingAssistantReply &&
       distanceToBottom <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
@@ -2469,9 +2475,9 @@ export const ModuleChatPane = ({
     isBottomAnchorVisibleRef.current = true;
   }, [
     getMessageViewport,
+    activeRequestId,
     hasPendingAssistantReply,
     renderedMessages,
-    sendMutation.isPending,
     streamingBlocks,
     streamingInProgress,
     scrollToBottom,
@@ -2547,7 +2553,7 @@ export const ModuleChatPane = ({
   };
 
   const startSend = useCallback(
-    (payload: SendPayload): void => {
+    (payload: QueuedSendPayload): void => {
       requestRef.current = payload.requestId;
       forceScrollToBottomRef.current = true;
       isBottomAnchorVisibleRef.current = true;
@@ -2558,7 +2564,7 @@ export const ModuleChatPane = ({
   );
 
   const handleSend = (
-    queuedDeliveryMode: ChatQueueDeliveryMode = "steer",
+    _queuedDeliveryMode: ChatQueueDeliveryMode = "followUp",
   ): void => {
     void (async () => {
       const text = input.trim();
@@ -2623,6 +2629,7 @@ export const ModuleChatPane = ({
 
       const requestId =
         globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}`;
+      const queuedAt = new Date().toISOString();
       setInput("");
       setPendingFiles((prev) => {
         revokePreviewUrls(prev);
@@ -2632,16 +2639,17 @@ export const ModuleChatPane = ({
         sessionId,
         text,
         requestId,
-        deliveryMode: queuedDeliveryMode,
+        deliveryMode: "followUp",
         files: files.map(({ previewUrl: _previewUrl, ...file }) => file),
         pendingMessage: {
           id: `pending-user-${requestId}`,
           sessionId,
           role: "user",
           content: formatDraftMessage(text, files),
-          metadataJson: buildUserRequestMetadataJson(requestId),
-          createdAt: new Date().toISOString(),
+          metadataJson: buildUserRequestMetadataJson(requestId, queuedAt),
+          createdAt: queuedAt,
         },
+        localDisposition: "queue",
       };
 
       const hasActiveProcessing =
@@ -2652,16 +2660,14 @@ export const ModuleChatPane = ({
           queuedSendPayloadsRef.current = next;
           return next;
         });
-        queueMutation.mutate(nextPayload);
+        sendMutation.mutate(nextPayload);
         return;
       }
 
       setPendingUserMessages((prev) => [...prev, nextPayload.pendingMessage]);
       startSend({
-        sessionId,
-        text,
-        requestId,
-        files: nextPayload.files,
+        ...nextPayload,
+        localDisposition: "process_now",
       });
     })();
   };
@@ -2775,7 +2781,7 @@ export const ModuleChatPane = ({
           {
             id: item.requestId,
             content: item.pendingMessage.content,
-            mode: item.deliveryMode,
+            queuedAt: item.pendingMessage.createdAt,
           } satisfies QueuedComposerMessage,
         ]),
       );
@@ -2788,31 +2794,26 @@ export const ModuleChatPane = ({
         return {
           id: item.requestId,
           content: item.content,
-          mode: item.deliveryMode,
+          queuedAt: item.queuedAt,
+          sourceName: item.sourceName,
         } satisfies QueuedComposerMessage;
       });
-      return [...restoredMessages, ...localById.values()];
+      return [...restoredMessages, ...localById.values()].sort((left, right) =>
+        left.queuedAt.localeCompare(right.queuedAt),
+      );
     },
     [queuedMessagesQuery.data, queuedSendPayloads],
   );
   const canInterrupt =
     Boolean(currentSessionId) &&
-    ((sendMutation.isPending &&
-      sendMutation.variables?.sessionId === currentSessionId) ||
-      streamingInProgress ||
+    (streamingInProgress ||
       Boolean(activeRequestId) ||
       queuedComposerMessages.length > 0) &&
     !interruptMutation.isPending;
   const showStreamingPanel =
-    (sendMutation.isPending &&
-      sendMutation.variables?.sessionId === currentSessionId) ||
-    streamingInProgress ||
-    hasPendingAssistantReply;
+    streamingInProgress || Boolean(activeRequestId) || hasPendingAssistantReply;
   const showWorkingIndicator =
-    ((sendMutation.isPending &&
-      sendMutation.variables?.sessionId === currentSessionId) ||
-      streamingInProgress ||
-      Boolean(activeRequestId)) &&
+    (streamingInProgress || Boolean(activeRequestId)) &&
     !streamingThinkingActive;
   const isAutoLayout = layoutMode === "auto";
   const rootClassName = isAutoLayout
@@ -2834,8 +2835,8 @@ export const ModuleChatPane = ({
       variant={composerVariant}
       queuedMessages={queuedComposerMessages}
       queuedMessagesLabel={t("排队中的消息")}
-      steerQueuedLabel={t("继续修正")}
-      followUpQueuedLabel={t("稍后跟进")}
+      queuedSourcePrefix={t("来自")}
+      queuedSourceSuffix={t("的消息")}
       pendingFiles={pendingFiles}
       onRemovePendingFile={handleRemovePendingFile}
       showInputShortcutTip={showInputShortcutTip}
