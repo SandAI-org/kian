@@ -5,7 +5,6 @@ import type {
   ChatModuleType,
   ChatScope,
   ChatStreamEvent,
-  ModuleType,
 } from "@shared/types";
 import { randomUUID } from "node:crypto";
 import {
@@ -92,7 +91,6 @@ const WEIXIN_HELP_MESSAGE =
 const DISCORD_GATEWAY_URL = "wss://gateway.discord.gg";
 const DISCORD_GATEWAY_RECONNECT_DELAY_MS = 5_000;
 const DISCORD_GATEWAY_INTENTS = 1 << 0;
-const CHANNEL_DEFAULT_MODULE: ModuleType = "docs";
 const CHANNEL_SUPPORTED_INPUT_MESSAGE =
   "目前支持文本和图片、音频、视频、文档消息。";
 const CHANNEL_HELP_MESSAGE =
@@ -116,14 +114,6 @@ const getSessionReplyContextKey = (
   sessionId: string,
 ): string =>
   `${scope.type === "main" ? MAIN_AGENT_SCOPE_ID : scope.projectId}:${sessionId}`;
-
-const getDirectChannelSessionKey = (
-  scope: ChatScope,
-  provider: SessionReplyContext["provider"],
-  chatId: string,
-  accountId?: string,
-): string =>
-  `${scope.type === "main" ? MAIN_AGENT_SCOPE_ID : scope.projectId}:${provider}:${accountId ?? "-"}:${chatId}`;
 
 interface TelegramChat {
   id: number | string;
@@ -316,8 +306,7 @@ let feishuLastMessageTsByChat = new Map<string, number>();
 let feishuLastChatSyncAt = 0;
 let feishuEventCache = new Map<string, number>();
 let sessionReplyContextByKey = new Map<string, SessionReplyContext>();
-let directChannelSessionIdByKey = new Map<string, string>();
-let directChannelSessionPromiseByKey = new Map<string, Promise<string>>();
+let mainAgentSessionPromise: Promise<string> | null = null;
 let runtimeSignature = "";
 
 const stopTelegramPolling = (): void => {
@@ -1126,123 +1115,48 @@ const rememberSessionReplyContext = (input: {
   );
 };
 
-const rememberDirectChannelSession = (input: {
-  scope: ChatScope;
-  sessionId: string;
+const resolveMainAgentLatestSessionId = async (input: {
   provider: SessionReplyContext["provider"];
-  chatId: string;
-  accountId?: string;
-}): void => {
-  directChannelSessionIdByKey.set(
-    getDirectChannelSessionKey(
-      input.scope,
-      input.provider,
-      input.chatId,
-      input.accountId,
-    ),
-    input.sessionId,
-  );
-  rememberSessionReplyContext(input);
-};
-
-const resolveDirectChannelSessionId = async (input: {
-  scope: ChatScope;
-  provider: SessionReplyContext["provider"];
-  module: ChatModuleType;
-  title: string;
   chatId: string;
   accountId?: string;
 }): Promise<string> => {
-  const key = getDirectChannelSessionKey(
-    input.scope,
-    input.provider,
-    input.chatId,
-    input.accountId,
-  );
-  const existingPromise = directChannelSessionPromiseByKey.get(key);
-  if (existingPromise) {
-    return existingPromise;
-  }
-
-  const sessionPromise = (async () => {
-    const existingSessionId = directChannelSessionIdByKey.get(key);
-    if (existingSessionId) {
-      const existingSession = await repositoryService.getChatSession(
-        input.scope,
-        existingSessionId,
-      );
-      if (existingSession) {
-        rememberSessionReplyContext({
-          scope: input.scope,
-          sessionId: existingSessionId,
-          provider: input.provider,
-          chatId: input.chatId,
-          accountId: input.accountId,
-        });
-        return existingSessionId;
+  const existingPromise = mainAgentSessionPromise;
+  const sessionPromise =
+    existingPromise ??
+    (async () => {
+      const sessions = await repositoryService.listChatSessions(MAIN_CHAT_SCOPE);
+      const latestSession = sessions[0];
+      if (latestSession) {
+        return latestSession.id;
       }
-      directChannelSessionIdByKey.delete(key);
-    }
 
-    const session = await repositoryService.createChatSession({
-      scope: input.scope,
-      module: input.module,
-      title: input.title,
-    });
-    rememberDirectChannelSession({
-      scope: input.scope,
-      sessionId: session.id,
-      provider: input.provider,
-      chatId: input.chatId,
-      accountId: input.accountId,
-    });
-    return session.id;
-  })();
+      const session = await repositoryService.createChatSession({
+        scope: MAIN_CHAT_SCOPE,
+        module: "main",
+        title: "",
+      });
+      return session.id;
+    })();
 
-  directChannelSessionPromiseByKey.set(key, sessionPromise);
+  if (!existingPromise) {
+    mainAgentSessionPromise = sessionPromise;
+  }
+
   try {
-    return await sessionPromise;
-  } finally {
-    if (directChannelSessionPromiseByKey.get(key) === sessionPromise) {
-      directChannelSessionPromiseByKey.delete(key);
-    }
-  }
-};
-
-const resolveLatestExistingSessionId = async (input: {
-  scope: ChatScope;
-  provider: SessionReplyContext["provider"];
-  module: ChatModuleType;
-  title: string;
-  chatId: string;
-  accountId?: string;
-}): Promise<string> => {
-  const sessions = await repositoryService.listChatSessions(input.scope);
-  const latestSession = sessions[0];
-  if (latestSession) {
-    rememberDirectChannelSession({
-      scope: input.scope,
-      sessionId: latestSession.id,
+    const sessionId = await sessionPromise;
+    rememberSessionReplyContext({
+      scope: MAIN_CHAT_SCOPE,
+      sessionId,
       provider: input.provider,
       chatId: input.chatId,
       accountId: input.accountId,
     });
-    return latestSession.id;
+    return sessionId;
+  } finally {
+    if (mainAgentSessionPromise === sessionPromise) {
+      mainAgentSessionPromise = null;
+    }
   }
-
-  const session = await repositoryService.createChatSession({
-    scope: input.scope,
-    module: input.module,
-    title: input.title,
-  });
-  rememberDirectChannelSession({
-    scope: input.scope,
-    sessionId: session.id,
-    provider: input.provider,
-    chatId: input.chatId,
-    accountId: input.accountId,
-  });
-  return session.id;
 };
 
 const createDirectChannelReplyStreamer = (input: {
@@ -1908,7 +1822,7 @@ const processTelegramUpdate = async (
 
   const attachments = await loadTelegramInboundAttachments({
     token: state.token,
-    scope: state.scope,
+    scope: MAIN_CHAT_SCOPE,
     chatId,
     message,
   });
@@ -1932,14 +1846,7 @@ const processTelegramUpdate = async (
   try {
     const stopTyping = createTypingIndicator(state.token, chatId);
     try {
-      const session = await repositoryService.createChatSession({
-        scope: state.scope,
-        module: CHANNEL_DEFAULT_MODULE,
-        title: `Telegram ${chatId}`,
-      });
-      rememberSessionReplyContext({
-        scope: state.scope,
-        sessionId: session.id,
+      const sessionId = await resolveMainAgentLatestSessionId({
         provider: "telegram",
         chatId,
       });
@@ -1954,7 +1861,7 @@ const processTelegramUpdate = async (
         sendAssistantMessage: async (message, isError) => {
           const fileAttachments = extractTelegramFileAttachments(
             message,
-            state.scope,
+            MAIN_CHAT_SCOPE,
           );
           const assistantText = stripTelegramFileMarkdown(message);
           const messageText = formatTelegramAssistantBody({
@@ -1991,9 +1898,9 @@ const processTelegramUpdate = async (
       const requestId = randomUUID();
       const result = await chatService.send(
         {
-          scope: state.scope,
-          module: CHANNEL_DEFAULT_MODULE,
-          sessionId: session.id,
+          scope: MAIN_CHAT_SCOPE,
+          module: "main",
+          sessionId,
           requestId,
           message: text,
           attachments: attachments.length > 0 ? attachments : undefined,
@@ -2345,22 +2252,10 @@ const processBotIncomingMessage = async (input: {
         : input.provider === "飞书"
           ? "feishu"
           : "telegram";
-    const sessionId =
-      provider === "feishu"
-        ? await resolveLatestExistingSessionId({
-            scope: input.state.scope,
-            provider,
-            module: CHANNEL_DEFAULT_MODULE,
-            title: `${input.provider} ${input.chatId}`,
-            chatId: input.chatId,
-          })
-        : await resolveDirectChannelSessionId({
-            scope: input.state.scope,
-            provider,
-            module: CHANNEL_DEFAULT_MODULE,
-            title: `${input.provider} ${input.chatId}`,
-            chatId: input.chatId,
-          });
+    const sessionId = await resolveMainAgentLatestSessionId({
+      provider,
+      chatId: input.chatId,
+    });
 
     const progressiveStreamer = createTelegramAssistantProgressiveStreamer({
       sendToolRunningMessage: async (tool) => {
@@ -2372,7 +2267,7 @@ const processBotIncomingMessage = async (input: {
       sendAssistantMessage: async (message, isError) => {
         const fileAttachments = extractTelegramFileAttachments(
           message,
-          input.state.scope,
+          MAIN_CHAT_SCOPE,
         );
         const assistantText = stripTelegramFileMarkdown(message);
         const messageText = formatTelegramAssistantBody({
@@ -2435,8 +2330,8 @@ const processBotIncomingMessage = async (input: {
     const requestId = randomUUID();
     const result = await chatService.send(
       {
-        scope: input.state.scope,
-        module: CHANNEL_DEFAULT_MODULE,
+        scope: MAIN_CHAT_SCOPE,
+        module: "main",
         sessionId,
         requestId,
         message: text,
@@ -2515,18 +2410,15 @@ const processWeixinMessage = async (
   }
 
   try {
-    const sessionId = await resolveDirectChannelSessionId({
-      scope: state.scope,
+    const sessionId = await resolveMainAgentLatestSessionId({
       provider: "weixin",
-      module: CHANNEL_DEFAULT_MODULE,
-      title: "",
       chatId,
       accountId: message.accountId,
     });
 
     const progressiveStreamer = createDirectChannelReplyStreamer({
       provider: "weixin",
-      projectId: state.projectId,
+      projectId: MAIN_AGENT_SCOPE_ID,
       chatId,
       sendText: replyText,
       sendDocument: replyDocument,
@@ -2535,8 +2427,8 @@ const processWeixinMessage = async (
     const requestId = randomUUID();
     const result = await chatService.send(
       {
-        scope: state.scope,
-        module: CHANNEL_DEFAULT_MODULE,
+        scope: MAIN_CHAT_SCOPE,
+        module: "main",
         sessionId,
         requestId,
         message: text,
@@ -2604,7 +2496,7 @@ const processDiscordMessage = async (
   }
   const attachments = await loadDiscordInboundAttachments({
     token: state.token,
-    scope: state.scope,
+    scope: MAIN_CHAT_SCOPE,
     chatId,
     message,
   });
@@ -2682,7 +2574,7 @@ const processFeishuMessage = async (
   const text = parseFeishuTextContent(message);
   const attachments = await loadFeishuInboundAttachments({
     token: state.token,
-    scope: state.scope,
+    scope: MAIN_CHAT_SCOPE,
     chatId,
     message,
   });
@@ -2933,8 +2825,7 @@ const stopService = (): void => {
   discordRuntime = null;
   feishuRuntime = null;
   sessionReplyContextByKey = new Map<string, SessionReplyContext>();
-  directChannelSessionIdByKey = new Map<string, string>();
-  directChannelSessionPromiseByKey = new Map<string, Promise<string>>();
+  mainAgentSessionPromise = null;
   runtimeSignature = "";
 };
 
