@@ -30,7 +30,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 
 type McpFormValues = {
@@ -99,6 +99,9 @@ const getTransportIcon = (transport: McpTransportType) => {
   }
   return <LinkOutlined className="!text-slate-500" />;
 };
+
+const mcpCardBaseClassName =
+  "!rounded-xl !border-[#dde6f5] !bg-white !shadow-[0_8px_20px_rgba(15,23,42,0.03)] !transition-all !duration-200 hover:!-translate-y-0.5 hover:!border-[#cbd9f0] hover:!shadow-[0_12px_24px_rgba(15,23,42,0.06)]";
 
 export const McpPage = () => {
   const queryClient = useQueryClient();
@@ -245,23 +248,25 @@ export const McpPage = () => {
     resetFormState();
   };
 
+  const openCreateDrawer = useCallback(() => {
+    setEditingServer(null);
+    setActiveTransport("stdio");
+    form.resetFields();
+    setIsDrawerOpen(true);
+  }, [form]);
+
   const headerActions = useMemo(
     () => (
       <Button
         type="primary"
         icon={<PlusOutlined />}
         className="!h-10 !rounded-full !px-5"
-        onClick={() => {
-          setEditingServer(null);
-          setActiveTransport("stdio");
-          form.resetFields();
-          setIsDrawerOpen(true);
-        }}
+        onClick={openCreateDrawer}
       >
-        添加 MCP 服务
+        {translateUiText(language, "添加 MCP 服务")}
       </Button>
     ),
-    [form],
+    [language, openCreateDrawer],
   );
 
   useEffect(() => {
@@ -294,122 +299,130 @@ export const McpPage = () => {
   return (
     <>
       <ScrollArea className="h-full">
-        <div className="space-y-4 px-5 pb-5">
-          <Card className="panel !rounded-[16px]">
-            <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
-              <InfoCircleOutlined className="!text-slate-400" />
-              <Typography.Text className="!text-xs !text-slate-500">
-                已启用的服务会在下一轮 Agent 对话时自动注入运行时
-              </Typography.Text>
+        <div className="space-y-4 px-5 pb-5 pt-4">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <InfoCircleOutlined className="!text-slate-400" />
+            <Typography.Text className="!text-xs !text-slate-500">
+              {t("已启用的服务会在下一轮 Agent 对话时自动注入运行时")}
+            </Typography.Text>
+          </div>
+
+          {mcpServersQuery.isLoading ? (
+            <div className="flex h-[180px] items-center justify-center">
+              <Spin />
             </div>
+          ) : (mcpServersQuery.data ?? []).length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={t("还没有 MCP 服务，点击右上角按钮添加")}
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {(mcpServersQuery.data ?? []).map((server) => {
+                const toggleLoading =
+                  toggleServerMutation.isPending &&
+                  toggleServerMutation.variables?.id === server.id;
 
-            {mcpServersQuery.isLoading ? (
-              <div className="flex h-[180px] items-center justify-center">
-                <Spin />
-              </div>
-            ) : (mcpServersQuery.data ?? []).length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="还没有 MCP 服务，点击右上角按钮添加"
-              />
-            ) : (
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                {(mcpServersQuery.data ?? []).map((server) => {
-                  const toggleLoading =
-                    toggleServerMutation.isPending &&
-                    toggleServerMutation.variables?.id === server.id;
-
-                  return (
-                    <Card
-                      key={server.id}
-                      size="small"
-                      className="!rounded-xl !border-[#dde6f5] !bg-[#fbfdff] !shadow-[0_8px_20px_rgba(15,23,42,0.03)]"
-                    >
-                      <Space direction="vertical" size={10} className="w-full">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <ApiOutlined className="!text-slate-500" />
-                              <Typography.Text className="!text-sm !font-semibold !text-slate-900">
-                                {server.name}
-                              </Typography.Text>
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Tag className="!m-0">{TRANSPORT_LABELS[server.transport]}</Tag>
-                              <Tag
-                                color={server.enabled ? "blue" : "default"}
-                                className="!m-0"
-                              >
-                                {server.enabled ? "已启用" : "已停用"}
-                              </Tag>
-                            </div>
-                          </div>
+                return (
+                  <Card
+                    key={server.id}
+                    size="small"
+                    className={mcpCardBaseClassName}
+                  >
+                    <Space direction="vertical" size={10} className="w-full">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <Switch
-                              checked={server.enabled}
-                              loading={toggleLoading}
-                              onChange={(checked) =>
-                                toggleServerMutation.mutate({
-                                  id: server.id,
-                                  enabled: checked,
-                                })
-                              }
-                            />
-                            <Button
-                              icon={<EditOutlined />}
-                              onClick={() => openEditDrawer(server)}
+                            <ApiOutlined className="!text-slate-500" />
+                            <Typography.Text className="!text-sm !font-semibold !text-slate-900">
+                              {server.name}
+                            </Typography.Text>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Tag className="!m-0">
+                              {TRANSPORT_LABELS[server.transport]}
+                            </Tag>
+                            <Tag
+                              color={server.enabled ? "blue" : "default"}
+                              className="!m-0"
                             >
-                              编辑
-                            </Button>
+                              {server.enabled ? t("已启用") : t("已停用")}
+                            </Tag>
                           </div>
                         </div>
-
-                        <div className="rounded-xl border border-[#e6ecf6] bg-white px-3 py-3">
-                          <div className="mb-1 flex items-center gap-2 text-xs text-slate-500">
-                            {getTransportIcon(server.transport)}
-                            <span>
-                              {server.transport === "stdio" ? "启动命令" : "服务地址"}
-                            </span>
-                          </div>
-                          <Typography.Text className="block break-all !font-mono !text-[13px] !text-slate-700">
-                            {summarizeServer(server)}
-                          </Typography.Text>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={server.enabled}
+                            loading={toggleLoading}
+                            onChange={(checked) =>
+                              toggleServerMutation.mutate({
+                                id: server.id,
+                                enabled: checked,
+                              })
+                            }
+                          />
+                          <Button
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => openEditDrawer(server)}
+                          >
+                            {t("编辑")}
+                          </Button>
                         </div>
+                      </div>
 
-                        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                          {server.transport === "stdio" ? (
-                            <>
-                              <span>{t(`参数 ${server.args.length}`)}</span>
-                              <span>
-                                {t(`环境变量 ${Object.keys(server.env).length}`)}
-                              </span>
-                              <span>
-                                {t(`工作目录 ${server.cwd ? "已设置" : "未设置"}`)}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span>请求头 {Object.keys(server.headers).length}</span>
-                              <span>
-                                {t(
-                                  `更新时间 ${formatUtcTimestampToLocal(server.updatedAt)}`,
-                                )}
-                              </span>
-                            </>
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        {getTransportIcon(server.transport)}
+                        <span>
+                          {t(
+                            server.transport === "stdio"
+                              ? "启动命令"
+                              : "服务地址",
                           )}
-                        </div>
-                      </Space>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
+                        </span>
+                      </div>
+                      <Typography.Paragraph
+                        className="!my-0 break-all !font-mono !text-[13px] !text-slate-700"
+                        ellipsis={{ rows: 2 }}
+                      >
+                        {summarizeServer(server)}
+                      </Typography.Paragraph>
+
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        {server.transport === "stdio" ? (
+                          <>
+                            <span>{t(`参数 ${server.args.length}`)}</span>
+                            <span>
+                              {t(`环境变量 ${Object.keys(server.env).length}`)}
+                            </span>
+                            <span>
+                              {t(`工作目录 ${server.cwd ? "已设置" : "未设置"}`)}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span>
+                              {t("请求头")} {Object.keys(server.headers).length}
+                            </span>
+                            <span>
+                              {t(
+                                `更新时间 ${formatUtcTimestampToLocal(server.updatedAt)}`,
+                              )}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </Space>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
       </ScrollArea>
 
       <Drawer
-        title={editingServer ? "编辑 MCP 服务" : "添加 MCP 服务"}
+        title={editingServer ? t("编辑 MCP 服务") : t("添加 MCP 服务")}
         placement="right"
         open={isDrawerOpen}
         onClose={closeDrawer}
@@ -434,7 +447,7 @@ export const McpPage = () => {
         footer={
           <div className="flex items-center justify-end gap-3">
             <Button onClick={closeDrawer}>
-              取消
+              {t("取消")}
             </Button>
             <Button
               type="primary"
@@ -443,7 +456,7 @@ export const McpPage = () => {
                 void submitServer();
               }}
             >
-              {editingServer ? "保存修改" : "添加服务"}
+              {editingServer ? t("保存修改") : t("添加服务")}
             </Button>
           </div>
         }

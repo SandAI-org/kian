@@ -1,4 +1,6 @@
+import type { MainLayoutOutletContext } from "@renderer/app/MainLayout";
 import {
+  CloseOutlined,
   CheckCircleFilled,
   DeleteOutlined,
   DownloadOutlined,
@@ -13,17 +15,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
+  Drawer,
   Empty,
   Input,
   Space,
   Spin,
   Switch,
-  Tag,
   Tabs,
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 
 const skillCardBaseClassName =
   "!rounded-xl !border-[#dde6f5] !shadow-[0_8px_20px_rgba(15,23,42,0.03)] !transition-all !duration-200 hover:!-translate-y-0.5 hover:!border-[#cbd9f0] hover:!shadow-[0_12px_24px_rgba(15,23,42,0.06)]";
@@ -35,8 +38,12 @@ export const SkillsPage = () => {
   const { language } = useAppI18n();
   const t = (value: string): string => translateUiText(language, value);
   const queryClient = useQueryClient();
+  const { setHeaderActions } = useOutletContext<MainLayoutOutletContext>();
+  const [activeTab, setActiveTab] = useState("installed");
   const [selectedRepository, setSelectedRepository] = useState("");
   const [repositoryInput, setRepositoryInput] = useState("");
+  const [isAddRepositoryDrawerOpen, setIsAddRepositoryDrawerOpen] =
+    useState(false);
 
   const configQuery = useQuery({
     queryKey: ["skills", "config"],
@@ -82,9 +89,12 @@ export const SkillsPage = () => {
   const addRepositoryMutation = useMutation({
     mutationFn: (repositoryUrl: string) =>
       api.skills.addRepository(repositoryUrl),
-    onSuccess: async () => {
+    onSuccess: async (_, repositoryUrl) => {
       message.success(t("仓库添加成功"));
       setRepositoryInput("");
+      setSelectedRepository(repositoryUrl);
+      setActiveTab("repository");
+      setIsAddRepositoryDrawerOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["skills", "config"] });
     },
     onError: (error) => {
@@ -176,20 +186,38 @@ export const SkillsPage = () => {
     [repositories, selectedRepository],
   );
 
+  const openAddRepositoryDrawer = useCallback(() => {
+    setActiveTab("repository");
+    setIsAddRepositoryDrawerOpen(true);
+  }, []);
+
+  const headerActions = useMemo(
+    () => (
+      <Button
+        type="primary"
+        icon={<PlusOutlined />}
+        className="!h-10 !rounded-full !px-5"
+        onClick={openAddRepositoryDrawer}
+      >
+        {translateUiText(language, "添加技能仓库")}
+      </Button>
+    ),
+    [language, openAddRepositoryDrawer],
+  );
+
+  useEffect(() => {
+    setHeaderActions(headerActions);
+    return () => {
+      setHeaderActions(null);
+    };
+  }, [headerActions, setHeaderActions]);
+
   const skillsTabs = [
     {
       key: "installed",
       label: t("已安装技能"),
       children: (
-        <Card className="panel !rounded-[16px]">
-          <Typography.Title level={4} className="!mb-1 !text-slate-900">
-            {t("已安装技能")}
-          </Typography.Title>
-          <Typography.Paragraph className="!mb-4 !text-slate-600">
-            {t(
-              "管理已安装的技能，可控制主 Agent / 子智能体的可见性，并卸载不需要的技能（内置技能不可卸载）。",
-            )}
-          </Typography.Paragraph>
+        <div className="space-y-4">
           {installedQuery.isLoading ? (
             <div className="flex h-[96px] items-center justify-center">
               <Spin />
@@ -216,7 +244,7 @@ export const SkillsPage = () => {
                   <Card
                     key={skill.id}
                     size="small"
-                    className={`${skillCardBaseClassName} !bg-[#f8fbff]`}
+                    className={`${skillCardBaseClassName} !bg-white`}
                   >
                     <Space direction="vertical" className="w-full" size={4}>
                       <div className="flex items-start justify-between gap-3">
@@ -224,9 +252,6 @@ export const SkillsPage = () => {
                           {skill.name}
                         </Typography.Text>
                         <div className="flex shrink-0 items-center justify-end gap-1">
-                          {isBuiltinSkill ? (
-                            <Tag className="!m-0">{t("内置")}</Tag>
-                          ) : null}
                           {!isBuiltinSkill ? (
                             <Button
                               size="small"
@@ -305,7 +330,7 @@ export const SkillsPage = () => {
               })}
             </div>
           )}
-        </Card>
+        </div>
       ),
     },
     {
@@ -313,59 +338,23 @@ export const SkillsPage = () => {
       label: t("技能仓库"),
       children: (
         <div className="space-y-4">
-          <Card className="panel !rounded-[16px]">
-            <Typography.Title level={4} className="!mb-1 !text-slate-900">
-              {t("技能仓库")}
-            </Typography.Title>
-            <Typography.Paragraph className="!mb-4 !text-slate-600">
-              {t(
-                "内置仓库来自仓库目录 skills/repositories.json。你也可以添加自定义 GitHub 仓库。",
-              )}
-            </Typography.Paragraph>
-            <Space.Compact className="w-full max-w-[760px] [&_.ant-btn]:!h-10 [&_.ant-input]:!h-10">
-              <Input
-                className="!text-[15px]"
-                value={repositoryInput}
-                onChange={(event) => setRepositoryInput(event.target.value)}
-                placeholder={t(
-                  "输入 GitHub 仓库地址，例如 https://github.com/owner/repo",
-                )}
-                onPressEnter={onAddRepository}
-              />
+          <div className="flex flex-wrap gap-2">
+            {repositories.map((repository) => (
               <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                className="!px-5 !text-[15px]"
-                loading={addRepositoryMutation.isPending}
-                onClick={onAddRepository}
+                key={repository.url}
+                type={
+                  selectedRepository === repository.url ? "primary" : "default"
+                }
+                className="!h-9"
+                onClick={() => setSelectedRepository(repository.url)}
               >
-                {t("添加仓库")}
+                <span className="max-w-[420px] truncate">{repository.url}</span>
               </Button>
-            </Space.Compact>
+            ))}
+          </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {repositories.map((repository) => (
-                <Button
-                  key={repository.url}
-                  type={
-                    selectedRepository === repository.url ? "primary" : "default"
-                  }
-                  className="!h-9"
-                  onClick={() => setSelectedRepository(repository.url)}
-                >
-                  <span className="max-w-[420px] truncate">
-                    {repository.url}
-                  </span>
-                  {repository.builtin ? (
-                    <Tag className="ml-2 !mr-0">{t("内置")}</Tag>
-                  ) : null}
-                </Button>
-              ))}
-            </div>
-          </Card>
-
-          <Card className="panel !rounded-[16px]">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Typography.Title level={4} className="!mb-0 !text-slate-900">
                 {t("仓库技能")}
               </Typography.Title>
@@ -488,21 +477,80 @@ export const SkillsPage = () => {
                 })}
               </div>
             )}
-          </Card>
+          </div>
         </div>
       ),
     },
   ];
 
   return (
-    <ScrollArea className="h-full">
-      <div className="px-5 pb-5 pt-4">
-        <Tabs
-          items={skillsTabs}
-          className="[&_.ant-tabs-nav]:!mb-5"
-          destroyInactiveTabPane={false}
+    <>
+      <ScrollArea className="h-full">
+        <div className="px-5 pb-5 pt-4">
+          <Tabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            items={skillsTabs}
+            className="[&_.ant-tabs-nav]:!mb-5"
+            destroyInactiveTabPane={false}
+          />
+        </div>
+      </ScrollArea>
+      <Drawer
+        title={t("添加技能仓库")}
+        placement="right"
+        open={isAddRepositoryDrawerOpen}
+        onClose={() => {
+          if (addRepositoryMutation.isPending) return;
+          setIsAddRepositoryDrawerOpen(false);
+          setRepositoryInput("");
+        }}
+        closable={false}
+        extra={
+          <Button
+            type="text"
+            icon={<CloseOutlined />}
+            aria-label={t("关闭")}
+            disabled={addRepositoryMutation.isPending}
+            onClick={() => {
+              setIsAddRepositoryDrawerOpen(false);
+              setRepositoryInput("");
+            }}
+          />
+        }
+        width={520}
+        maskClosable={!addRepositoryMutation.isPending}
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            <Button
+              disabled={addRepositoryMutation.isPending}
+              onClick={() => {
+                setIsAddRepositoryDrawerOpen(false);
+                setRepositoryInput("");
+              }}
+            >
+              {t("取消")}
+            </Button>
+            <Button
+              type="primary"
+              loading={addRepositoryMutation.isPending}
+              onClick={onAddRepository}
+            >
+              {t("添加仓库")}
+            </Button>
+          </div>
+        }
+      >
+        <Input
+          className="!h-10 !text-[15px]"
+          value={repositoryInput}
+          onChange={(event) => setRepositoryInput(event.target.value)}
+          placeholder={t(
+            "输入 GitHub 仓库地址，例如 https://github.com/owner/repo",
+          )}
+          onPressEnter={onAddRepository}
         />
-      </div>
-    </ScrollArea>
+      </Drawer>
+    </>
   );
 };
