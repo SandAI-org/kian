@@ -34,6 +34,7 @@ import type {
   ChatMessageDTO,
   ChatMessageMetadata,
   ChatModuleType,
+  AgentProviderDTO,
   ChatScope,
   ChatThinkingLevel,
 } from "@shared/types";
@@ -309,6 +310,11 @@ const formatProviderLabel = (provider: string): string => {
         .join(" ");
   }
 };
+
+const getProviderDisplayLabel = (
+  provider: string,
+  providerNameMap: Map<string, string>,
+): string => providerNameMap.get(provider) ?? formatProviderLabel(provider);
 
 const getScopeKey = (scope: ChatScope): string =>
   scope.type === "main" ? "main" : scope.projectId;
@@ -1654,6 +1660,10 @@ export const ModuleChatPane = ({
     queryKey: ["settings", "claude", scopeKey],
     queryFn: () => api.settings.get(effectiveScope),
   });
+  const availableProvidersQuery = useQuery({
+    queryKey: ["settings", "available-providers"],
+    queryFn: api.settings.getAvailableProviders,
+  });
   const legacyInputShortcutTipDismissed = useMemo(() => {
     if (typeof window === "undefined") {
       return false;
@@ -1728,6 +1738,16 @@ export const ModuleChatPane = ({
     [shortcutConfig],
   );
   const enabledModels = claudeStatusQuery.data?.allEnabledModels ?? [];
+  const providerNameMap = useMemo(
+    () =>
+      new Map(
+        (availableProvidersQuery.data ?? []).map((provider: AgentProviderDTO) => [
+          provider.id,
+          provider.name,
+        ]),
+      ),
+    [availableProvidersQuery.data],
+  );
   const hasEnabledModels = enabledModels.length > 0;
   const hasHydratedSelectedModel = !hasEnabledModels || Boolean(selectedModel);
 
@@ -2908,7 +2928,7 @@ export const ModuleChatPane = ({
       removeFileLabel={(fileName) => t(`移除文件 ${fileName}`)}
       selectedModel={selectedModel}
       modelOptions={enabledModels.map((m) => ({
-        label: `${formatProviderLabel(m.provider)} · ${stripProviderPrefixFromModelName(m.modelName)}`,
+        label: `${getProviderDisplayLabel(m.provider, providerNameMap)} · ${stripProviderPrefixFromModelName(m.modelName)}`,
         description: m.modelId,
         value: `${m.provider}:${m.modelId}`,
       }))}
