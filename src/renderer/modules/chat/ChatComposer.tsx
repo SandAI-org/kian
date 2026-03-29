@@ -48,6 +48,8 @@ interface ChatComposerProps {
   queuedMessagesLabel?: string;
   queuedSourcePrefix?: string;
   queuedSourceSuffix?: string;
+  removeQueuedMessageLabel?: string;
+  onRemoveQueuedMessage?: (id: string) => void;
   pendingFiles?: LocalChatFile[];
   onRemovePendingFile?: (key: string) => void;
   showInputShortcutTip?: boolean;
@@ -88,6 +90,8 @@ export const ChatComposer = ({
   queuedMessagesLabel = "",
   queuedSourcePrefix = "",
   queuedSourceSuffix = "",
+  removeQueuedMessageLabel = "",
+  onRemoveQueuedMessage,
   pendingFiles = [],
   onRemovePendingFile,
   showInputShortcutTip = false,
@@ -145,19 +149,33 @@ export const ChatComposer = ({
                   key={item.id}
                   className="rounded-md border border-[#d8e2f2] bg-white px-2.5 py-2"
                 >
-                  {item.sourceName ? (
-                    <div className="flex items-center gap-1 text-[12px] text-slate-700">
-                      <span>{queuedSourcePrefix}</span>
-                      <span className="inline-flex rounded-full border border-[#d8e2f2] bg-[#f7faff] px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                        {item.sourceName}
-                      </span>
-                      <span>{queuedSourceSuffix}</span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      {item.sourceName ? (
+                        <div className="flex items-center gap-1 text-[12px] text-slate-700">
+                          <span>{queuedSourcePrefix}</span>
+                          <span className="inline-flex rounded-full border border-[#d8e2f2] bg-[#f7faff] px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            {item.sourceName}
+                          </span>
+                          <span>{queuedSourceSuffix}</span>
+                        </div>
+                      ) : (
+                        <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-700">
+                          {item.content}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-700">
-                      {item.content}
-                    </div>
-                  )}
+                    {onRemoveQueuedMessage ? (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveQueuedMessage(item.id)}
+                        disabled={interruptLoading}
+                        className="shrink-0 text-[12px] font-medium text-slate-400 transition-colors enabled:hover:cursor-pointer enabled:hover:text-[#f97316] disabled:cursor-not-allowed disabled:text-slate-300"
+                      >
+                        {removeQueuedMessageLabel}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>

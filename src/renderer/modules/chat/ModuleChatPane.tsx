@@ -2837,6 +2837,15 @@ export const ModuleChatPane = ({
       queuedMessagesLabel={t("排队中的消息")}
       queuedSourcePrefix={t("来自")}
       queuedSourceSuffix={t("的消息")}
+      removeQueuedMessageLabel={t("移除")}
+      onRemoveQueuedMessage={(requestId) => {
+        const sessionId = currentSessionId;
+        if (!sessionId || interruptMutation.isPending) return;
+        interruptMutation.mutate({
+          sessionId,
+          requestId,
+        });
+      }}
       pendingFiles={pendingFiles}
       onRemovePendingFile={handleRemovePendingFile}
       showInputShortcutTip={showInputShortcutTip}
