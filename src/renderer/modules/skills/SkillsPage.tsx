@@ -19,6 +19,7 @@ import {
   Spin,
   Switch,
   Tag,
+  Tabs,
   Typography,
   message,
 } from "antd";
@@ -175,9 +176,11 @@ export const SkillsPage = () => {
     [repositories, selectedRepository],
   );
 
-  return (
-    <ScrollArea className="h-full">
-      <div className="space-y-4 px-5 pb-5">
+  const skillsTabs = [
+    {
+      key: "installed",
+      label: t("已安装技能"),
+      children: (
         <Card className="panel !rounded-[16px]">
           <Typography.Title level={4} className="!mb-1 !text-slate-900">
             {t("已安装技能")}
@@ -303,181 +306,202 @@ export const SkillsPage = () => {
             </div>
           )}
         </Card>
-
-        <Card className="panel !rounded-[16px]">
-          <Typography.Title level={4} className="!mb-1 !text-slate-900">
-            {t("技能仓库")}
-          </Typography.Title>
-          <Typography.Paragraph className="!mb-4 !text-slate-600">
-            {t(
-              "内置仓库来自仓库目录 skills/repositories.json。你也可以添加自定义 GitHub 仓库。",
-            )}
-          </Typography.Paragraph>
-          <Space.Compact className="w-full max-w-[760px] [&_.ant-btn]:!h-10 [&_.ant-input]:!h-10">
-            <Input
-              className="!text-[15px]"
-              value={repositoryInput}
-              onChange={(event) => setRepositoryInput(event.target.value)}
-              placeholder={t(
-                "输入 GitHub 仓库地址，例如 https://github.com/owner/repo",
-              )}
-              onPressEnter={onAddRepository}
-            />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              className="!px-5 !text-[15px]"
-              loading={addRepositoryMutation.isPending}
-              onClick={onAddRepository}
-            >
-              {t("添加仓库")}
-            </Button>
-          </Space.Compact>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {repositories.map((repository) => (
-              <Button
-                key={repository.url}
-                type={
-                  selectedRepository === repository.url ? "primary" : "default"
-                }
-                className="!h-9"
-                onClick={() => setSelectedRepository(repository.url)}
-              >
-                <span className="max-w-[420px] truncate">{repository.url}</span>
-                {repository.builtin ? (
-                  <Tag className="ml-2 !mr-0">{t("内置")}</Tag>
-                ) : null}
-              </Button>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="panel !rounded-[16px]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <Typography.Title level={4} className="!mb-0 !text-slate-900">
-              {t("仓库技能")}
+      ),
+    },
+    {
+      key: "repository",
+      label: t("技能仓库"),
+      children: (
+        <div className="space-y-4">
+          <Card className="panel !rounded-[16px]">
+            <Typography.Title level={4} className="!mb-1 !text-slate-900">
+              {t("技能仓库")}
             </Typography.Title>
-            <Space size={4} wrap>
-              {selectedRepositoryLabel ? (
-                <Typography.Text className="!text-xs !text-slate-500">
-                  {selectedRepositoryLabel}
-                </Typography.Text>
-              ) : null}
+            <Typography.Paragraph className="!mb-4 !text-slate-600">
+              {t(
+                "内置仓库来自仓库目录 skills/repositories.json。你也可以添加自定义 GitHub 仓库。",
+              )}
+            </Typography.Paragraph>
+            <Space.Compact className="w-full max-w-[760px] [&_.ant-btn]:!h-10 [&_.ant-input]:!h-10">
+              <Input
+                className="!text-[15px]"
+                value={repositoryInput}
+                onChange={(event) => setRepositoryInput(event.target.value)}
+                placeholder={t(
+                  "输入 GitHub 仓库地址，例如 https://github.com/owner/repo",
+                )}
+                onPressEnter={onAddRepository}
+              />
               <Button
-                size="small"
-                type="text"
-                icon={<ReloadOutlined />}
-                className="!h-7 !rounded-md !px-2 !text-xs !text-slate-600"
-                loading={refreshMetadataMutation.isPending}
-                disabled={!selectedRepository}
-                onClick={() => {
-                  if (!selectedRepository) return;
-                  refreshMetadataMutation.mutate(selectedRepository);
-                }}
+                type="primary"
+                icon={<PlusOutlined />}
+                className="!px-5 !text-[15px]"
+                loading={addRepositoryMutation.isPending}
+                onClick={onAddRepository}
               >
-                {t("同步元信息")}
+                {t("添加仓库")}
               </Button>
-            </Space>
-          </div>
-          {!selectedRepository ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("请先选择仓库")}
-            />
-          ) : repositorySkillsQuery.isLoading ? (
-            <div className="flex h-[180px] items-center justify-center">
-              <Spin />
-            </div>
-          ) : repositorySkillsQuery.isError ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                repositorySkillsQuery.error instanceof Error
-                  ? repositorySkillsQuery.error.message
-                  : t("加载仓库技能失败")
-              }
-            >
-              <Button
-                size="small"
-                onClick={() => repositorySkillsQuery.refetch()}
-              >
-                {t("重试")}
-              </Button>
-            </Empty>
-          ) : repositorySkills.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("当前仓库未解析到技能（未找到 SKILL.md）")}
-            />
-          ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {repositorySkills.map((skill) => {
-                const installing =
-                  installMutation.isPending &&
-                  installMutation.variables?.repositoryUrl ===
-                    selectedRepository &&
-                  installMutation.variables?.skillPath === skill.skillPath;
+            </Space.Compact>
 
-                return (
-                  <Card
-                    key={skill.id}
-                    size="small"
-                    className={`${skillCardBaseClassName} !bg-white`}
-                  >
-                    <Space direction="vertical" className="w-full" size={12}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Typography.Text className="!text-sm !font-semibold !text-slate-900">
-                            {skill.name}
-                          </Typography.Text>
-                        </div>
-                        <Button
-                          size="small"
-                          type="text"
-                          className={`!h-7 !shrink-0 !rounded-md !px-2 !text-xs !font-medium ${
-                            skill.installed
-                              ? "!text-emerald-600"
-                              : "!text-blue-600"
-                          }`}
-                          icon={
-                            skill.installed ? (
-                              <CheckCircleFilled />
-                            ) : (
-                              <DownloadOutlined />
-                            )
-                          }
-                          loading={installing}
-                          disabled={skill.installed}
-                          onClick={() =>
-                            installMutation.mutate({
-                              repositoryUrl: selectedRepository,
-                              skillPath: skill.skillPath,
-                            })
-                          }
-                        >
-                          {skill.installed ? t("已安装") : t("安装")}
-                        </Button>
-                      </div>
-                      {skill.description ? (
-                        <Typography.Paragraph
-                          className={skillDescriptionClassName}
-                          ellipsis={{ rows: 2 }}
-                        >
-                          {skill.description}
-                        </Typography.Paragraph>
-                      ) : (
-                        <Typography.Text className="mt-1.5 mb-1.5 block !text-[11px] !text-slate-400">
-                          {t("元信息更新中或暂不可用")}
-                        </Typography.Text>
-                      )}
-                    </Space>
-                  </Card>
-                );
-              })}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {repositories.map((repository) => (
+                <Button
+                  key={repository.url}
+                  type={
+                    selectedRepository === repository.url ? "primary" : "default"
+                  }
+                  className="!h-9"
+                  onClick={() => setSelectedRepository(repository.url)}
+                >
+                  <span className="max-w-[420px] truncate">
+                    {repository.url}
+                  </span>
+                  {repository.builtin ? (
+                    <Tag className="ml-2 !mr-0">{t("内置")}</Tag>
+                  ) : null}
+                </Button>
+              ))}
             </div>
-          )}
-        </Card>
+          </Card>
+
+          <Card className="panel !rounded-[16px]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <Typography.Title level={4} className="!mb-0 !text-slate-900">
+                {t("仓库技能")}
+              </Typography.Title>
+              <Space size={4} wrap>
+                {selectedRepositoryLabel ? (
+                  <Typography.Text className="!text-xs !text-slate-500">
+                    {selectedRepositoryLabel}
+                  </Typography.Text>
+                ) : null}
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  className="!h-7 !rounded-md !px-2 !text-xs !text-slate-600"
+                  loading={refreshMetadataMutation.isPending}
+                  disabled={!selectedRepository}
+                  onClick={() => {
+                    if (!selectedRepository) return;
+                    refreshMetadataMutation.mutate(selectedRepository);
+                  }}
+                >
+                  {t("同步元信息")}
+                </Button>
+              </Space>
+            </div>
+            {!selectedRepository ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t("请先选择仓库")}
+              />
+            ) : repositorySkillsQuery.isLoading ? (
+              <div className="flex h-[180px] items-center justify-center">
+                <Spin />
+              </div>
+            ) : repositorySkillsQuery.isError ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  repositorySkillsQuery.error instanceof Error
+                    ? repositorySkillsQuery.error.message
+                    : t("加载仓库技能失败")
+                }
+              >
+                <Button
+                  size="small"
+                  onClick={() => repositorySkillsQuery.refetch()}
+                >
+                  {t("重试")}
+                </Button>
+              </Empty>
+            ) : repositorySkills.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t("当前仓库未解析到技能（未找到 SKILL.md）")}
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {repositorySkills.map((skill) => {
+                  const installing =
+                    installMutation.isPending &&
+                    installMutation.variables?.repositoryUrl ===
+                      selectedRepository &&
+                    installMutation.variables?.skillPath === skill.skillPath;
+
+                  return (
+                    <Card
+                      key={skill.id}
+                      size="small"
+                      className={`${skillCardBaseClassName} !bg-white`}
+                    >
+                      <Space direction="vertical" className="w-full" size={12}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Typography.Text className="!text-sm !font-semibold !text-slate-900">
+                              {skill.name}
+                            </Typography.Text>
+                          </div>
+                          <Button
+                            size="small"
+                            type="text"
+                            className={`!h-7 !shrink-0 !rounded-md !px-2 !text-xs !font-medium ${
+                              skill.installed
+                                ? "!text-emerald-600"
+                                : "!text-blue-600"
+                            }`}
+                            icon={
+                              skill.installed ? (
+                                <CheckCircleFilled />
+                              ) : (
+                                <DownloadOutlined />
+                              )
+                            }
+                            loading={installing}
+                            disabled={skill.installed}
+                            onClick={() =>
+                              installMutation.mutate({
+                                repositoryUrl: selectedRepository,
+                                skillPath: skill.skillPath,
+                              })
+                            }
+                          >
+                            {skill.installed ? t("已安装") : t("安装")}
+                          </Button>
+                        </div>
+                        {skill.description ? (
+                          <Typography.Paragraph
+                            className={skillDescriptionClassName}
+                            ellipsis={{ rows: 2 }}
+                          >
+                            {skill.description}
+                          </Typography.Paragraph>
+                        ) : (
+                          <Typography.Text className="mt-1.5 mb-1.5 block !text-[11px] !text-slate-400">
+                            {t("元信息更新中或暂不可用")}
+                          </Typography.Text>
+                        )}
+                      </Space>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="px-5 pb-5 pt-4">
+        <Tabs
+          items={skillsTabs}
+          className="[&_.ant-tabs-nav]:!mb-5"
+          destroyInactiveTabPane={false}
+        />
       </div>
     </ScrollArea>
   );
