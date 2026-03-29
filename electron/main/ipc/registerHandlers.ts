@@ -397,6 +397,7 @@ export const registerHandlers = (): void => {
   handle('settings:saveClaudeApiKey', saveApiKeySchema, async (input) => {
     await settingsService.saveClaudeConfig({
       provider: input.provider,
+      displayName: input.displayName,
       enabled: input.enabled,
       secret: input.secret,
       baseUrl: input.baseUrl,

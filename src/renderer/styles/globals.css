@@ -157,6 +157,22 @@ body {
   border-top-right-radius: 10px;
 }
 
+.ant-modal .ant-modal-content {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.ant-modal .ant-modal-header {
+  background: transparent;
+}
+
+.ant-form-item-extra,
+.ant-form-item-explain {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .settings-sidebar-tabs.ant-tabs-left {
   height: 100%;
   min-height: 560px;
@@ -2950,8 +2966,6 @@ body {
 
 :root.theme-dark .ant-typography,
 :root.theme-dark .ant-form-item-label > label,
-:root.theme-dark .ant-form-item-explain,
-:root.theme-dark .ant-form-item-extra,
 :root.theme-dark .ant-empty-description,
 :root.theme-dark .ant-select-selection-item,
 :root.theme-dark .ant-select-selection-placeholder,

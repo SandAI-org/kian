@@ -18,6 +18,7 @@ import {
 } from "@renderer/lib/shortcuts";
 import type {
   AgentModelDTO,
+  AgentProviderDTO,
   ClaudeConfigStatus,
   AppUpdateStatusDTO,
   CustomAgentModelConfigDTO,
@@ -29,9 +30,10 @@ import {
   DEFAULT_SHORTCUT_CONFIG,
   shortcutConfigToSignature,
 } from "@shared/utils/shortcuts";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Checkbox,
   Col,
   Form,
   Input,
@@ -60,7 +62,7 @@ const SETTINGS_TABS = [
 
 const CUSTOM_API_PROVIDER = "custom-api";
 const CUSTOM_API_PROVIDER_PREFIX = "custom-api__";
-const CUSTOM_PROVIDER_ENTRY_ENABLED = false;
+const CUSTOM_PROVIDER_ENTRY_ENABLED = true;
 
 const isCustomApiProviderId = (provider: string): boolean =>
   provider === CUSTOM_API_PROVIDER ||
@@ -80,16 +82,46 @@ const createCustomProviderId = (displayName: string): string => {
 };
 
 const CUSTOM_MODEL_API_OPTIONS = [
-  "openai-completions",
-  "openai-responses",
-  "anthropic-messages",
-  "mistral-conversations",
-  "google-generative-ai",
-  "google-gemini-cli",
-  "google-vertex",
-  "azure-openai-responses",
-  "openai-codex-responses",
-  "bedrock-converse-stream",
+  {
+    value: "openai-completions",
+    label: "OpenAI Chat Completions",
+  },
+  {
+    value: "openai-responses",
+    label: "OpenAI Responses API",
+  },
+  {
+    value: "anthropic-messages",
+    label: "Anthropic Messages API",
+  },
+  {
+    value: "mistral-conversations",
+    label: "Mistral Conversations API",
+  },
+  {
+    value: "google-generative-ai",
+    label: "Google Generative AI",
+  },
+  {
+    value: "google-gemini-cli",
+    label: "Google Gemini CLI",
+  },
+  {
+    value: "google-vertex",
+    label: "Google Vertex AI",
+  },
+  {
+    value: "azure-openai-responses",
+    label: "Azure OpenAI Responses",
+  },
+  {
+    value: "openai-codex-responses",
+    label: "OpenAI Codex Responses",
+  },
+  {
+    value: "bedrock-converse-stream",
+    label: "Amazon Bedrock Converse",
+  },
 ] as const;
 
 const KNOWN_PROVIDER_META: Record<
@@ -115,6 +147,11 @@ const getProviderMeta = (provider: string) =>
   };
 
 const getFieldLabel = (label: string, _filled?: boolean) => label;
+
+const getCustomModelApiLabel = (value?: string): string =>
+  CUSTOM_MODEL_API_OPTIONS.find((item) => item.value === value)?.label ??
+  value ??
+  "";
 
 const parseDelimitedValues = (raw: string): string[] => {
   const values = raw
@@ -282,6 +319,14 @@ type CustomProviderFormValues = {
   secret?: string;
   baseUrl: string;
   api?: string;
+};
+
+type CustomModelEditorFormValues = {
+  id: string;
+  name?: string;
+  reasoning: boolean;
+  contextWindow: number;
+  maxTokens: number;
 };
 
 const cloneCustomModelFormValues = (
@@ -543,6 +588,96 @@ const ModelSwitchGrid = ({
   );
 };
 
+const CustomModelSwitchList = ({
+  items,
+  empty,
+  search,
+  value = [],
+  onChange,
+  onEdit,
+  onDelete,
+  t,
+}: {
+  items: AgentModelDTO[];
+  empty: string;
+  search?: string;
+  value?: string[];
+  onChange?: (value: string[]) => void;
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
+  t: (value: string) => string;
+}) => {
+  const filtered = search
+    ? items.filter(
+        (item) =>
+          item.name.toLowerCase().includes(search.toLowerCase()) ||
+          item.id.toLowerCase().includes(search.toLowerCase()),
+      )
+    : items;
+
+  if (items.length === 0) {
+    return (
+      <div className="provider-switcher__empty">
+        <Typography.Text className="provider-switcher__empty-title">
+          {t("当前还没有自定义模型")}
+        </Typography.Text>
+        <Typography.Text className="provider-switcher__empty-hint">
+          {t("新增后会出现在下方的启用模型列表中。")}
+        </Typography.Text>
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return <Typography.Text type="secondary">{empty}</Typography.Text>;
+  }
+
+  return (
+    <Row gutter={[12, 12]}>
+      {filtered.map((item) => {
+        const itemIndex = items.findIndex((candidate) => candidate.id === item.id);
+        const checked = value.includes(item.id);
+        const toggle = (nextChecked: boolean) => {
+          const nextValue = nextChecked
+            ? [...value, item.id]
+            : value.filter((modelId) => modelId !== item.id);
+          onChange?.(nextValue);
+        };
+
+        return (
+          <Col key={item.id} span={12}>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="truncate font-medium text-slate-900">
+                    {item.name}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {`${item.id} · ctx ${Math.round(item.contextWindow / 1024)}k · max ${Math.round(item.maxTokens / 1024)}k${item.reasoning ? ` · ${t("支持推理")}` : ""}`}
+                  </div>
+                </div>
+                <Switch
+                  size="small"
+                  checked={checked}
+                  onChange={toggle}
+                />
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Button size="small" onClick={() => onEdit(itemIndex)}>
+                  {t("编辑")}
+                </Button>
+                <Button size="small" onClick={() => onDelete(itemIndex)}>
+                  {t("删除")}
+                </Button>
+              </div>
+            </div>
+          </Col>
+        );
+      })}
+    </Row>
+  );
+};
+
 const ShortcutCaptureInput = ({
   value,
   onChange,
@@ -603,6 +738,7 @@ const ShortcutCaptureInput = ({
 
 export const SettingsPage = () => {
   const { language } = useAppI18n();
+  const queryClient = useQueryClient();
   const t = useCallback(
     (value: string): string => translateUiText(language, value),
     [language],
@@ -635,6 +771,7 @@ export const SettingsPage = () => {
   const [claudeForm] = Form.useForm<ClaudeFormValues>();
   const [providerForm] = Form.useForm<ProviderFormValues>();
   const [customProviderForm] = Form.useForm<CustomProviderFormValues>();
+  const [customModelForm] = Form.useForm<CustomModelEditorFormValues>();
   const [telegramForm] = Form.useForm<ChannelFormValues>();
   const [discordForm] = Form.useForm<ChannelFormValues>();
   const [feishuForm] = Form.useForm<ChannelFormValues>();
@@ -734,6 +871,10 @@ export const SettingsPage = () => {
   const [customProviderModalOpen, setCustomProviderModalOpen] = useState(false);
   const [editingCustomProviderId, setEditingCustomProviderId] = useState<
     string | null
+  >(null);
+  const [customModelModalOpen, setCustomModelModalOpen] = useState(false);
+  const [editingCustomModelIndex, setEditingCustomModelIndex] = useState<
+    number | null
   >(null);
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatusDTO | null>(
     null,
@@ -1026,7 +1167,7 @@ export const SettingsPage = () => {
       displayName: "",
       secret: "",
       baseUrl: "",
-      api: undefined,
+      api: "openai-completions",
     });
     setCustomProviderModalOpen(true);
   }, [customProviderForm]);
@@ -1038,7 +1179,7 @@ export const SettingsPage = () => {
       displayName: selectedProviderName,
       secret: String(secretValue ?? ""),
       baseUrl: String(baseUrlValue ?? ""),
-      api: String(apiValue ?? "").trim() || undefined,
+      api: String(apiValue ?? "").trim() || "openai-completions",
     });
     setCustomProviderModalOpen(true);
   }, [
@@ -1067,9 +1208,10 @@ export const SettingsPage = () => {
         : claudeProviderDraftsRef.current[providerId] ??
           getNormalizedClaudeDraftFromStatus(providerId, claudeStatusQuery.data);
     try {
+      const nextDisplayName = values.displayName.trim();
       await saveClaudeMutation.mutateAsync({
         provider: providerId,
-        displayName: values.displayName.trim(),
+        displayName: nextDisplayName,
         enabled: editingCustomProviderId ? providerDraft.enabled : false,
         secret: String(values.secret ?? "").trim() || undefined,
         baseUrl: String(values.baseUrl ?? "").trim() || undefined,
@@ -1079,24 +1221,52 @@ export const SettingsPage = () => {
           : [],
         enabledModels: editingCustomProviderId ? providerDraft.enabledModels : [],
       });
-      closeCustomProviderModal();
-      await Promise.all([
-        availableProvidersQuery.refetch(),
-        claudeStatusQuery.refetch().then((result) => {
-          if (result.data) {
-            syncClaudeProviderDraftFromStatus(providerId, result.data, {
-              applyToForm: true,
-            });
+      queryClient.setQueryData<AgentProviderDTO[]>(
+        ["settings", "available-providers"],
+        (current) => {
+          const nextProviders = current ? [...current] : [];
+          const existingIndex = nextProviders.findIndex(
+            (item) => item.id === providerId,
+          );
+          const nextEntry = {
+            id: providerId,
+            name: nextDisplayName,
+          };
+          if (existingIndex >= 0) {
+            nextProviders[existingIndex] = nextEntry;
+          } else {
+            nextProviders.push(nextEntry);
           }
-          return result;
-        }),
-      ]);
+          return nextProviders;
+        },
+      );
+      closeCustomProviderModal();
       setProviderSearch("");
+      setAgentModelSearch("");
+      claudeForm.setFieldsValue({
+        provider: providerId,
+      });
+      await availableProvidersQuery.refetch();
+      const statusResult = await claudeStatusQuery.refetch();
+      if (statusResult.data) {
+        syncClaudeProviderDraftFromStatus(providerId, statusResult.data, {
+          applyToForm: true,
+        });
+      }
+      if (!statusResult.data) {
+        claudeForm.setFieldsValue({
+          provider: providerId,
+        });
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : t("保存失败"));
     }
   }, [
+    claudeForm,
     availableProvidersQuery,
+    queryClient,
+    setAgentModelSearch,
+    setProviderSearch,
     claudeStatusQuery,
     closeCustomProviderModal,
     currentClaudeDraft,
@@ -1235,13 +1405,89 @@ export const SettingsPage = () => {
   const normalizedCustomModels = normalizeCustomModelFormValues(customModelsValue);
   const customModelIds = normalizedCustomModels.map((model) => model.id);
   const customModelIdsSignature = customModelIds.join("|");
-  const customModelsFilled = normalizedCustomModels.length > 0;
   const availableAgentModels = useMemo(
     () =>
       isCustomApiProvider
         ? normalizedCustomModels.map(customModelConfigToAgentModel)
         : (availableModelsQuery.data ?? []),
     [availableModelsQuery.data, isCustomApiProvider, normalizedCustomModels],
+  );
+
+  const openCreateCustomModelModal = useCallback(() => {
+    setEditingCustomModelIndex(null);
+    customModelForm.setFieldsValue(DEFAULT_CUSTOM_MODEL_FORM_VALUE());
+    setCustomModelModalOpen(true);
+  }, [customModelForm]);
+
+  const openEditCustomModelModal = useCallback(
+    (index: number) => {
+      const model = normalizedCustomModels[index];
+      if (!model) return;
+      setEditingCustomModelIndex(index);
+      customModelForm.setFieldsValue({
+        id: model.id,
+        name: model.name ?? "",
+        reasoning: model.reasoning,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+      });
+      setCustomModelModalOpen(true);
+    },
+    [customModelForm, normalizedCustomModels],
+  );
+
+  const closeCustomModelModal = useCallback(() => {
+    setCustomModelModalOpen(false);
+    setEditingCustomModelIndex(null);
+    customModelForm.resetFields();
+  }, [customModelForm]);
+
+  const handleSubmitCustomModel = useCallback(async () => {
+    const values = await customModelForm.validateFields();
+    const nextModel: CustomModelFormValue = {
+      id: String(values.id ?? "").trim(),
+      name: String(values.name ?? "").trim(),
+      reasoning: Boolean(values.reasoning),
+      contextWindow: Number(values.contextWindow ?? 0),
+      maxTokens: Number(values.maxTokens ?? 0),
+    };
+    const currentModels = cloneCustomModelFormValues(
+      ((claudeForm.getFieldValue("customModels") as
+        | CustomModelFormValue[]
+        | undefined) ?? []),
+    );
+    if (editingCustomModelIndex === null) {
+      currentModels.push(nextModel);
+    } else {
+      currentModels[editingCustomModelIndex] = nextModel;
+    }
+    claudeForm.setFieldsValue({
+      customModels: currentModels,
+    });
+    closeCustomModelModal();
+  }, [claudeForm, closeCustomModelModal, customModelForm, editingCustomModelIndex]);
+
+  const handleRemoveCustomModel = useCallback(
+    (index: number) => {
+      const currentModels = cloneCustomModelFormValues(
+        ((claudeForm.getFieldValue("customModels") as
+          | CustomModelFormValue[]
+          | undefined) ?? []),
+      );
+      const removedModelId = currentModels[index]?.id;
+      if (!removedModelId) return;
+      const nextModels = currentModels.filter((_, itemIndex) => itemIndex !== index);
+      const currentEnabledModels =
+        ((claudeForm.getFieldValue("enabledModels") as string[] | undefined) ??
+          []);
+      claudeForm.setFieldsValue({
+        customModels: nextModels,
+        enabledModels: currentEnabledModels.filter(
+          (modelId) => modelId !== removedModelId,
+        ),
+      });
+    },
+    [claudeForm],
   );
 
   useEffect(() => {
@@ -2251,13 +2497,6 @@ export const SettingsPage = () => {
                     <Typography.Title level={4} className="!text-slate-900">
                       {t("语言模型")}
                     </Typography.Title>
-                    <Typography.Paragraph className="!text-slate-600">
-                      {t(
-                        CUSTOM_PROVIDER_ENTRY_ENABLED
-                          ? "从左侧选择 Provider。内置 Provider 可直接配置；自定义 Provider 可通过上方按钮添加后，再为它配置模型。"
-                          : "从左侧选择 Provider，配置对应的 API Key 并启用模型。",
-                      )}
-                    </Typography.Paragraph>
                   </div>
 
                     <Form
@@ -2361,286 +2600,165 @@ export const SettingsPage = () => {
                         <div className="provider-switcher__content-shell">
                           <ScrollArea className="provider-switcher__content-scroll">
                             <div className="provider-switcher__content">
-                        {isCustomApiProvider ? (
-                          <div className="custom-provider-summary">
-                            <div className="custom-provider-summary__header">
-                              <div className="min-w-0 flex-1">
-                                <Typography.Text
-                                  strong
-                                  className="custom-provider-summary__title"
-                                >
-                                  {selectedProviderName}
-                                </Typography.Text>
-                                <Typography.Paragraph className="!mb-0 !mt-1 !text-slate-600">
-                                  {t("使用名称区分不同的自定义服务。")}
-                                </Typography.Paragraph>
-                              </div>
-                              <Button onClick={openEditCustomProviderModal}>
-                                {t("编辑 Provider")}
-                              </Button>
-                            </div>
-                            <div className="custom-provider-summary__meta">
-                              <div className="custom-provider-summary__meta-item">
-                                <span>{t("自定义 URL")}</span>
-                                <strong>{baseUrlText || "--"}</strong>
-                              </div>
-                              <div className="custom-provider-summary__meta-item">
-                                <span>{t("自定义模型 API 类型")}</span>
-                                <strong>{apiText || "--"}</strong>
-                              </div>
-                              <div className="custom-provider-summary__meta-item">
-                                <span>API Key</span>
-                                <strong>
-                                  {tokenFilled ? t("已配置") : t("未配置")}
-                                </strong>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
+                              <Form.Item name="enabled" valuePropName="checked">
+                                <Switch
+                                  checkedChildren="已启用"
+                                  unCheckedChildren="未启用"
+                                />
+                              </Form.Item>
 
-                        {!isCustomApiProvider ? (
-                          <Form.Item name="enabled" valuePropName="checked">
-                            <Switch
-                              checkedChildren="已启用"
-                              unCheckedChildren="未启用"
-                            />
-                          </Form.Item>
-                        ) : null}
-
-                        {isCustomApiProvider ? (
-                          <Form.Item name="secret" hidden>
-                            <Input />
-                          </Form.Item>
-                        ) : (
-                          <Form.Item
-                            name="secret"
-                            label={getFieldLabel(
-                              providerMeta.keyLabel,
-                              tokenFilled,
-                            )}
-                            rules={[
-                              {
-                                validator: async (_, value) => {
-                                  const enabled =
-                                    claudeForm.getFieldValue("enabled");
-                                  if (
-                                    enabled &&
-                                    !isCustomApiProvider &&
-                                    !String(value ?? "").trim()
-                                  ) {
-                                      return Promise.reject(
-                                        new Error(
-                                          t("启用 Provider 时必须设置 API Key"),
-                                        ),
-                                      );
-                                  }
-                                  const trimmed = String(value ?? "").trim();
-                                  if (trimmed && trimmed.length < 10) {
-                                    return Promise.reject(
-                                      new Error(t("凭证长度至少 10 位")),
-                                    );
-                                  }
-                                  return Promise.resolve();
-                                },
-                              },
-                            ]}
-                          >
-                            <Input.Password
-                              placeholder={providerMeta.keyPlaceholder}
-                            />
-                          </Form.Item>
-                        )}
-
-                        {isCustomApiProvider ? (
-                          <>
-                            <Form.Item name="enabled" valuePropName="checked">
-                              <Switch
-                                checkedChildren="已启用"
-                                unCheckedChildren="未启用"
-                              />
-                            </Form.Item>
-
-                            <Form.List name="customModels">
-                              {(fields, { add, remove }) => (
-                                <Form.Item
-                                  label={getFieldLabel(
-                                    "自定义模型",
-                                    customModelsFilled,
-                                  )}
-                                  extra={t(
-                                    "这里定义当前自定义 Provider 可用的模型。新增后会出现在下方的启用模型列表中。",
-                                  )}
-                                  className="[&_.ant-form-item-label>label]:after:!content-none"
-                                >
-                                  <div className="flex flex-col gap-3">
-                                    {fields.map((field) => (
-                                      <div
-                                        key={field.key}
-                                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
-                                      >
-                                        <div className="mb-3 flex items-center justify-between gap-3">
-                                          <Typography.Text strong>
-                                            {t(`自定义模型 ${field.name + 1}`)}
-                                          </Typography.Text>
-                                          <Button
-                                            size="small"
-                                            type="text"
-                                            danger
-                                            onClick={() => {
-                                              const currentCustomModels =
-                                                normalizeCustomModelFormValues(
-                                                  ((claudeForm.getFieldValue(
-                                                    "customModels",
-                                                  ) as CustomModelFormValue[] | undefined) ??
-                                                    []),
-                                                );
-                                              const removedModelId =
-                                                currentCustomModels[field.name]?.id;
-                                              remove(field.name);
-                                              if (!removedModelId) {
-                                                return;
-                                              }
-                                              const currentEnabledModels =
-                                                ((claudeForm.getFieldValue(
-                                                  "enabledModels",
-                                                ) as string[] | undefined) ?? []);
-                                              const nextEnabledModels =
-                                                currentEnabledModels.filter(
-                                                  (modelId) =>
-                                                    modelId !== removedModelId,
-                                                );
-                                              claudeForm.setFieldsValue({
-                                                enabledModels: nextEnabledModels,
-                                              });
-                                            }}
-                                          >
-                                            {t("删除")}
-                                          </Button>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                          <Form.Item
-                                            {...field}
-                                            name={[field.name, "id"]}
-                                            label="模型 ID"
-                                            rules={[
-                                              {
-                                                required: true,
-                                                message: t("Model ID 不能为空"),
-                                              },
-                                            ]}
-                                          >
-                                            <Input placeholder="gpt-4.1-mini" />
-                                          </Form.Item>
-                                          <Form.Item
-                                            {...field}
-                                            name={[field.name, "name"]}
-                                            label="显示名称"
-                                          >
-                                            <Input placeholder="留空则使用 Model ID" />
-                                          </Form.Item>
-                                          <Form.Item
-                                            {...field}
-                                            name={[field.name, "contextWindow"]}
-                                            label="上下文窗口"
-                                            rules={[
-                                              {
-                                                required: true,
-                                                message: t("上下文窗口不能为空"),
-                                              },
-                                            ]}
-                                          >
-                                            <Input type="number" min={1} />
-                                          </Form.Item>
-                                          <Form.Item
-                                            {...field}
-                                            name={[field.name, "maxTokens"]}
-                                            label="最大输出 Token"
-                                            rules={[
-                                              {
-                                                required: true,
-                                                message: t("最大输出 Token 不能为空"),
-                                              },
-                                            ]}
-                                          >
-                                            <Input type="number" min={1} />
-                                          </Form.Item>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                          <Form.Item
-                                            {...field}
-                                            name={[field.name, "reasoning"]}
-                                            label="支持推理"
-                                            valuePropName="checked"
-                                          >
-                                            <Switch
-                                              checkedChildren="是"
-                                              unCheckedChildren="否"
-                                            />
-                                          </Form.Item>
-                                        </div>
-                                      </div>
-                                    ))}
-                                    <Button
-                                      type="dashed"
-                                      onClick={() => {
-                                        add(DEFAULT_CUSTOM_MODEL_FORM_VALUE());
-                                      }}
+                              {isCustomApiProvider ? (
+                                <div className="custom-provider-summary">
+                                  <div className="custom-provider-summary__header">
+                                    <Typography.Text
+                                      strong
+                                      className="custom-provider-summary__title"
                                     >
-                                      {t("新增自定义模型")}
+                                      {selectedProviderName}
+                                    </Typography.Text>
+                                    <Button onClick={openEditCustomProviderModal}>
+                                      {t("编辑 Provider")}
                                     </Button>
                                   </div>
+                                  <div className="custom-provider-summary__meta">
+                                    <div className="custom-provider-summary__meta-item">
+                                      <span>{t("自定义 URL")}</span>
+                                      <strong>{baseUrlText || "--"}</strong>
+                                    </div>
+                                    <div className="custom-provider-summary__meta-item">
+                                      <span>{t("自定义模型 API 类型")}</span>
+                                      <strong>
+                                        {apiText
+                                          ? t(getCustomModelApiLabel(apiText))
+                                          : "--"}
+                                      </strong>
+                                    </div>
+                                    <div className="custom-provider-summary__meta-item">
+                                      <span>API Key</span>
+                                      <strong>
+                                        {tokenFilled ? t("已配置") : t("未配置")}
+                                      </strong>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {isCustomApiProvider ? (
+                                <Form.Item name="secret" hidden>
+                                  <Input />
+                                </Form.Item>
+                              ) : (
+                                <Form.Item
+                                  name="secret"
+                                  label={getFieldLabel(
+                                    providerMeta.keyLabel,
+                                    tokenFilled,
+                                  )}
+                                  rules={[
+                                    {
+                                      validator: async (_, value) => {
+                                        const enabled =
+                                          claudeForm.getFieldValue("enabled");
+                                        if (
+                                          enabled &&
+                                          !isCustomApiProvider &&
+                                          !String(value ?? "").trim()
+                                        ) {
+                                          return Promise.reject(
+                                            new Error(
+                                              t("启用 Provider 时必须设置 API Key"),
+                                            ),
+                                          );
+                                        }
+                                        const trimmed = String(value ?? "").trim();
+                                        if (trimmed && trimmed.length < 10) {
+                                          return Promise.reject(
+                                            new Error(t("凭证长度至少 10 位")),
+                                          );
+                                        }
+                                        return Promise.resolve();
+                                      },
+                                    },
+                                  ]}
+                                >
+                                  <Input.Password
+                                    placeholder={providerMeta.keyPlaceholder}
+                                  />
                                 </Form.Item>
                               )}
-                            </Form.List>
-                          </>
-                        ) : null}
 
-                        <Form.Item
-                          name="enabledModels"
-                          label={
-                            <div
-                              className="flex items-center justify-between"
-                              style={{ width: "100%" }}
-                            >
-                              <span>
-                                {getFieldLabel(
-                                  "启用模型",
-                                  enabledAgentModelsFilled,
+                              <Form.Item
+                                name="enabledModels"
+                                label={
+                                  <div
+                                    className="flex items-center justify-between"
+                                    style={{ width: "100%" }}
+                                  >
+                                    <span>
+                                      {getFieldLabel(
+                                        "启用模型",
+                                        enabledAgentModelsFilled,
+                                      )}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      {isCustomApiProvider ? (
+                                        <Button
+                                          size="small"
+                                          type="primary"
+                                          onClick={openCreateCustomModelModal}
+                                        >
+                                          {t("新增自定义模型")}
+                                        </Button>
+                                      ) : null}
+                                      <Input
+                                        prefix={
+                                          <SearchOutlined className="text-slate-400" />
+                                        }
+                                        placeholder="搜索模型"
+                                        allowClear
+                                        value={agentModelSearch}
+                                        onChange={(e) =>
+                                          setAgentModelSearch(e.target.value)
+                                        }
+                                        className="!w-48 [&_.ant-input]:!text-[12px] [&_.ant-input-prefix]:!text-[12px]"
+                                        style={{ borderRadius: 999, height: 28 }}
+                                      />
+                                    </div>
+                                  </div>
+                                }
+                                className="model-search-form-item [&_.ant-form-item-label]:!w-full [&_.ant-form-item-label>label]:!w-full [&_.ant-form-item-label>label]:after:!content-none"
+                              >
+                                {isCustomApiProvider ? (
+                                  <CustomModelSwitchList
+                                    t={t}
+                                    search={agentModelSearch}
+                                    items={availableAgentModels}
+                                    empty={
+                                      availableModelsQuery.isLoading
+                                        ? "加载中..."
+                                        : "暂无可用模型"
+                                    }
+                                    onEdit={openEditCustomModelModal}
+                                    onDelete={handleRemoveCustomModel}
+                                  />
+                                ) : (
+                                  <ModelSwitchGrid
+                                    search={agentModelSearch}
+                                    items={availableAgentModels.map(
+                                      (m) => ({
+                                        id: m.id,
+                                        title: m.name,
+                                        description: `${m.id} · ctx ${Math.round(m.contextWindow / 1024)}k · max ${Math.round(m.maxTokens / 1024)}k${m.reasoning ? " · reasoning" : ""}${m.source === "custom" ? ` · ${t("自定义")}` : ""}`,
+                                      }),
+                                    )}
+                                    empty={
+                                      availableModelsQuery.isLoading
+                                        ? "加载中..."
+                                        : "暂无可用模型"
+                                    }
+                                  />
                                 )}
-                              </span>
-                              <Input
-                                prefix={
-                                  <SearchOutlined className="text-slate-400" />
-                                }
-                                placeholder="搜索模型"
-                                allowClear
-                                value={agentModelSearch}
-                                onChange={(e) =>
-                                  setAgentModelSearch(e.target.value)
-                                }
-                                className="!w-48 [&_.ant-input]:!text-[12px] [&_.ant-input-prefix]:!text-[12px]"
-                                style={{ borderRadius: 999, height: 28 }}
-                              />
-                            </div>
-                          }
-                          className="model-search-form-item [&_.ant-form-item-label]:!w-full [&_.ant-form-item-label>label]:!w-full [&_.ant-form-item-label>label]:after:!content-none"
-                        >
-                          <ModelSwitchGrid
-                            search={agentModelSearch}
-                            items={availableAgentModels.map(
-                              (m) => ({
-                                id: m.id,
-                                title: m.name,
-                                description: `${m.id} · ctx ${Math.round(m.contextWindow / 1024)}k · max ${Math.round(m.maxTokens / 1024)}k${m.reasoning ? " · reasoning" : ""}${m.source === "custom" ? ` · ${t("自定义")}` : ""}`,
-                              }),
-                            )}
-                            empty={
-                              availableModelsQuery.isLoading
-                                ? "加载中..."
-                              : "暂无可用模型"
-                            }
-                          />
-                        </Form.Item>
+                              </Form.Item>
                             </div>
                           </ScrollArea>
                         </div>
@@ -3617,13 +3735,12 @@ export const SettingsPage = () => {
               displayName: "",
               secret: "",
               baseUrl: "",
-              api: undefined,
+              api: "openai-completions",
             }}
           >
             <Form.Item
               name="displayName"
               label={t("Provider 名称")}
-              extra={t("使用名称区分不同的自定义服务。")}
               rules={[
                 {
                   required: true,
@@ -3654,7 +3771,7 @@ export const SettingsPage = () => {
               name="baseUrl"
               label={t("自定义 URL")}
               extra={t(
-                "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。",
+                "填写 API 根地址，不要包含 /chat/completions 等具体接口路径。",
               )}
               rules={[
                 {
@@ -3691,9 +3808,7 @@ export const SettingsPage = () => {
             <Form.Item
               name="api"
               label={t("自定义模型 API 类型")}
-              extra={t(
-                "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。",
-              )}
+              extra={t("选择你的服务实际兼容的协议类型")}
               rules={[
                 {
                   required: true,
@@ -3703,9 +3818,9 @@ export const SettingsPage = () => {
             >
               <Select
                 placeholder={t("请选择")}
-                options={CUSTOM_MODEL_API_OPTIONS.map((value) => ({
-                  label: value,
-                  value,
+                options={CUSTOM_MODEL_API_OPTIONS.map((item) => ({
+                  label: t(item.label),
+                  value: item.value,
                 }))}
               />
             </Form.Item>
@@ -3731,6 +3846,88 @@ export const SettingsPage = () => {
               ]}
             >
               <Input.Password placeholder="sk-..." />
+            </Form.Item>
+          </Form>
+        </Modal>
+        <Modal
+          open={customModelModalOpen}
+          title={t(
+            editingCustomModelIndex === null
+              ? "新增自定义模型"
+              : "编辑自定义模型",
+          )}
+          onCancel={closeCustomModelModal}
+          onOk={() => {
+            void handleSubmitCustomModel();
+          }}
+          okText={t(editingCustomModelIndex === null ? "保存并添加" : "保存修改")}
+          cancelText={t("关闭")}
+          destroyOnHidden
+        >
+          <Form
+            form={customModelForm}
+            layout="vertical"
+            initialValues={DEFAULT_CUSTOM_MODEL_FORM_VALUE()}
+          >
+            <Form.Item name="name" label={t("显示名称")}>
+              <Input placeholder={t("留空则使用 Model ID")} />
+            </Form.Item>
+
+            <Form.Item
+              name="id"
+              label={t("模型 ID")}
+              rules={[
+                {
+                  required: true,
+                  message: t("Model ID 不能为空"),
+                },
+                {
+                  validator: async (_, value) => {
+                    const trimmed = String(value ?? "").trim();
+                    if (!trimmed) return Promise.resolve();
+                    const duplicated = normalizedCustomModels.some(
+                      (model, index) =>
+                        index !== editingCustomModelIndex && model.id === trimmed,
+                    );
+                    if (!duplicated) return Promise.resolve();
+                    return Promise.reject(new Error(t("模型 ID 不能重复")));
+                  },
+                },
+              ]}
+            >
+              <Input placeholder="gpt-4.1-mini" />
+            </Form.Item>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <Form.Item
+                name="contextWindow"
+                label={t("上下文窗口")}
+                rules={[
+                  {
+                    required: true,
+                    message: t("上下文窗口不能为空"),
+                  },
+                ]}
+              >
+                <Input type="number" min={1} />
+              </Form.Item>
+
+              <Form.Item
+                name="maxTokens"
+                label={t("最大输出 Token")}
+                rules={[
+                  {
+                    required: true,
+                    message: t("最大输出 Token 不能为空"),
+                  },
+                ]}
+              >
+                <Input type="number" min={1} />
+              </Form.Item>
+            </div>
+
+            <Form.Item name="reasoning" valuePropName="checked">
+              <Checkbox>{t("支持推理")}</Checkbox>
             </Form.Item>
           </Form>
         </Modal>

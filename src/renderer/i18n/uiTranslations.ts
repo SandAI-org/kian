@@ -823,8 +823,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "Try asking Kian to edit or create a document for you",
   "从左侧选择 Provider，配置对应的 API Key 并启用模型。":
     "Choose a provider from the left, configure the corresponding API key, and enable models.",
-  "从左侧选择 Provider。内置 Provider 可直接配置；自定义 Provider 可通过上方按钮添加后，再为它配置模型。":
-    "Choose a provider from the left. Built-in providers can be configured directly, while custom providers are added from the button above before configuring their models.",
   "从左侧选择 Provider，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。":
     "Choose a provider from the left, configure the corresponding API key, and enable models. Custom API sits alongside OpenRouter and is used for Custom URL, custom API type, and model list settings.",
   "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
@@ -848,16 +846,28 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "API key is optional. Leave it empty if your service does not require a Bearer token.",
   "Custom API 用于接入兼容 OpenAI、Anthropic 或其他受支持协议的服务。API Key 可选；是否填写取决于你的服务是否要求鉴权。":
     "Custom API connects to services compatible with OpenAI, Anthropic, or other supported protocols. The API key is optional and only needed when your service requires authentication.",
-  "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。":
-    "Enter the API root URL only. Do not include endpoint paths such as /chat/completions, /responses, or /messages.",
+  "填写 API 根地址，不要包含 /chat/completions 等具体接口路径。":
+    "Enter the API root URL only. Do not include endpoint paths such as /chat/completions.",
   "请填写 Provider URL": "Enter a provider URL",
-  "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。":
-    "Choose the protocol your service actually implements. Most OpenAI-compatible services should use openai-completions.",
+  "选择你的服务实际兼容的协议类型":
+    "Choose the protocol your service actually implements.",
   "请选择 API 类型": "Select an API type",
+  "OpenAI Chat Completions": "OpenAI Chat Completions",
+  "OpenAI Responses API": "OpenAI Responses API",
+  "Anthropic Messages API": "Anthropic Messages API",
+  "Mistral Conversations API": "Mistral Conversations API",
+  "Google Generative AI": "Google Generative AI",
+  "Google Gemini CLI": "Google Gemini CLI",
+  "Google Vertex AI": "Google Vertex AI",
+  "Azure OpenAI Responses": "Azure OpenAI Responses",
+  "OpenAI Codex Responses": "OpenAI Codex Responses",
+  "Amazon Bedrock Converse": "Amazon Bedrock Converse",
   "这里定义 Custom API 可用的模型。新增后会出现在下方的启用模型列表中。":
     "Define the models available through Custom API here. New models will appear in the enabled model list below.",
   "这里定义当前自定义 Provider 可用的模型。新增后会出现在下方的启用模型列表中。":
     "Define the models available through the current custom provider here. New models will appear in the enabled model list below.",
+  "新增后会出现在下方的启用模型列表中。":
+    "New models will appear in the enabled model list below.",
   "并启用模型。可选的 URL、自定义 API 类型和模型配置遵循 pi-mono 的 provider 覆盖方式：只填 URL 会重定向当前 Provider 的内置模型，配置自定义模型后则改为使用自定义模型列表。":
     "Optional URL, custom API type, and model settings follow pi-mono provider override semantics: URL-only reroutes built-in models, while custom models replace the provider model list.",
   "Provider": "Provider",
@@ -884,6 +894,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   "配置后会直接作为当前 Provider 的模型列表。":
     "Configured models become the model list for the current provider.",
   "新增自定义模型": "Add Custom Model",
+  "编辑自定义模型": "Edit Custom Model",
+  "当前还没有自定义模型": "No custom models yet",
   "显示名称": "Display Name",
   "模型 ID": "Model ID",
   "留空则使用 Model ID": "Leave empty to use the Model ID",
@@ -894,6 +906,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   "是": "Yes",
   "否": "No",
   "Model ID 不能为空": "Model ID is required",
+  "模型 ID 不能重复": "Model ID must be unique",
   "上下文窗口不能为空": "Context window is required",
   "最大输出 Token 不能为空": "Max output tokens is required",
   "自定义": "Custom",
@@ -1420,8 +1433,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "退出录制。": "를 눌러 녹화를 종료합니다.",
     "从左侧选择 Provider，配置对应的 API Key 并启用模型。":
       "왼쪽에서 Provider를 선택하고, 해당 API Key를 설정한 뒤 모델을 활성화하세요.",
-    "从左侧选择 Provider。内置 Provider 可直接配置；自定义 Provider 可通过上方按钮添加后，再为它配置模型。":
-      "왼쪽에서 Provider를 선택하세요. 내장 Provider는 바로 설정할 수 있고, 사용자 지정 Provider는 위 버튼으로 추가한 뒤 모델을 설정할 수 있습니다.",
     "从左侧选择 Provider，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。":
       "왼쪽에서 Provider를 선택하고, 해당 API Key를 설정한 뒤 모델을 활성화하세요. Custom API는 OpenRouter와 같은 레벨의 별도 Provider이며, Custom URL, 사용자 지정 API 유형, 모델 목록 설정에 사용됩니다.",
     "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
@@ -1445,16 +1456,28 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "API Key는 선택 사항입니다. 서비스에서 Bearer 토큰 인증을 요구하지 않으면 비워 둘 수 있습니다.",
     "Custom API 用于接入兼容 OpenAI、Anthropic 或其他受支持协议的服务。API Key 可选；是否填写取决于你的服务是否要求鉴权。":
       "Custom API는 OpenAI, Anthropic 또는 기타 지원 프로토콜과 호환되는 서비스를 연결하는 데 사용됩니다. API Key는 선택 사항이며 서비스에서 인증을 요구할 때만 필요합니다.",
-    "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。":
-      "API 루트 주소만 입력하세요. /chat/completions, /responses, /messages 같은 구체적인 엔드포인트 경로는 포함하지 마세요.",
+    "填写 API 根地址，不要包含 /chat/completions 等具体接口路径。":
+      "API 루트 주소만 입력하세요. /chat/completions 같은 구체적인 엔드포인트 경로는 포함하지 마세요.",
     "请填写 Provider URL": "Provider URL을 입력하세요",
-    "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。":
-      "서비스가 실제로 호환되는 프로토콜 유형을 선택하세요. 대부분의 OpenAI 호환 서비스는 openai-completions를 선택하면 됩니다.",
+    "选择你的服务实际兼容的协议类型":
+      "서비스가 실제로 호환되는 프로토콜 유형을 선택하세요.",
     "请选择 API 类型": "API 유형을 선택하세요",
+    "OpenAI Chat Completions": "OpenAI Chat Completions",
+    "OpenAI Responses API": "OpenAI Responses API",
+    "Anthropic Messages API": "Anthropic Messages API",
+    "Mistral Conversations API": "Mistral Conversations API",
+    "Google Generative AI": "Google Generative AI",
+    "Google Gemini CLI": "Google Gemini CLI",
+    "Google Vertex AI": "Google Vertex AI",
+    "Azure OpenAI Responses": "Azure OpenAI Responses",
+    "OpenAI Codex Responses": "OpenAI Codex Responses",
+    "Amazon Bedrock Converse": "Amazon Bedrock Converse",
     "这里定义 Custom API 可用的模型。新增后会出现在下方的启用模型列表中。":
       "여기에서 Custom API로 사용할 모델을 정의합니다. 새 모델을 추가하면 아래 활성화 모델 목록에 표시됩니다.",
     "这里定义当前自定义 Provider 可用的模型。新增后会出现在下方的启用模型列表中。":
       "여기에서 현재 사용자 지정 Provider가 사용할 모델을 정의합니다. 새 모델을 추가하면 아래 활성화 모델 목록에 표시됩니다.",
+    "新增后会出现在下方的启用模型列表中。":
+      "추가한 모델은 아래 활성화 모델 목록에 표시됩니다.",
     "并启用模型。可选的 URL、自定义 API 类型和模型配置遵循 pi-mono 的 provider 覆盖方式：只填 URL 会重定向当前 Provider 的内置模型，配置自定义模型后则改为使用自定义模型列表。":
       "선택 사항인 URL, 사용자 지정 API 유형, 모델 설정은 pi-mono의 provider override 방식과 동일합니다. URL만 입력하면 내장 모델이 해당 주소로 라우팅되고, 사용자 지정 모델을 설정하면 현재 Provider의 모델 목록이 사용자 지정 목록으로 대체됩니다.",
     "Provider": "Provider",
@@ -1481,6 +1504,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "配置后会直接作为当前 Provider 的模型列表。":
       "설정한 모델이 현재 Provider의 모델 목록으로 바로 사용됩니다.",
     "新增自定义模型": "사용자 지정 모델 추가",
+    "编辑自定义模型": "사용자 지정 모델 편집",
+    "当前还没有自定义模型": "아직 사용자 지정 모델이 없습니다",
     "显示名称": "표시 이름",
     "模型 ID": "모델 ID",
     "留空则使用 Model ID": "비워 두면 Model ID를 사용합니다",
@@ -1491,6 +1516,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "是": "예",
     "否": "아니오",
     "Model ID 不能为空": "Model ID는 필수입니다",
+    "模型 ID 不能重复": "Model ID는 중복될 수 없습니다",
     "上下文窗口不能为空": "컨텍스트 윈도우는 필수입니다",
     "最大输出 Token 不能为空": "최대 출력 토큰은 필수입니다",
     "自定义": "사용자 지정",
@@ -2017,8 +2043,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "退出录制。": "を押して録音を終了します。",
     "从左侧选择 Provider，配置对应的 API Key 并启用模型。":
       "左側で Provider を選び、対応する API Key を設定してモデルを有効化してください。",
-    "从左侧选择 Provider。内置 Provider 可直接配置；自定义 Provider 可通过上方按钮添加后，再为它配置模型。":
-      "左側で Provider を選んでください。内蔵 Provider はそのまま設定でき、カスタム Provider は上のボタンから追加してからモデルを設定できます。",
     "从左侧选择 Provider，配置对应的 API Key 并启用模型。Custom API 与 OpenRouter 平级，用于配置 Custom URL、自定义 API 类型和模型列表。":
       "左側で Provider を選び、対応する API Key を設定してモデルを有効化してください。Custom API は OpenRouter と同じ階層の独立 Provider で、Custom URL、カスタム API 種別、モデル一覧の設定に使います。",
     "选择 Provider 标签页来切换接入方式，配置对应的 API Key 并启用模型。":
@@ -2038,14 +2062,26 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "名前を付けて異なるカスタムサービスを見分けられるようにします。",
     "API Key 为可选项；如果你的服务不要求 Bearer Token，可以留空。":
       "API Key は任意です。サービスで Bearer トークン認証が不要なら空欄のままで構いません。",
-    "填写 API 根地址，不要包含 /chat/completions、/responses、/messages 等具体接口路径。":
-      "API ルート URL のみを入力してください。/chat/completions、/responses、/messages などの個別エンドポイントは含めないでください。",
+    "填写 API 根地址，不要包含 /chat/completions 等具体接口路径。":
+      "API ルート URL のみを入力してください。/chat/completions などの個別エンドポイントは含めないでください。",
     "请填写 Provider URL": "Provider URL を入力してください",
-    "选择你的服务实际兼容的协议类型；大多数 OpenAI 兼容服务应选择 openai-completions。":
-      "サービスが実際に互換なプロトコル種別を選択してください。ほとんどの OpenAI 互換サービスでは openai-completions を選べば問題ありません。",
+    "选择你的服务实际兼容的协议类型":
+      "サービスが実際に互換なプロトコル種別を選択してください",
     "请选择 API 类型": "API 種別を選択してください",
+    "OpenAI Chat Completions": "OpenAI Chat Completions",
+    "OpenAI Responses API": "OpenAI Responses API",
+    "Anthropic Messages API": "Anthropic Messages API",
+    "Mistral Conversations API": "Mistral Conversations API",
+    "Google Generative AI": "Google Generative AI",
+    "Google Gemini CLI": "Google Gemini CLI",
+    "Google Vertex AI": "Google Vertex AI",
+    "Azure OpenAI Responses": "Azure OpenAI Responses",
+    "OpenAI Codex Responses": "OpenAI Codex Responses",
+    "Amazon Bedrock Converse": "Amazon Bedrock Converse",
     "这里定义当前自定义 Provider 可用的模型。新增后会出现在下方的启用模型列表中。":
       "ここでは現在のカスタム Provider で使えるモデルを定義します。追加したモデルは下の有効モデル一覧に表示されます。",
+    "新增后会出现在下方的启用模型列表中。":
+      "追加したモデルは下の有効モデル一覧に表示されます。",
     "并启用模型。可选的 URL、自定义 API 类型和模型配置遵循 pi-mono 的 provider 覆盖方式：只填 URL 会重定向当前 Provider 的内置模型，配置自定义模型后则改为使用自定义模型列表。":
       "任意の URL、カスタム API 種別、モデル設定は pi-mono の provider override 方式に従います。URL のみを設定すると内蔵モデルはその URL に転送され、カスタムモデルを設定すると現在の Provider のモデル一覧がカスタム一覧に置き換わります。",
     "Provider": "Provider",
@@ -2072,6 +2108,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "配置后会直接作为当前 Provider 的模型列表。":
       "設定したモデルがそのまま現在の Provider のモデル一覧になります。",
     "新增自定义模型": "カスタムモデルを追加",
+    "编辑自定义模型": "カスタムモデルを編集",
+    "当前还没有自定义模型": "カスタムモデルはまだありません",
     "显示名称": "表示名",
     "模型 ID": "モデル ID",
     "留空则使用 Model ID": "空欄の場合は Model ID を使用します",
@@ -2082,6 +2120,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "是": "はい",
     "否": "いいえ",
     "Model ID 不能为空": "Model ID は必須です",
+    "模型 ID 不能重复": "Model ID は重複できません",
     "上下文窗口不能为空": "コンテキストウィンドウは必須です",
     "最大输出 Token 不能为空": "最大出力トークンは必須です",
     "自定义": "カスタム",
