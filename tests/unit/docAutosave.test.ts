@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isStaleDocSaveResponse,
+  shouldScheduleDocAutosave,
   shouldSyncDocEditorFromRemote,
 } from "../../src/shared/utils/docAutosave";
 
@@ -50,6 +51,40 @@ describe("doc autosave helpers", () => {
           content: "server v2",
         },
         editorValue: "server v1",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not reschedule the same autosave target on unrelated rerenders", () => {
+    expect(
+      shouldScheduleDocAutosave({
+        previousSnapshot: {
+          docId: "docs/note.md",
+          remoteContent: "server v1",
+          editorValue: "local v2",
+        },
+        nextSnapshot: {
+          docId: "docs/note.md",
+          remoteContent: "server v1",
+          editorValue: "local v2",
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("schedules a new autosave when the editor content changes again", () => {
+    expect(
+      shouldScheduleDocAutosave({
+        previousSnapshot: {
+          docId: "docs/note.md",
+          remoteContent: "server v1",
+          editorValue: "local v2",
+        },
+        nextSnapshot: {
+          docId: "docs/note.md",
+          remoteContent: "server v1",
+          editorValue: "local v3",
+        },
       }),
     ).toBe(true);
   });

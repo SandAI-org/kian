@@ -25,6 +25,7 @@ import { ScrollArea } from "@renderer/components/ScrollArea";
 import { api } from "@renderer/lib/api";
 import {
   isStaleDocSaveResponse,
+  shouldScheduleDocAutosave,
   shouldSyncDocEditorFromRemote,
 } from "@shared/utils/docAutosave";
 import type { DocExplorerEntryDTO, DocumentDTO } from "@shared/types";
@@ -451,6 +452,15 @@ export const DocsModule = ({
   }>({
     docId: null,
     content: "",
+  });
+  const lastQueuedSaveSnapshotRef = useRef<{
+    docId: string | null;
+    remoteContent: string;
+    editorValue: string;
+  }>({
+    docId: null,
+    remoteContent: "",
+    editorValue: "",
   });
   const nextSaveRequestSeqRef = useRef(0);
   const latestSaveRequestSeqByDocRef = useRef<Map<string, number>>(new Map());
@@ -902,15 +912,32 @@ export const DocsModule = ({
   });
 
   useEffect(() => {
+    const nextSaveSnapshot = {
+      docId: activeDoc?.id ?? null,
+      remoteContent: activeDoc?.content ?? "",
+      editorValue,
+    };
+
     if (!activeDoc) {
+      lastQueuedSaveSnapshotRef.current = nextSaveSnapshot;
       setSaveState("saved");
       return;
     }
     if (editorValue === activeDoc.content) {
+      lastQueuedSaveSnapshotRef.current = nextSaveSnapshot;
       setSaveState("saved");
       return;
     }
+    if (
+      !shouldScheduleDocAutosave({
+        previousSnapshot: lastQueuedSaveSnapshotRef.current,
+        nextSnapshot: nextSaveSnapshot,
+      })
+    ) {
+      return;
+    }
 
+    lastQueuedSaveSnapshotRef.current = nextSaveSnapshot;
     setSaveState("saving");
     const requestSeq = nextSaveRequestSeqRef.current + 1;
     nextSaveRequestSeqRef.current = requestSeq;
