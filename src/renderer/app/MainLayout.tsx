@@ -56,6 +56,11 @@ const resolveProjectModule = (value: string | null): ModuleType => {
   return 'docs';
 };
 
+export const shouldKeepHeaderActions = (pathname: string): boolean =>
+  pathname.startsWith('/settings') ||
+  pathname.startsWith('/mcp') ||
+  pathname.startsWith('/skills');
+
 export const MainLayout = () => {
   const { language } = useAppI18n();
   const t = (value: string): string => translateUiText(language, value);
@@ -407,7 +412,7 @@ export const MainLayout = () => {
   }, [generalConfigQuery.data, location.pathname, navigate, persistGeneralConfig]);
 
   useEffect(() => {
-    if (!location.pathname.startsWith('/settings') && !location.pathname.startsWith('/mcp')) {
+    if (!shouldKeepHeaderActions(location.pathname)) {
       setHeaderActions(null);
     }
   }, [location.pathname]);
