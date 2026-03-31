@@ -253,6 +253,27 @@ export const QuickLauncherPage = () => {
     };
   }, [hasConversationContent, resizeWindow]);
 
+  useLayoutEffect(() => {
+    const root = document.getElementById("root");
+    const previousHtmlBackground = document.documentElement.style.background;
+    const previousBodyBackground = document.body.style.background;
+    const previousRootBackground = root?.style.background ?? "";
+
+    document.documentElement.style.background = "transparent";
+    document.body.style.background = "transparent";
+    if (root) {
+      root.style.background = "transparent";
+    }
+
+    return () => {
+      document.documentElement.style.background = previousHtmlBackground;
+      document.body.style.background = previousBodyBackground;
+      if (root) {
+        root.style.background = previousRootBackground;
+      }
+    };
+  }, []);
+
   const openInMainChat = useCallback(async () => {
     if (!currentSessionId) {
       return;
@@ -302,23 +323,28 @@ export const QuickLauncherPage = () => {
   return (
     <div
       ref={panelRef}
-      className={`drag-region w-full bg-[radial-gradient(circle_at_top_left,rgba(47,111,247,0.14),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(148,163,184,0.16),transparent_36%),#eef2f7] ${
-        hasConversationContent ? "h-full" : ""
-      }`}
+      className={`drag-region w-full ${hasConversationContent ? "h-full" : ""}`}
     >
       <div
-        className={`relative flex flex-col gap-2 overflow-hidden rounded-[24px] border border-white/70 bg-white/94 shadow-[0_18px_50px_rgba(15,23,42,0.14)] backdrop-blur ${
+        className={`relative flex flex-col overflow-hidden rounded-[32px] backdrop-blur ${
           hasConversationContent ? "h-full" : ""
         }`}
+        style={{
+          background:
+            "radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 14%, transparent), transparent 38%), radial-gradient(circle at bottom right, color-mix(in srgb, var(--text) 10%, transparent), transparent 36%), rgba(var(--surface-rgb), 0.94)",
+        }}
       >
         {currentSessionId && hasConversationContent ? (
-          <div className="drag-region grid grid-cols-[32px_minmax(0,1fr)_32px] items-center gap-2 border-b border-[#e4ebf5] px-3 py-2">
+          <div
+            className="drag-region grid grid-cols-[28px_minmax(0,1fr)_28px] items-center gap-3 border-b px-4 py-3"
+            style={{ borderBottomColor: "var(--stroke)" }}
+          >
             <Button
               type="text"
               shape="circle"
               size="small"
-              className="no-drag !flex !h-8 !w-8 !min-w-8 !items-center !justify-center !rounded-full !text-slate-500 hover:!bg-[#eef3fc] hover:!text-slate-900"
-              icon={<CloseOutlined className="text-[13px]" />}
+              className="no-drag !flex !h-7 !w-7 !min-w-7 !items-center !justify-center !rounded-full !border !border-[color-mix(in_srgb,var(--stroke)_88%,transparent)] !bg-[rgba(var(--surface-rgb),0.42)] !text-[var(--muted)] hover:!bg-[rgba(var(--surface-rgb),0.72)] hover:!text-[var(--text)]"
+              icon={<CloseOutlined className="text-[10px]" />}
               aria-label={t("关闭")}
               onClick={closeLauncher}
             />
@@ -330,8 +356,8 @@ export const QuickLauncherPage = () => {
                 type="text"
                 shape="circle"
                 size="small"
-                className="no-drag !flex !h-8 !w-8 !min-w-8 !items-center !justify-center !rounded-full !text-slate-500 hover:!bg-[#eef3fc] hover:!text-slate-900"
-                icon={<DesktopOutlined className="text-[13px]" />}
+                className="no-drag !flex !h-7 !w-7 !min-w-7 !items-center !justify-center !rounded-full !border-transparent !bg-transparent !text-[var(--muted)] hover:!bg-transparent hover:!text-[var(--text)] !shadow-none"
+                icon={<DesktopOutlined className="text-[11px]" />}
                 aria-label={t("在主聊天中打开")}
                 onClick={() => {
                   void openInMainChat();
@@ -342,7 +368,7 @@ export const QuickLauncherPage = () => {
         ) : null}
 
         <div
-          className={`no-drag p-4 pt-3 ${
+          className={`p-4 ${
             hasConversationContent ? "flex min-h-0 flex-1 flex-col" : ""
           }`}
         >

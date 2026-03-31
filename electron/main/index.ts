@@ -307,6 +307,9 @@ const buildMainWindowOptions = (
 const buildQuickLauncherWindowOptions = (
   icon: Electron.NativeImage | undefined
 ): BrowserWindowConstructorOptions => {
+  const useTransparentShape =
+    process.platform === 'darwin' || process.platform === 'win32';
+
   return {
     width: QUICK_LAUNCHER_WIDTH,
     height: QUICK_LAUNCHER_MIN_HEIGHT,
@@ -324,7 +327,9 @@ const buildQuickLauncherWindowOptions = (
     title: `${APP_DISPLAY_NAME} Quick Launcher`,
     icon,
     show: false,
-    backgroundColor: '#eef2f7',
+    transparent: useTransparentShape,
+    hasShadow: useTransparentShape ? false : undefined,
+    backgroundColor: useTransparentShape ? '#00000000' : '#eef2f7',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
@@ -990,6 +995,9 @@ const createQuickLauncherWindow = (): BrowserWindow => {
   win.once('ready-to-show', () => {
     if (!win.isDestroyed()) {
       win.show();
+      if (process.platform === 'darwin') {
+        win.invalidateShadow();
+      }
     }
   });
 
@@ -1242,6 +1250,9 @@ app
       const [contentWidth, contentHeight] = win.getContentSize();
       if (contentHeight !== nextHeight) {
         win.setContentSize(contentWidth, nextHeight, true);
+        if (process.platform === 'darwin') {
+          win.invalidateShadow();
+        }
       }
       return { ok: true, data: true };
     });

@@ -132,8 +132,8 @@ export const ChatComposer = ({
     modelOptions.length <= 1 || !onModelChange;
   const containerClassName =
     variant === "embedded"
-      ? "rounded-[24px] border border-[#dbe5f5] bg-white px-4 py-4"
-      : "rounded-xl border border-[#dbe5f5] bg-white px-3 py-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)]";
+      ? "no-drag rounded-[24px] border border-[#dbe5f5] bg-white px-4 py-4"
+      : "no-drag rounded-xl border border-[#dbe5f5] bg-white px-3 py-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)]";
 
   return (
     <div className={containerClassName}>

@@ -2844,11 +2844,11 @@ export const ModuleChatPane = ({
     : "w-full flex h-full min-h-0 flex-col";
   const timelineContainerClassName = isAutoLayout
     ? hideBorder
-      ? "p-3 pb-0"
-      : "rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0"
+      ? "no-drag p-3 pb-0"
+      : "no-drag rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0"
     : hideBorder
-      ? "min-h-0 flex-1 p-3 pb-0"
-      : "min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0";
+      ? "no-drag min-h-0 flex-1 p-3 pb-0"
+      : "no-drag min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0";
 
   const composer = (
     <ChatComposer
@@ -3095,7 +3095,7 @@ export const ModuleChatPane = ({
           </ScrollArea>
         ) : null}
 
-        <div className="z-10 mt-2">{composer}</div>
+        <div className={isEmpty ? "z-10" : "z-10 mt-2"}>{composer}</div>
       </div>
     </div>
   );
