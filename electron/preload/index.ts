@@ -169,9 +169,18 @@ const api = {
       scope: ChatScope;
       module: ModuleType | "main";
       title: string;
+      kind?: "normal" | "digital_avatar" | "channel_runtime";
+      hidden?: boolean;
+      metadataJson?: string | null;
     }) => invoke<ChatSessionDTO>("chat:createSession", payload),
-    getSessions: (scope: ChatScope) =>
-      invoke<ChatSessionDTO[]>("chat:getSessions", { scope }),
+    getDigitalAvatarSession: (scope: ChatScope) =>
+      invoke<ChatSessionDTO>("chat:getDigitalAvatarSession", { scope }),
+    getSessions: (
+      scope: ChatScope,
+      options?: {
+        kinds?: ("normal" | "digital_avatar" | "channel_runtime")[];
+      },
+    ) => invoke<ChatSessionDTO[]>("chat:getSessions", { scope, kinds: options?.kinds }),
     getMessages: (scope: ChatScope, sessionId: string) =>
       invoke<ChatMessageDTO[]>("chat:getMessages", { scope, sessionId }),
     getQueuedMessages: (scope: ChatScope, sessionId: string) =>
@@ -340,13 +349,14 @@ const api = {
     saveTelegramChatChannelConfig: (payload: {
       enabled: boolean;
       botToken?: string;
-      userIds: string[];
+      ownerUserIds: string[];
     }) => invoke<boolean>("settings:saveTelegramChatChannelConfig", payload),
     getDiscordChatChannelStatus: () =>
       invoke<DiscordChatChannelStatus>("settings:getDiscordChatChannelStatus"),
     saveDiscordChatChannelConfig: (payload: {
       enabled: boolean;
       botToken?: string;
+      ownerUserIds: string[];
       serverIds: string[];
       channelIds: string[];
     }) => invoke<boolean>("settings:saveDiscordChatChannelConfig", payload),
@@ -356,6 +366,7 @@ const api = {
       enabled: boolean;
       appId?: string;
       appSecret?: string;
+      ownerUserIds: string[];
     }) => invoke<boolean>("settings:saveFeishuChatChannelConfig", payload),
     getWeixinChatChannelStatus: () =>
       invoke<WeixinChatChannelStatus>("settings:getWeixinChatChannelStatus"),

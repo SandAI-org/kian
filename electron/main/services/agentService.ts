@@ -1,7 +1,4 @@
-import {
-  Type,
-  type AssistantMessageEvent,
-} from "@mariozechner/pi-ai";
+import { Type, type AssistantMessageEvent } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
   createAgentSession,
@@ -13,18 +10,20 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type {
   ChatAttachmentDTO,
-  ClaudeConfigStatus,
-  ChatQueueDeliveryMode,
-  ChatQueuedMessageDTO,
-  ChatQueuePayload,
+  ChatCapabilityMode,
   ChatInterruptPayload,
   ChatMessageMetadata,
   ChatModuleType,
+  ChatQueueDeliveryMode,
+  ChatQueuedMessageDTO,
+  ChatQueuePayload,
   ChatScope,
   ChatSendPayload,
   ChatSendResponse,
+  ChatSessionKind,
   ChatStreamEvent,
   ChatThinkingLevel,
+  ClaudeConfigStatus,
   DelegationContext,
   ModuleType,
 } from "@shared/types";
@@ -36,12 +35,23 @@ import {
   buildSessionSystemPrompt,
   type SessionContextFile,
 } from "./agentPrompt";
-import { createAppOperationTools } from "./appOperationMcpServer";
 import { appOperationEvents } from "./appOperationEvents";
+import { createAppOperationTools } from "./appOperationMcpServer";
 import { createBuiltinTools } from "./builtinMcpServer";
+import {
+  applyChatStreamEventToTimeline,
+  createChatTurnTimelineState,
+  formatUserMessageContent,
+  persistChatTurnTimeline,
+  persistUserMessage,
+  type ChatTurnTimelineState,
+} from "./chatTurnTimeline";
 import { buildContextSnapshotSection } from "./contextSnapshotFormatter";
 import { toToolDefinition, type CustomToolDef } from "./customTools";
 import { logger } from "./logger";
+import {
+  attachAgentLlmRequestDebug,
+} from "./llmRequestDebug";
 import { buildMcpServerSignature, createMcpRuntime } from "./mcpRuntime";
 import {
   buildExtendedMarkdown,
@@ -53,14 +63,6 @@ import {
 import { repositoryService } from "./repositoryService";
 import { settingsService } from "./settingsService";
 import { skillService } from "./skillService";
-import {
-  applyChatStreamEventToTimeline,
-  createChatTurnTimelineState,
-  formatUserMessageContent,
-  persistChatTurnTimeline,
-  persistUserMessage,
-  type ChatTurnTimelineState,
-} from "./chatTurnTimeline";
 import {
   GLOBAL_CONFIG_DIR,
   INTERNAL_ROOT,
@@ -78,6 +80,9 @@ type AgentSessionEntry = {
   modelConfigSignature: string;
   thinkingLevel: ChatThinkingLevel;
   mcpSignature: string;
+  sessionKind: ChatSessionKind;
+  capabilityMode: ChatCapabilityMode;
+  systemPromptSignature: string;
   disposeMcpRuntime: () => Promise<void>;
   toolNames: string[];
   activeSkillNames: string[];
@@ -181,6 +186,12 @@ const buildAgentModelConfigSignature = (input: {
       }),
     )
     .digest("hex");
+
+const buildTextSignature = (value: string): string =>
+  createHash("sha256").update(value).digest("hex");
+
+const usesAvatarPrompt = (sessionKind: ChatSessionKind): boolean =>
+  sessionKind === "digital_avatar" || sessionKind === "channel_runtime";
 
 const resolveEffectiveAgentModelSelection = (
   status: ClaudeConfigStatus,
@@ -720,7 +731,8 @@ const buildNewSessionTool = (input: {
         input.chatSessionId,
       );
       const module =
-        currentSession?.module ?? (input.scope.type === "main" ? "main" : "docs");
+        currentSession?.module ??
+        (input.scope.type === "main" ? "main" : "docs");
       const created = await repositoryService.createChatSession({
         scope: input.scope,
         module,
@@ -1173,23 +1185,21 @@ export const createDelegationTools = (input: {
           void (async () => {
             try {
               const { chatService } = await import("./chatService");
-              await chatService.send(
-                {
-                  scope: subScope,
-                  module,
-                  sessionId: session.id,
-                  requestId: `delegation-${delegationId}`,
-                  message: task,
-                  skipUserMessagePersistence: true,
-                  delegationContext: {
-                    delegationId,
-                    mainSessionId: input.runtime.chatSessionId,
-                    source: "main",
-                    projectId: project.id,
-                    projectName: project.name,
-                  },
+              await chatService.send({
+                scope: subScope,
+                module,
+                sessionId: session.id,
+                requestId: `delegation-${delegationId}`,
+                message: task,
+                skipUserMessagePersistence: true,
+                delegationContext: {
+                  delegationId,
+                  mainSessionId: input.runtime.chatSessionId,
+                  source: "main",
+                  projectId: project.id,
+                  projectName: project.name,
                 },
-              );
+              });
             } catch (error) {
               const delegationContext: DelegationContext = {
                 delegationId,
@@ -1237,13 +1247,6 @@ const buildRoleInstructionSection = (input: {
   scope: ChatScope;
   delegationContext?: DelegationContext;
 }): string => {
-  if (input.scope.type === "main") {
-    return [
-      "## 主从模式说明",
-      "你是主 Agent，负责与用户对话，并将具体工作区执行任务优先委派给子智能体。",
-      "当任务明确落在某个 Agent 上时，优先使用 callSubAgent；如果现有 Agent 都不合适，先创建新 Agent；不要假装已经在对应工作区内执行。",
-    ].join("\n");
-  }
   if (input.delegationContext) {
     return [
       "## 委派任务说明",
@@ -1266,6 +1269,7 @@ const createOrResumeSession = async (
   chatSessionId: string,
   modelOverride?: string,
   thinkingLevel?: ChatThinkingLevel,
+  capabilityMode: "full" | "chat_only" = "full",
   moduleName?: ChatModuleType,
   contextSnapshot?: unknown,
   delegationContext?: DelegationContext,
@@ -1274,6 +1278,8 @@ const createOrResumeSession = async (
   session: AgentSession;
   unsubscribe: () => void;
   modelId: string;
+  provider: string;
+  api: string;
   modelSource:
     | "payload.model"
     | "settings.lastSelectedModel"
@@ -1283,6 +1289,16 @@ const createOrResumeSession = async (
   const storeKey = getSessionStoreKey(scope, chatSessionId);
   const scopeKey = getScopeKey(scope);
   const agentRuntimeDir = getScopeAgentRuntimeDir(scope);
+  const currentChatSession = await repositoryService.getChatSession(
+    scope,
+    chatSessionId,
+  );
+  const sessionKind: ChatSessionKind = currentChatSession?.kind ?? "normal";
+  const effectiveCapabilityMode: ChatCapabilityMode = usesAvatarPrompt(
+    sessionKind,
+  )
+    ? "chat_only"
+    : capabilityMode;
   const status = await settingsService.getClaudeStatus(scope);
   const effectiveThinkingLevel = thinkingLevel ?? DEFAULT_CHAT_THINKING_LEVEL;
 
@@ -1303,7 +1319,9 @@ const createOrResumeSession = async (
     effectiveModelId,
   );
   if (!model) {
-    throw new Error(`Model not found: ${effectiveProvider}:${effectiveModelId}`);
+    throw new Error(
+      `Model not found: ${effectiveProvider}:${effectiveModelId}`,
+    );
   }
   const currentModelConfigSignature = buildAgentModelConfigSignature({
     provider: effectiveProvider,
@@ -1315,6 +1333,11 @@ const createOrResumeSession = async (
   const refreshRequested = refreshSessionOnNextPrompt.has(storeKey);
   const mcpServers = await settingsService.getMcpServers();
   const mcpSignature = buildMcpServerSignature(mcpServers);
+  const fallbackSystemPrompt = await settingsService.getAgentSystemPrompt(
+    scope.type,
+    sessionKind,
+  );
+  const systemPromptSignature = buildTextSignature(fallbackSystemPrompt);
 
   if (startFreshRequested || refreshRequested) {
     disposeSessionEntry(storeKey);
@@ -1331,7 +1354,10 @@ const createOrResumeSession = async (
     if (
       existing.modelId !== compositeModelKey ||
       existing.modelConfigSignature !== currentModelConfigSignature ||
-      existing.mcpSignature !== mcpSignature
+      existing.mcpSignature !== mcpSignature ||
+      existing.sessionKind !== sessionKind ||
+      existing.capabilityMode !== effectiveCapabilityMode ||
+      existing.systemPromptSignature !== systemPromptSignature
     ) {
       logger.info(
         "Rebuilding agent session due to runtime configuration change",
@@ -1344,6 +1370,11 @@ const createOrResumeSession = async (
           modelRuntimeChanged:
             existing.modelConfigSignature !== currentModelConfigSignature,
           mcpChanged: existing.mcpSignature !== mcpSignature,
+          sessionKindChanged: existing.sessionKind !== sessionKind,
+          capabilityModeChanged:
+            existing.capabilityMode !== effectiveCapabilityMode,
+          systemPromptChanged:
+            existing.systemPromptSignature !== systemPromptSignature,
           enabledMcpServerCount: mcpServers.filter((server) => server.enabled)
             .length,
         },
@@ -1378,6 +1409,8 @@ const createOrResumeSession = async (
       });
       return {
         ...existing,
+        provider: effectiveProvider,
+        api: model.api,
         modelSource,
       };
     }
@@ -1401,8 +1434,8 @@ const createOrResumeSession = async (
     }
   }
 
-  // Create coding tools configured for the project directory
-  const tools = createCodingTools(projectCwd);
+  const toolAccessEnabled = effectiveCapabilityMode !== "chat_only";
+  const tools = toolAccessEnabled ? createCodingTools(projectCwd) : [];
   const mcpRuntime = await createMcpRuntime(mcpServers);
   logger.info("MCP runtime prepared for agent session", {
     scope: scopeKey,
@@ -1421,27 +1454,33 @@ const createOrResumeSession = async (
   }
 
   // Create custom tools from our business logic
-  const builtinTools = createBuiltinTools(projectCwd, scope.type).map(
-    toToolDefinition,
-  );
-  const appOperationTools = createAppOperationTools(
-    scope.type === "project" ? scope.projectId : MAIN_AGENT_ID,
-    scope.type,
-  ).map(toToolDefinition);
-  const sessionControlTools = createSessionControlTools({
-    scope,
-    chatSessionId,
-  }).map(toToolDefinition);
-  const delegationTools = createDelegationTools({
-    scope,
-    runtime: delegationToolRuntime,
-  }).map(toToolDefinition);
+  const builtinTools = toolAccessEnabled
+    ? createBuiltinTools(projectCwd, scope.type).map(toToolDefinition)
+    : [];
+  const appOperationTools = toolAccessEnabled
+    ? createAppOperationTools(
+        scope.type === "project" ? scope.projectId : MAIN_AGENT_ID,
+        scope.type,
+      ).map(toToolDefinition)
+    : [];
+  const sessionControlTools = toolAccessEnabled
+    ? createSessionControlTools({
+        scope,
+        chatSessionId,
+      }).map(toToolDefinition)
+    : [];
+  const delegationTools = toolAccessEnabled
+    ? createDelegationTools({
+        scope,
+        runtime: delegationToolRuntime,
+      }).map(toToolDefinition)
+    : [];
   const customTools = [
     ...builtinTools,
     ...appOperationTools,
     ...sessionControlTools,
     ...delegationTools,
-    ...mcpRuntime.tools,
+    ...(toolAccessEnabled ? mcpRuntime.tools : []),
   ];
   const toolNames = [
     ...tools.map((tool) => tool.name),
@@ -1457,6 +1496,8 @@ const createOrResumeSession = async (
     sessionControlToolNames: sessionControlTools.map((tool) => tool.name),
     delegationToolNames: delegationTools.map((tool) => tool.name),
     mcpToolNames: mcpRuntime.tools.map((tool) => tool.name),
+    capabilityMode: effectiveCapabilityMode,
+    sessionKind,
     toolCount: toolNames.length,
     toolNames,
     reusedSession: false,
@@ -1494,10 +1535,12 @@ const createOrResumeSession = async (
         scope.type === "main" ? WORKSPACE_ROOT : undefined,
       ),
       loadAppDeveloperMetadata(),
-      skillService.listActiveSkillsForScope({
-        scope: scope.type,
-        projectId: scope.type === "project" ? scope.projectId : undefined,
-      }),
+      usesAvatarPrompt(sessionKind)
+        ? Promise.resolve([])
+        : skillService.listActiveSkillsForScope({
+            scope: scope.type,
+            projectId: scope.type === "project" ? scope.projectId : undefined,
+          }),
     ]);
   const contextSnapshotSection = buildContextSnapshotSection({
     projectId: scope.type === "project" ? scope.projectId : MAIN_AGENT_ID,
@@ -1524,9 +1567,6 @@ const createOrResumeSession = async (
     scope,
     delegationContext,
   });
-  const fallbackSystemPrompt = await settingsService.getAgentSystemPrompt(
-    scope.type,
-  );
   const explicitSkillPaths = collectExplicitSkillPaths(activeSkills);
   let hasLoggedFinalSystemPrompt = false;
   const resourceLoader = new DefaultResourceLoader({
@@ -1551,7 +1591,11 @@ const createOrResumeSession = async (
         logger.info("Final system prompt metadata (development)", {
           scope: scopeKey,
           chatSessionId,
+          sessionKind,
         });
+        logger.info(
+          `Selected system prompt template Markdown (development)\n\n${fallbackSystemPrompt}`,
+        );
         logger.info(
           `Final system prompt Markdown (development)\n\n${finalSystemPrompt}`,
         );
@@ -1607,6 +1651,9 @@ const createOrResumeSession = async (
     modelConfigSignature: currentModelConfigSignature,
     thinkingLevel: effectiveThinkingLevel,
     mcpSignature,
+    sessionKind,
+    capabilityMode: effectiveCapabilityMode,
+    systemPromptSignature,
     disposeMcpRuntime: mcpRuntime.dispose,
     toolNames,
     activeSkillNames,
@@ -1618,6 +1665,8 @@ const createOrResumeSession = async (
 
   return {
     ...entry,
+    provider: effectiveProvider,
+    api: model.api,
     modelSource,
   };
 };
@@ -1646,16 +1695,16 @@ export const agentService = {
 
     const requestId = payload.requestId ?? `req_${Date.now()}`;
     const projectCwd = getScopeCwd(payload.scope);
-    const {
-      provider: effectiveProvider,
-      modelId: effectiveModelId,
-    } = resolveEffectiveAgentModelSelection(status, payload.model);
+    const { provider: effectiveProvider, modelId: effectiveModelId } =
+      resolveEffectiveAgentModelSelection(status, payload.model);
     const resolvedModel = await settingsService.resolveAgentModel(
       effectiveProvider,
       effectiveModelId,
     );
     if (!resolvedModel) {
-      throw new Error(`Model not found: ${effectiveProvider}:${effectiveModelId}`);
+      throw new Error(
+        `Model not found: ${effectiveProvider}:${effectiveModelId}`,
+      );
     }
 
     logger.info("Context snapshot", {
@@ -1739,6 +1788,8 @@ export const agentService = {
       const {
         session,
         modelId,
+        provider,
+        api,
         modelSource,
         thinkingLevel: resolvedThinkingLevel,
       } = await createOrResumeSession(
@@ -1747,6 +1798,7 @@ export const agentService = {
         payload.sessionId,
         payload.model,
         payload.thinkingLevel,
+        payload.capabilityMode ?? "full",
         payload.module,
         payload.contextSnapshot,
         payload.delegationContext,
@@ -1797,7 +1849,10 @@ export const agentService = {
 
       const emitRequestEvent = (
         targetRequestId: string,
-        event: Omit<ChatStreamEvent, "requestId" | "sessionId" | "scope" | "module">,
+        event: Omit<
+          ChatStreamEvent,
+          "requestId" | "sessionId" | "scope" | "module"
+        >,
         options?: { applyToTimeline?: boolean },
       ): void => {
         const nextEvent: ChatStreamEvent = {
@@ -1811,7 +1866,8 @@ export const agentService = {
         if (!options?.applyToTimeline) {
           return;
         }
-        const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+        const queuedTurn =
+          activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
         if (!queuedTurn || queuedTurn.requestId !== targetRequestId) {
           return;
         }
@@ -1886,7 +1942,8 @@ export const agentService = {
         // --- message_update: streaming text and tool call starts ---
         if (event.type === "message_update") {
           const llmEvent: AssistantMessageEvent = event.assistantMessageEvent;
-          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const queuedTurn =
+            activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
           const targetRequestId = queuedTurn?.requestId ?? requestId;
 
           if (llmEvent.type === "text_delta") {
@@ -1978,7 +2035,8 @@ export const agentService = {
 
         // --- tool_execution_start ---
         if (event.type === "tool_execution_start") {
-          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const queuedTurn =
+            activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
           const targetRequestId = queuedTurn?.requestId ?? requestId;
           if (!queuedTurn) {
             toolProgressCount += 1;
@@ -2003,7 +2061,8 @@ export const agentService = {
 
         // --- tool_execution_update ---
         if (event.type === "tool_execution_update") {
-          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const queuedTurn =
+            activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
           const targetRequestId = queuedTurn?.requestId ?? requestId;
           const startTime = toolStartTimes.get(event.toolCallId) ?? Date.now();
           const elapsedSeconds = (Date.now() - startTime) / 1000;
@@ -2023,7 +2082,8 @@ export const agentService = {
 
         // --- tool_execution_end ---
         if (event.type === "tool_execution_end") {
-          const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+          const queuedTurn =
+            activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
           const targetRequestId = queuedTurn?.requestId ?? requestId;
           if (queuedTurn) {
             queuedTurn.toolOutputCount += 1;
@@ -2049,11 +2109,13 @@ export const agentService = {
               queuedTurn.toolErrorMessage =
                 outputText || `工具执行失败：${event.toolName}`;
             } else {
-              toolErrorMessage = outputText || `工具执行失败：${event.toolName}`;
+              toolErrorMessage =
+                outputText || `工具执行失败：${event.toolName}`;
             }
           }
           if (outputText) {
-            const targetToolActions = queuedTurn?.toolActions ?? toolActionsFromAgent;
+            const targetToolActions =
+              queuedTurn?.toolActions ?? toolActionsFromAgent;
             targetToolActions.add(
               outputText.length > 200
                 ? `${outputText.slice(0, 200)}...`
@@ -2088,7 +2150,8 @@ export const agentService = {
         if (event.type === "message_end") {
           const msg = event.message;
           if (msg.role === "assistant" && Array.isArray(msg.content)) {
-            const queuedTurn = activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
+            const queuedTurn =
+              activeAgentRequestStore.get(storeKey)?.activeQueuedRequest;
             const targetRequestId = queuedTurn?.requestId ?? requestId;
             const fullThinking = msg.content
               .map((c: { type?: string; thinking?: string }) =>
@@ -2195,6 +2258,19 @@ export const agentService = {
         hasImages: attachmentContent.images.length > 0,
         hasDelegationContext: Boolean(payload.delegationContext),
       });
+
+      attachAgentLlmRequestDebug(session.agent, () => ({
+        kind: "agent",
+        requestId,
+        scope: getScopeKey(payload.scope),
+        chatSessionId: payload.sessionId,
+        module: payload.module,
+        provider,
+        modelId,
+        modelSource,
+        api,
+        cwd: projectCwd,
+      }));
 
       if (payload.delegationContext) {
         const delegationText = buildDelegationMessageContent({

@@ -21,6 +21,11 @@ interface TelegramApiResponse<T> {
   description?: string;
 }
 
+interface TelegramBotProfile {
+  id: number | string;
+  username?: string;
+}
+
 interface TelegramFileDescriptor {
   file_id?: string;
   file_name?: string;
@@ -95,6 +100,26 @@ const parseTelegramResponse = async <T>(response: Response): Promise<T> => {
     throw new Error(payload.description || "Telegram API 请求失败");
   }
   return payload.result;
+};
+
+export const fetchTelegramBotProfile = async (
+  token: string,
+): Promise<{ id: string; username: string }> => {
+  const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/getMe`);
+  const result = await parseTelegramResponse<TelegramBotProfile>(response);
+  const id =
+    typeof result.id === "number" && Number.isFinite(result.id)
+      ? String(Math.trunc(result.id))
+      : typeof result.id === "string"
+        ? result.id.trim()
+        : "";
+  if (!id) {
+    throw new Error("Telegram bot profile is missing id");
+  }
+  return {
+    id,
+    username: result.username?.trim() ?? "",
+  };
 };
 
 export const sendTelegramMessage = async (

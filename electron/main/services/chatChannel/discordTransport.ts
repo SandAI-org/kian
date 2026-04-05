@@ -38,6 +38,35 @@ export interface DiscordMessage {
   };
 }
 
+interface DiscordBotProfile {
+  id?: string;
+}
+
+interface DiscordChannelInfo {
+  name?: string;
+  recipients?: Array<{
+    username?: string;
+    global_name?: string;
+  }>;
+}
+
+export const fetchDiscordBotProfile = async (
+  token: string,
+): Promise<{ id: string }> => {
+  const response = await fetch(`${DISCORD_API_BASE}/users/@me`, {
+    headers: {
+      authorization: `Bot ${token}`,
+    },
+  });
+  await assertHttpOk(response, "Discord", "Bot 资料读取");
+  const payload = (await response.json()) as DiscordBotProfile;
+  const id = payload.id?.trim() ?? "";
+  if (!id) {
+    throw new Error("Discord bot profile is missing id");
+  }
+  return { id };
+};
+
 export const sendDiscordBotMessage = async (
   token: string,
   chatId: string,
@@ -298,4 +327,38 @@ export const resolveDiscordChannelGuildId = async (input: {
   );
   input.cache.set(input.channelId, guildId);
   return guildId;
+};
+
+export const fetchDiscordChannelDisplayName = async (input: {
+  token: string;
+  channelId: string;
+  cache: Map<string, string | null>;
+}): Promise<string> => {
+  if (input.cache.has(input.channelId)) {
+    return input.cache.get(input.channelId) ?? "";
+  }
+  const response = await fetch(
+    `${DISCORD_API_BASE}/channels/${encodeURIComponent(input.channelId)}`,
+    {
+      headers: {
+        authorization: `Bot ${input.token}`,
+      },
+    },
+  );
+  await assertHttpOk(response, "Discord", "频道详情获取");
+  const payload = (await response.json()) as DiscordChannelInfo;
+  const explicitName = payload.name?.trim() ?? "";
+  const recipientName = Array.isArray(payload.recipients)
+    ? payload.recipients
+        .map((recipient) => {
+          const globalName = recipient.global_name?.trim() ?? "";
+          const username = recipient.username?.trim() ?? "";
+          return globalName || username;
+        })
+        .filter((name) => name.length > 0)
+        .join(", ")
+    : "";
+  const displayName = explicitName || recipientName;
+  input.cache.set(input.channelId, displayName || null);
+  return displayName;
 };

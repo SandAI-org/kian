@@ -1,13 +1,17 @@
-import * as Lark from "@larksuiteoapi/node-sdk";
 import type { WeixinInboundMessage } from "@kian/weixin-adapter";
+import * as Lark from "@larksuiteoapi/node-sdk";
 import type {
   ChatAttachmentDTO,
+  ChatCapabilityMode,
+  ChatMessageMetadata,
   ChatModuleType,
   ChatScope,
   ChatStreamEvent,
 } from "@shared/types";
 import { randomUUID } from "node:crypto";
 import {
+  fetchDiscordBotProfile as fetchDiscordBotProfileImpl,
+  fetchDiscordChannelDisplayName as fetchDiscordChannelDisplayNameImpl,
   fetchDiscordMessages as fetchDiscordMessagesImpl,
   loadDiscordInboundAttachments as loadDiscordInboundAttachmentsImpl,
   resolveDiscordChannelGuildId as resolveDiscordChannelGuildIdImpl,
@@ -17,14 +21,24 @@ import {
 } from "./chatChannel/discordTransport";
 import {
   clearFeishuTenantTokenCache,
+  fetchFeishuChatDisplayName as fetchFeishuChatDisplayNameImpl,
   fetchFeishuChatIds as fetchFeishuChatIdsImpl,
   fetchFeishuMessages as fetchFeishuMessagesImpl,
+  fetchFeishuUserDisplayName as fetchFeishuUserDisplayNameImpl,
   parseFeishuBotToken as parseFeishuBotTokenImpl,
   resolveFeishuAccessToken as resolveFeishuAccessTokenImpl,
   sendFeishuBotDocument as sendFeishuBotDocumentImpl,
   sendFeishuBotMessage as sendFeishuBotMessageImpl,
   setFeishuMessageReaction as setFeishuMessageReactionImpl,
 } from "./chatChannel/feishuTransport";
+import {
+  createFeishuWsHeartbeatState,
+  getFeishuWsHealthStatus,
+  markFeishuWsHeartbeatEvent,
+  markFeishuWsHeartbeatPing,
+  markFeishuWsHeartbeatPong,
+  type FeishuWsHeartbeatState,
+} from "./chatChannel/feishuWsHeartbeat";
 import {
   buildTelegramAssistantTimelineFromStreamEvents as buildTelegramAssistantTimelineFromStreamEventsImpl,
   buildTelegramToolCallsFromStreamEvents as buildTelegramToolCallsFromStreamEventsImpl,
@@ -38,6 +52,7 @@ import {
   stripTelegramFileMarkdown as stripTelegramFileMarkdownImpl,
 } from "./chatChannel/telegramMirror";
 import {
+  fetchTelegramBotProfile as fetchTelegramBotProfileImpl,
   fetchTelegramUpdates as fetchTelegramUpdatesImpl,
   loadTelegramInboundAttachments as loadTelegramInboundAttachmentsImpl,
   sendTelegramDocument as sendTelegramDocumentImpl,
@@ -45,7 +60,6 @@ import {
   sendTelegramTyping as sendTelegramTypingImpl,
   setTelegramMessageReaction as setTelegramMessageReactionImpl,
 } from "./chatChannel/telegramTransport";
-import { weixinChannelService } from "./chatChannel/weixinChannelService";
 import {
   cleanupInboundTempDirectory,
   createInboundTempDirectory,
@@ -54,14 +68,8 @@ import {
   normalizeMimeType,
   readRecordString,
 } from "./chatChannel/transportCommon";
-import {
-  createFeishuWsHeartbeatState,
-  getFeishuWsHealthStatus,
-  markFeishuWsHeartbeatEvent,
-  markFeishuWsHeartbeatPing,
-  markFeishuWsHeartbeatPong,
-  type FeishuWsHeartbeatState,
-} from "./chatChannel/feishuWsHeartbeat";
+import { chatChannelOwnerDiscoveryService } from "./chatChannelOwnerDiscoveryService";
+import { weixinChannelService } from "./chatChannel/weixinChannelService";
 import { chatService } from "./chatService";
 import { logger } from "./logger";
 import { repositoryService } from "./repositoryService";
@@ -96,6 +104,8 @@ const CHANNEL_SUPPORTED_INPUT_MESSAGE =
 const CHANNEL_HELP_MESSAGE =
   "已连接到 Kian Agent。直接发送文本、图片、音频、视频或文档即可对话。";
 const MAIN_AGENT_SCOPE_ID = "main-agent";
+const DIGITAL_AVATAR_BATCH_LIMIT = 10;
+const DIGITAL_AVATAR_IDLE_FLUSH_MS = 60_000;
 
 const MAIN_CHAT_SCOPE: ChatScope = { type: "main" };
 
@@ -117,6 +127,11 @@ const getSessionReplyContextKey = (
 
 interface TelegramChat {
   id: number | string;
+  type?: string;
+  title?: string;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
 }
 
 interface TelegramFileDescriptor {
@@ -138,6 +153,22 @@ interface TelegramMessage {
   chat?: TelegramChat;
   text?: string;
   caption?: string;
+  entities?: Array<{
+    type?: string;
+    offset?: number;
+    length?: number;
+    user?: {
+      id?: number | string;
+    };
+  }>;
+  caption_entities?: Array<{
+    type?: string;
+    offset?: number;
+    length?: number;
+    user?: {
+      id?: number | string;
+    };
+  }>;
   photo?: TelegramPhotoSize[];
   document?: TelegramFileDescriptor;
   video?: TelegramFileDescriptor;
@@ -148,6 +179,8 @@ interface TelegramMessage {
   from?: {
     is_bot?: boolean;
     id?: number | string;
+    username?: string;
+    first_name?: string;
   };
 }
 
@@ -160,7 +193,9 @@ interface TelegramRuntime {
   token: string;
   projectId: string;
   scope: ChatScope;
-  allowedUserIds: Set<string>;
+  ownerUserIds: Set<string>;
+  botUserId: string;
+  botUsername: string;
   offset: number;
 }
 
@@ -169,12 +204,13 @@ interface BotRuntime {
   token: string;
   projectId: string;
   scope: ChatScope;
-  allowedUserIds: Set<string>;
+  ownerUserIds: Set<string>;
   activeChatIds: Set<string>;
 }
 
 interface DiscordRuntime extends BotRuntime {
   provider: "discord";
+  botUserId: string;
   allowedServerIds: Set<string>;
   allowedChannelIds: Set<string>;
 }
@@ -185,9 +221,12 @@ interface DiscordMessage {
   guild_id?: string;
   content?: string;
   attachments?: DiscordAttachmentItem[];
+  mentions?: Array<{ id?: string }>;
   author?: {
     id?: string;
     bot?: boolean;
+    username?: string;
+    global_name?: string;
   };
 }
 
@@ -210,11 +249,17 @@ interface DiscordGatewayPayload {
 interface FeishuMessageItem {
   message_id?: string;
   chat_id?: string;
+  chat_type?: string;
   create_time?: string;
   msg_type?: string;
   body?: {
     content?: string;
   };
+  mentions?: Array<{
+    key?: string;
+    id?: string;
+    name?: string;
+  }>;
   sender?: {
     sender_type?: string;
     id?: string | FeishuSenderId;
@@ -227,6 +272,8 @@ interface FeishuSenderId {
   open_id?: string;
   union_id?: string;
 }
+
+type FeishuUserIdType = "open_id" | "user_id" | "union_id";
 
 type FeishuMessageReceiveEvent = Parameters<
   NonNullable<Lark.EventHandles["im.message.receive_v1"]>
@@ -242,6 +289,29 @@ interface FeishuInboundAttachmentCandidate {
   mimeType?: string;
   fallbackName: string;
   fallbackExtension?: string;
+}
+
+type ChannelChatType = "direct" | "group";
+
+interface ChannelBatchItem {
+  text: string;
+  senderId: string;
+  senderName: string;
+  createdAt: string;
+  mentioned: boolean;
+}
+
+interface ChannelBatchState {
+  provider: SessionReplyContext["provider"];
+  runtimeScope: ChatScope;
+  runtimeSessionId: string;
+  digitalAvatarSessionId: string;
+  chatId: string;
+  replyText: (text: string) => Promise<void>;
+  replyDocument?: (filePath: string) => Promise<void>;
+  sendAttachmentsFirst?: boolean;
+  flushTimer: NodeJS.Timeout | null;
+  items: ChannelBatchItem[];
 }
 
 interface TelegramToolCallSummary {
@@ -302,10 +372,14 @@ let feishuWsHealthTimer: NodeJS.Timeout | null = null;
 let feishuWsHeartbeatState: FeishuWsHeartbeatState | null = null;
 let discordLastMessageIdByChat = new Map<string, string>();
 let discordGuildIdByChannel = new Map<string, string | null>();
+let discordChannelDisplayNameByChannel = new Map<string, string | null>();
 let feishuLastMessageTsByChat = new Map<string, number>();
 let feishuLastChatSyncAt = 0;
 let feishuEventCache = new Map<string, number>();
+let feishuChatDisplayNameByChat = new Map<string, string | null>();
+let feishuUserDisplayNameByUser = new Map<string, string | null>();
 let sessionReplyContextByKey = new Map<string, SessionReplyContext>();
+let channelBatchStateByKey = new Map<string, ChannelBatchState>();
 let mainAgentSessionPromise: Promise<string> | null = null;
 let runtimeSignature = "";
 
@@ -678,18 +752,48 @@ const mapFeishuReceiveEventToMessage = (
 ): FeishuMessageItem | null => {
   const payload = data.message;
   if (!payload) return null;
+  const payloadRecord = payload as Record<string, unknown>;
   const messageId = normalizeChatId(payload.message_id);
   const chatId = normalizeChatId(payload.chat_id);
   const msgType = payload.message_type?.trim();
+  const chatType =
+    typeof payloadRecord.chat_type === "string"
+      ? payloadRecord.chat_type.trim()
+      : undefined;
+  const mentions = Array.isArray(payloadRecord.mentions)
+    ? payloadRecord.mentions
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+          const mention = item as Record<string, unknown>;
+          return {
+            key:
+              typeof mention.key === "string" ? mention.key.trim() : undefined,
+            id: normalizeChatId(
+              typeof mention.id === "string" || typeof mention.id === "number"
+                ? mention.id
+                : undefined,
+            ) ?? undefined,
+            name:
+              typeof mention.name === "string"
+                ? mention.name.trim()
+                : undefined,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+    : undefined;
   if (!messageId || !chatId || !msgType) return null;
   return {
     message_id: messageId,
     chat_id: chatId,
+    chat_type: chatType,
     create_time: payload.create_time,
     msg_type: msgType,
     body: {
       content: typeof payload.content === "string" ? payload.content : "",
     },
+    mentions,
     sender: {
       sender_type: data.sender?.sender_type,
       id: data.sender?.sender_id,
@@ -832,6 +936,230 @@ const normalizeChatId = (value: number | string | undefined): string | null => {
   return null;
 };
 
+const fetchTelegramBotProfile = async (
+  token: string,
+): Promise<{ id: string; username: string }> => {
+  return await fetchTelegramBotProfileImpl(token);
+};
+
+const fetchDiscordBotProfile = async (
+  token: string,
+): Promise<{ id: string }> => {
+  return await fetchDiscordBotProfileImpl(token);
+};
+
+const toChannelChatType = (value: string | undefined): ChannelChatType =>
+  value === "private" || value === "p2p" || value === "direct"
+    ? "direct"
+    : "group";
+
+const trimDisplayName = (value: string | undefined): string => value?.trim() ?? "";
+
+const pickDisplayNameDistinctFromId = (
+  value: string | undefined,
+  idValue: string,
+): string => {
+  const trimmed = trimDisplayName(value);
+  return trimmed && trimmed !== idValue.trim() ? trimmed : "";
+};
+
+const resolveTelegramChatDisplayName = (
+  chat: TelegramChat | undefined,
+): string => {
+  if (!chat) return "";
+  const title = trimDisplayName(chat.title);
+  if (title) return title;
+  const username = trimDisplayName(chat.username);
+  if (username) return username;
+  return [trimDisplayName(chat.first_name), trimDisplayName(chat.last_name)]
+    .filter((part) => part.length > 0)
+    .join(" ");
+};
+
+const getChannelRuntimeKey = (input: {
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  chatId: string;
+  capabilityMode: ChatCapabilityMode;
+}): string =>
+  [
+    input.provider,
+    input.chatType,
+    input.chatId.trim(),
+    input.capabilityMode,
+  ].join(":");
+
+const getChannelBatchKey = (
+  provider: SessionReplyContext["provider"],
+  chatId: string,
+): string => `${provider}:${chatId.trim()}`;
+
+const getDigitalAvatarConversationId = (input: {
+  chatType: ChannelChatType;
+  chatId: string;
+  senderId: string;
+}): string =>
+  input.chatType === "direct" ? input.senderId.trim() : input.chatId.trim();
+
+const buildDigitalAvatarSessionMetadataJson = (input: {
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  chatId: string;
+  senderId: string;
+}): string =>
+  JSON.stringify({
+    kind: "digital_avatar_session",
+    provider: input.provider,
+    chatType: input.chatType,
+    conversationId: getDigitalAvatarConversationId(input),
+  });
+
+const resolveDigitalAvatarSessionTitle = (input: {
+  chatType: ChannelChatType;
+  chatId: string;
+  senderId: string;
+  senderName: string;
+  chatName?: string;
+}): string =>
+  input.chatType === "direct"
+    ? pickDisplayNameDistinctFromId(input.senderName, input.senderId)
+    : pickDisplayNameDistinctFromId(input.chatName, input.chatId);
+
+const shouldReplaceDigitalAvatarSessionTitle = (input: {
+  currentTitle: string;
+  nextTitle: string;
+  chatType: ChannelChatType;
+  chatId: string;
+  senderId: string;
+}): boolean => {
+  const currentTitle = input.currentTitle.trim();
+  const nextTitle = input.nextTitle.trim();
+  if (!nextTitle || currentTitle === nextTitle) {
+    return false;
+  }
+  if (!currentTitle) {
+    return true;
+  }
+  return currentTitle === getDigitalAvatarConversationId(input);
+};
+
+const getOrCreateDigitalAvatarSessionForConversation = async (input: {
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  chatId: string;
+  senderId: string;
+  senderName: string;
+  chatName?: string;
+}): Promise<string> => {
+  const nextTitle = resolveDigitalAvatarSessionTitle(input);
+  const session = await repositoryService.getOrCreateDigitalAvatarSession(
+    MAIN_CHAT_SCOPE,
+    {
+      metadataJson: buildDigitalAvatarSessionMetadataJson(input),
+      title: nextTitle,
+    },
+  );
+  if (
+    shouldReplaceDigitalAvatarSessionTitle({
+      currentTitle: session.title,
+      nextTitle,
+      chatType: input.chatType,
+      chatId: input.chatId,
+      senderId: input.senderId,
+    })
+  ) {
+    await repositoryService.updateChatSessionTitle({
+      scope: MAIN_CHAT_SCOPE,
+      sessionId: session.id,
+      title: nextTitle,
+    });
+  }
+  return session.id;
+};
+
+const buildChannelEventMetadataJson = (input: {
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  senderId?: string;
+  senderName?: string;
+  isOwner: boolean;
+  mentioned?: boolean;
+  batchedCount?: number;
+  capabilityMode: ChatCapabilityMode;
+}): string =>
+  JSON.stringify({
+    kind: "channel_event",
+    provider: input.provider,
+    chatType: input.chatType,
+    senderId: input.senderId,
+    senderName: input.senderName,
+    isOwner: input.isOwner,
+    mentioned: input.mentioned,
+    batchedCount: input.batchedCount,
+    capabilityMode: input.capabilityMode,
+  } satisfies ChatMessageMetadata);
+
+const buildChannelBatchPrompt = (items: ChannelBatchItem[]): string => {
+  const lines = [
+    "For the newly received list of messages, please reply collectively in accordance with your identity settings.",
+  ];
+  for (const item of items) {
+    lines.push(`[${item.senderName || item.senderId}] ${item.text || "（仅上传了附件）"}`);
+  }
+  return lines.join("\n");
+};
+
+const mirrorChannelInboundMessage = async (input: {
+  sessionId: string;
+  text: string;
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  senderId: string;
+  senderName: string;
+  isOwner: boolean;
+  mentioned?: boolean;
+  capabilityMode: ChatCapabilityMode;
+}): Promise<void> => {
+  await repositoryService.appendMessage({
+    scope: MAIN_CHAT_SCOPE,
+    sessionId: input.sessionId,
+    role: "user",
+    content: input.text,
+    metadataJson: buildChannelEventMetadataJson({
+      provider: input.provider,
+      chatType: input.chatType,
+      senderId: input.senderId,
+      senderName: input.senderName,
+      isOwner: input.isOwner,
+      mentioned: input.mentioned,
+      capabilityMode: input.capabilityMode,
+    }),
+  });
+};
+
+const mirrorChannelAssistantMessage = async (input: {
+  sessionId: string;
+  text: string;
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  capabilityMode: ChatCapabilityMode;
+  batchedCount?: number;
+}): Promise<void> => {
+  await repositoryService.appendMessage({
+    scope: MAIN_CHAT_SCOPE,
+    sessionId: input.sessionId,
+    role: "assistant",
+    content: input.text,
+    metadataJson: buildChannelEventMetadataJson({
+      provider: input.provider,
+      chatType: input.chatType,
+      isOwner: false,
+      capabilityMode: input.capabilityMode,
+      batchedCount: input.batchedCount,
+    }),
+  });
+};
+
 const sendTelegramMessage = async (
   token: string,
   chatId: string,
@@ -918,6 +1246,17 @@ const loadDiscordInboundAttachments = async (input: {
   return await loadDiscordInboundAttachmentsImpl(input);
 };
 
+const fetchDiscordChannelDisplayName = async (
+  token: string,
+  channelId: string,
+): Promise<string> => {
+  return await fetchDiscordChannelDisplayNameImpl({
+    token,
+    channelId,
+    cache: discordChannelDisplayNameByChannel,
+  });
+};
+
 const resolveDiscordChannelGuildId = async (
   token: string,
   channelId: string,
@@ -981,6 +1320,29 @@ const fetchFeishuMessages = async (input: {
 
 const fetchFeishuChatIds = async (token: string): Promise<string[]> => {
   return await fetchFeishuChatIdsImpl(token);
+};
+
+const fetchFeishuChatDisplayName = async (
+  token: string,
+  chatId: string,
+): Promise<string> => {
+  return await fetchFeishuChatDisplayNameImpl({
+    token,
+    chatId,
+    cache: feishuChatDisplayNameByChat,
+  });
+};
+
+const fetchFeishuUserDisplayName = async (input: {
+  token: string;
+  userId: string;
+  chatId?: string;
+  userIdType?: FeishuUserIdType;
+}): Promise<string> => {
+  return await fetchFeishuUserDisplayNameImpl({
+    ...input,
+    cache: feishuUserDisplayNameByUser,
+  });
 };
 
 const syncFeishuActiveChats = async (
@@ -1159,6 +1521,206 @@ const resolveMainAgentLatestSessionId = async (input: {
   }
 };
 
+const resolveChannelSessions = async (input: {
+  provider: SessionReplyContext["provider"];
+  chatId: string;
+  chatType: ChannelChatType;
+  capabilityMode: ChatCapabilityMode;
+  accountId?: string;
+}): Promise<{
+  runtimeSessionId: string;
+}> => {
+  const metadataJson = JSON.stringify({
+    provider: input.provider,
+    chatId: input.chatId,
+    chatType: input.chatType,
+    capabilityMode: input.capabilityMode,
+    runtimeKey: getChannelRuntimeKey({
+      provider: input.provider,
+      chatType: input.chatType,
+      chatId: input.chatId,
+      capabilityMode: input.capabilityMode,
+    }),
+  });
+  const runtimeSession = await repositoryService.getOrCreateChannelRuntimeSession({
+    scope: MAIN_CHAT_SCOPE,
+    module: "main",
+    metadataJson,
+  });
+  rememberSessionReplyContext({
+    scope: MAIN_CHAT_SCOPE,
+    sessionId: runtimeSession.id,
+    provider: input.provider,
+    chatId: input.chatId,
+    accountId: input.accountId,
+  });
+  return {
+    runtimeSessionId: runtimeSession.id,
+  };
+};
+
+const clearChannelBatchTimer = (state: ChannelBatchState): void => {
+  if (!state.flushTimer) return;
+  clearTimeout(state.flushTimer);
+  state.flushTimer = null;
+};
+
+const flushChannelBatchState = async (batchKey: string): Promise<void> => {
+  const state = channelBatchStateByKey.get(batchKey);
+  if (!state || state.items.length === 0) {
+    return;
+  }
+  clearChannelBatchTimer(state);
+  const items = state.items.splice(0, state.items.length);
+  channelBatchStateByKey.delete(batchKey);
+  const batchedCount = items.length;
+  const prompt = buildChannelBatchPrompt(items);
+  logger.info("Channel batch flush started", {
+    batchKey,
+    provider: state.provider,
+    chatId: state.chatId,
+    batchedCount,
+    runtimeSessionId: state.runtimeSessionId,
+  });
+  try {
+    const progressiveStreamer = createDirectChannelReplyStreamer({
+      provider: state.provider,
+      projectId: MAIN_AGENT_SCOPE_ID,
+      chatId: state.chatId,
+      sendText: state.replyText,
+      sendDocument: state.replyDocument,
+      sendAttachmentsFirst: state.sendAttachmentsFirst,
+    });
+    const requestId = randomUUID();
+    const result = await chatService.send(
+      {
+        scope: state.runtimeScope,
+        module: "main",
+        sessionId: state.runtimeSessionId,
+        requestId,
+        message: prompt,
+        capabilityMode: "chat_only",
+      },
+      (streamEvent) => {
+        progressiveStreamer.pushEvent(streamEvent);
+      },
+    );
+    await progressiveStreamer.finalize({
+      fallbackAssistantMessage: result.assistantMessage,
+      toolActions: result.toolActions,
+    });
+    await mirrorChannelAssistantMessage({
+      sessionId: state.digitalAvatarSessionId,
+      text: result.assistantMessage,
+      provider: state.provider,
+      chatType: "group",
+      capabilityMode: "chat_only",
+      batchedCount,
+    });
+    logger.info("Channel batch flush completed", {
+      batchKey,
+      provider: state.provider,
+      chatId: state.chatId,
+      batchedCount,
+      assistantMessageLength: result.assistantMessage.length,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("Channel batch flush failed", {
+      batchKey,
+      error: errorMessage,
+    });
+    await state.replyText(`处理失败：${errorMessage}`);
+    await mirrorChannelAssistantMessage({
+      sessionId: state.digitalAvatarSessionId,
+      text: `处理失败：${errorMessage}`,
+      provider: state.provider,
+      chatType: "group",
+      capabilityMode: "chat_only",
+      batchedCount,
+    });
+  }
+};
+
+const scheduleChannelBatchFlush = (batchKey: string, state: ChannelBatchState): void => {
+  if (state.flushTimer) {
+    return;
+  }
+  state.flushTimer = setTimeout(() => {
+    void flushChannelBatchState(batchKey);
+  }, DIGITAL_AVATAR_IDLE_FLUSH_MS);
+};
+
+const sendChannelRuntimeTurn = async (input: {
+  provider: SessionReplyContext["provider"];
+  runtimeSessionId: string;
+  chatId: string;
+  text: string;
+  attachments?: ChatAttachmentDTO[];
+  capabilityMode: ChatCapabilityMode;
+  replyText: (text: string) => Promise<void>;
+  replyDocument?: (filePath: string) => Promise<void>;
+  sendAttachmentsFirst?: boolean;
+  digitalAvatarSessionId?: string;
+  chatType: ChannelChatType;
+  batchedCount?: number;
+}): Promise<void> => {
+  logger.info("Channel runtime turn started", {
+    provider: input.provider,
+    chatId: input.chatId,
+    sessionId: input.runtimeSessionId,
+    chatType: input.chatType,
+    capabilityMode: input.capabilityMode,
+    attachmentCount: input.attachments?.length ?? 0,
+    textLength: input.text.trim().length,
+    mirroredToDigitalAvatar: Boolean(input.digitalAvatarSessionId),
+  });
+  const progressiveStreamer = createDirectChannelReplyStreamer({
+    provider: input.provider,
+    projectId: MAIN_AGENT_SCOPE_ID,
+    chatId: input.chatId,
+    sendText: input.replyText,
+    sendDocument: input.replyDocument,
+    sendAttachmentsFirst: input.sendAttachmentsFirst,
+  });
+  const requestId = randomUUID();
+  const result = await chatService.send(
+    {
+      scope: MAIN_CHAT_SCOPE,
+      module: "main",
+      sessionId: input.runtimeSessionId,
+      requestId,
+      message: input.text,
+      attachments: input.attachments?.length ? input.attachments : undefined,
+      capabilityMode: input.capabilityMode,
+    },
+    (streamEvent) => {
+      progressiveStreamer.pushEvent(streamEvent);
+    },
+  );
+  await progressiveStreamer.finalize({
+    fallbackAssistantMessage: result.assistantMessage,
+    toolActions: result.toolActions,
+  });
+  if (input.digitalAvatarSessionId) {
+    await mirrorChannelAssistantMessage({
+      sessionId: input.digitalAvatarSessionId,
+      text: result.assistantMessage,
+      provider: input.provider,
+      chatType: input.chatType,
+      capabilityMode: input.capabilityMode,
+      batchedCount: input.batchedCount,
+    });
+  }
+  logger.info("Channel runtime turn completed", {
+    provider: input.provider,
+    chatId: input.chatId,
+    sessionId: input.runtimeSessionId,
+    assistantMessageLength: result.assistantMessage.length,
+    mirroredToDigitalAvatar: Boolean(input.digitalAvatarSessionId),
+  });
+};
+
 const createDirectChannelReplyStreamer = (input: {
   provider: SessionReplyContext["provider"];
   projectId: string;
@@ -1274,7 +1836,7 @@ const createTypingIndicator = (token: string, chatId: string): (() => void) => {
 };
 
 const getOutboundChatIds = (state: TelegramRuntime): string[] => {
-  return Array.from(state.allowedUserIds)
+  return Array.from(state.ownerUserIds)
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
 };
@@ -1777,6 +2339,59 @@ const schedulePoll = (delayMs: number): void => {
   );
 };
 
+const extractTelegramEntityText = (
+  source: string,
+  entity: { offset?: number; length?: number },
+): string => {
+  if (!source) return "";
+  const offset = Number(entity.offset ?? -1);
+  const length = Number(entity.length ?? -1);
+  if (!Number.isInteger(offset) || !Number.isInteger(length) || offset < 0 || length <= 0) {
+    return "";
+  }
+  return source.slice(offset, offset + length).trim();
+};
+
+const isTelegramBotMentioned = (
+  message: TelegramMessage,
+  state: TelegramRuntime,
+): boolean => {
+  const candidates: Array<{
+    text: string;
+    entities?: TelegramMessage["entities"];
+  }> = [
+    {
+      text: typeof message.text === "string" ? message.text : "",
+      entities: message.entities,
+    },
+    {
+      text: typeof message.caption === "string" ? message.caption : "",
+      entities: message.caption_entities,
+    },
+  ];
+  for (const candidate of candidates) {
+    for (const entity of candidate.entities ?? []) {
+      if (entity.type === "text_mention") {
+        const entityUserId = normalizeChatId(entity.user?.id);
+        if (entityUserId && entityUserId === state.botUserId) {
+          return true;
+        }
+      }
+      if (entity.type === "mention") {
+        const entityText = extractTelegramEntityText(candidate.text, entity);
+        if (
+          entityText &&
+          state.botUsername &&
+          entityText.toLowerCase() === `@${state.botUsername.toLowerCase()}`
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+};
+
 const processTelegramUpdate = async (
   update: TelegramUpdate,
   state: TelegramRuntime,
@@ -1815,10 +2430,21 @@ const processTelegramUpdate = async (
   };
 
   const fromUserId = normalizeChatId(message.from?.id);
-  if (!fromUserId || !state.allowedUserIds.has(fromUserId)) {
-    await replyText(TELEGRAM_UNAUTHORIZED_USER_MESSAGE);
-    return;
-  }
+  if (!fromUserId) return;
+  const chatType = toChannelChatType(message.chat?.type);
+  const isOwner = state.ownerUserIds.has(fromUserId);
+  const capabilityMode: ChatCapabilityMode = isOwner ? "full" : "chat_only";
+  const mentioned = chatType === "direct" ? true : isTelegramBotMentioned(message, state);
+  const chatName = resolveTelegramChatDisplayName(message.chat);
+  const senderName =
+    message.from?.first_name?.trim() ||
+    message.from?.username?.trim() ||
+    fromUserId;
+  chatChannelOwnerDiscoveryService.record({
+    provider: "telegram",
+    userId: fromUserId,
+    displayName: senderName,
+  });
 
   const attachments = await loadTelegramInboundAttachments({
     token: state.token,
@@ -1833,9 +2459,44 @@ const processTelegramUpdate = async (
         ? message.caption.trim()
         : "";
 
+  logger.info("Telegram inbound message received", {
+    chatId,
+    fromUserId,
+    senderName,
+    chatType,
+    isOwner,
+    mentioned,
+    capabilityMode,
+    textLength: text.length,
+    attachmentCount: attachments.length,
+  });
+
   if (!text && attachments.length === 0) {
     await replyText(CHANNEL_SUPPORTED_INPUT_MESSAGE);
     return;
+  }
+
+  let digitalAvatarSessionId: string | undefined;
+  if (!isOwner) {
+    digitalAvatarSessionId = await getOrCreateDigitalAvatarSessionForConversation({
+      provider: "telegram",
+      chatType,
+      chatId,
+      senderId: fromUserId,
+      senderName,
+      chatName,
+    });
+    await mirrorChannelInboundMessage({
+      sessionId: digitalAvatarSessionId,
+      text: text || "（仅上传了附件）",
+      provider: "telegram",
+      chatType,
+      senderId: fromUserId,
+      senderName,
+      isOwner: false,
+      mentioned,
+      capabilityMode,
+    });
   }
 
   if ((text === "/start" || text === "/help") && attachments.length === 0) {
@@ -1846,72 +2507,93 @@ const processTelegramUpdate = async (
   try {
     const stopTyping = createTypingIndicator(state.token, chatId);
     try {
-      const sessionId = await resolveMainAgentLatestSessionId({
+      if (isOwner) {
+        const mainSessionId = await resolveMainAgentLatestSessionId({
+          provider: "telegram",
+          chatId,
+        });
+        logger.info("Telegram owner message routed to main session", {
+          chatId,
+          fromUserId,
+          sessionId: mainSessionId,
+        });
+        await sendChannelRuntimeTurn({
+          provider: "telegram",
+          runtimeSessionId: mainSessionId,
+          chatId,
+          text,
+          attachments,
+          capabilityMode,
+          replyText,
+          replyDocument,
+          chatType,
+        });
+        return;
+      }
+
+      const { runtimeSessionId } = await resolveChannelSessions({
         provider: "telegram",
         chatId,
+        chatType,
+        capabilityMode,
       });
+      if (!isOwner && chatType === "group" && !mentioned) {
+        if (!digitalAvatarSessionId) {
+          return;
+        }
+        const batchKey = getChannelBatchKey("telegram", chatId);
+        const existing = channelBatchStateByKey.get(batchKey);
+        const batchState =
+          existing ??
+          {
+            provider: "telegram",
+            runtimeScope: MAIN_CHAT_SCOPE,
+            runtimeSessionId,
+            digitalAvatarSessionId,
+            chatId,
+            replyText,
+            replyDocument,
+            flushTimer: null,
+            items: [],
+          } satisfies ChannelBatchState;
+        batchState.runtimeSessionId = runtimeSessionId;
+        batchState.digitalAvatarSessionId = digitalAvatarSessionId;
+        batchState.replyText = replyText;
+        batchState.replyDocument = replyDocument;
+        batchState.items.push({
+          text: text || "（仅上传了附件）",
+          senderId: fromUserId,
+          senderName,
+          createdAt: new Date().toISOString(),
+          mentioned,
+        });
+        channelBatchStateByKey.set(batchKey, batchState);
+        logger.info("Telegram non-owner group message queued for batch reply", {
+          chatId,
+          fromUserId,
+          runtimeSessionId,
+          batchSize: batchState.items.length,
+          mentioned,
+        });
+        if (batchState.items.length > DIGITAL_AVATAR_BATCH_LIMIT) {
+          await flushChannelBatchState(batchKey);
+          return;
+        }
+        scheduleChannelBatchFlush(batchKey, batchState);
+        return;
+      }
 
-      const progressiveStreamer = createTelegramAssistantProgressiveStreamer({
-        sendToolRunningMessage: async (tool) => {
-          await replyText(formatTelegramToolRunningMessage(tool));
-        },
-        sendToolDoneMessage: async (tool) => {
-          await replyText(formatTelegramToolDoneMessage(tool));
-        },
-        sendAssistantMessage: async (message, isError) => {
-          const fileAttachments = extractTelegramFileAttachments(
-            message,
-            MAIN_CHAT_SCOPE,
-          );
-          const assistantText = stripTelegramFileMarkdown(message);
-          const messageText = formatTelegramAssistantBody({
-            message: assistantText,
-            hasAttachments: fileAttachments.length > 0,
-            isError,
-          });
-          if (messageText || fileAttachments.length === 0) {
-            await replyText(messageText || "已生成附件，请查收。");
-          }
-          let sentAttachmentCount = 0;
-          for (const attachmentPath of fileAttachments) {
-            try {
-              await replyDocument(attachmentPath);
-              sentAttachmentCount += 1;
-            } catch (error) {
-              logger.warn("Failed to send telegram document attachment", {
-                chatId,
-                attachmentPath,
-                error,
-              });
-            }
-          }
-          if (
-            !assistantText &&
-            fileAttachments.length > 0 &&
-            sentAttachmentCount === 0
-          ) {
-            await replyText("附件发送失败，请检查文件路径或权限。");
-          }
-        },
-      });
-
-      const requestId = randomUUID();
-      const result = await chatService.send(
-        {
-          scope: MAIN_CHAT_SCOPE,
-          module: "main",
-          sessionId,
-          requestId,
-          message: text,
-          attachments: attachments.length > 0 ? attachments : undefined,
-        },
-        (streamEvent) => {
-          progressiveStreamer.pushEvent(streamEvent);
-        },
-      );
-      await progressiveStreamer.finalize({
-        fallbackAssistantMessage: result.assistantMessage,
-        toolActions: result.toolActions,
+      await sendChannelRuntimeTurn({
+        provider: "telegram",
+        runtimeSessionId,
+        chatId,
+        text,
+        attachments,
+        capabilityMode,
+        replyText,
+        replyDocument,
+        digitalAvatarSessionId,
+        chatType,
       });
     } finally {
       stopTyping();
@@ -2050,25 +2732,32 @@ const parseFeishuBodyContentObject = (
   }
 };
 
-const resolveFeishuSenderId = (item: FeishuMessageItem): string => {
+const resolveFeishuSenderRef = (
+  item: FeishuMessageItem,
+): { userId: string; userIdType?: FeishuUserIdType } => {
   const sender = item.sender;
-  if (!sender) return "";
+  if (!sender) return { userId: "" };
   const senderFromIdObject =
     typeof sender.id === "object" && sender.id ? sender.id : undefined;
-  const candidates = [
-    typeof sender.id === "string" ? sender.id : undefined,
-    senderFromIdObject?.open_id,
-    senderFromIdObject?.user_id,
-    senderFromIdObject?.union_id,
-    sender.sender_id?.open_id,
-    sender.sender_id?.user_id,
-    sender.sender_id?.union_id,
+  const candidates: Array<{ value?: string; userIdType?: FeishuUserIdType }> = [
+    { value: typeof sender.id === "string" ? sender.id : undefined },
+    { value: senderFromIdObject?.open_id, userIdType: "open_id" },
+    { value: senderFromIdObject?.user_id, userIdType: "user_id" },
+    { value: senderFromIdObject?.union_id, userIdType: "union_id" },
+    { value: sender.sender_id?.open_id, userIdType: "open_id" },
+    { value: sender.sender_id?.user_id, userIdType: "user_id" },
+    { value: sender.sender_id?.union_id, userIdType: "union_id" },
   ];
   for (const candidate of candidates) {
-    const normalized = normalizeChatId(candidate);
-    if (normalized) return normalized;
+    const normalized = normalizeChatId(candidate.value);
+    if (normalized) {
+      return {
+        userId: normalized,
+        ...(candidate.userIdType ? { userIdType: candidate.userIdType } : {}),
+      };
+    }
   }
-  return "";
+  return { userId: "" };
 };
 
 const parseFeishuTextContent = (item: FeishuMessageItem): string => {
@@ -2080,6 +2769,14 @@ const parseFeishuTextContent = (item: FeishuMessageItem): string => {
     return readRecordString(parsed, "text") ?? "";
   }
   return rawContent;
+};
+
+const isFeishuMessageMentioned = (item: FeishuMessageItem): boolean => {
+  if ((item.mentions?.length ?? 0) > 0) {
+    return true;
+  }
+  const rawContent = item.body?.content?.trim() ?? "";
+  return /@_user_\d+\b/.test(rawContent);
 };
 
 const extractFeishuInboundAttachmentCandidate = (
@@ -2215,29 +2912,72 @@ const processBotIncomingMessage = async (input: {
   state: BotRuntime;
   chatId: string;
   fromUserId: string;
+  senderName: string;
+  chatName?: string;
+  chatType: ChannelChatType;
+  mentioned: boolean;
   text: string;
   attachments?: ChatAttachmentDTO[];
-  enforceUserWhitelist?: boolean;
   sendAttachmentsFirst?: boolean;
   replyText: (text: string) => Promise<void>;
   replyDocument?: (filePath: string) => Promise<void>;
 }): Promise<void> => {
-  const enforceUserWhitelist = input.enforceUserWhitelist ?? true;
   const sendAttachmentsFirst = input.sendAttachmentsFirst ?? false;
-  if (
-    enforceUserWhitelist &&
-    !input.state.allowedUserIds.has(input.fromUserId)
-  ) {
-    await input.replyText(TELEGRAM_UNAUTHORIZED_USER_MESSAGE);
-    return;
-  }
   input.state.activeChatIds.add(input.chatId);
 
   const text = input.text.trim();
   const attachments = input.attachments ?? [];
+  const provider =
+    input.provider === "Discord"
+      ? "discord"
+      : input.provider === "飞书"
+        ? "feishu"
+        : "telegram";
+  const isOwner = input.state.ownerUserIds.has(input.fromUserId);
+  const capabilityMode: ChatCapabilityMode = isOwner ? "full" : "chat_only";
+  chatChannelOwnerDiscoveryService.record({
+    provider,
+    userId: input.fromUserId,
+    displayName: input.senderName,
+  });
+  logger.info("Channel bot inbound message received", {
+    provider,
+    chatId: input.chatId,
+    fromUserId: input.fromUserId,
+    senderName: input.senderName,
+    chatType: input.chatType,
+    isOwner,
+    mentioned: input.mentioned,
+    capabilityMode,
+    textLength: text.length,
+    attachmentCount: attachments.length,
+  });
   if (!text && attachments.length === 0) {
     await input.replyText(CHANNEL_SUPPORTED_INPUT_MESSAGE);
     return;
+  }
+
+  let digitalAvatarSessionId: string | undefined;
+  if (!isOwner) {
+    digitalAvatarSessionId = await getOrCreateDigitalAvatarSessionForConversation({
+      provider,
+      chatType: input.chatType,
+      chatId: input.chatId,
+      senderId: input.fromUserId,
+      senderName: input.senderName,
+      chatName: input.chatName,
+    });
+    await mirrorChannelInboundMessage({
+      sessionId: digitalAvatarSessionId,
+      text: text || "（仅上传了附件）",
+      provider,
+      chatType: input.chatType,
+      senderId: input.fromUserId,
+      senderName: input.senderName,
+      isOwner: false,
+      mentioned: input.mentioned,
+      capabilityMode,
+    });
   }
 
   if ((text === "/start" || text === "/help") && attachments.length === 0) {
@@ -2246,104 +2986,99 @@ const processBotIncomingMessage = async (input: {
   }
 
   try {
-    const provider =
-      input.provider === "Discord"
-        ? "discord"
-        : input.provider === "飞书"
-          ? "feishu"
-          : "telegram";
-    const sessionId = await resolveMainAgentLatestSessionId({
+    if (isOwner) {
+      const mainSessionId = await resolveMainAgentLatestSessionId({
+        provider,
+        chatId: input.chatId,
+      });
+      logger.info("Owner channel message routed to main session", {
+        provider,
+        chatId: input.chatId,
+        fromUserId: input.fromUserId,
+        sessionId: mainSessionId,
+      });
+      await sendChannelRuntimeTurn({
+        provider,
+        runtimeSessionId: mainSessionId,
+        chatId: input.chatId,
+        text,
+        attachments,
+        capabilityMode,
+        replyText: input.replyText,
+        replyDocument: input.replyDocument,
+        sendAttachmentsFirst,
+        chatType: input.chatType,
+      });
+      return;
+    }
+
+    const { runtimeSessionId } = await resolveChannelSessions({
       provider,
       chatId: input.chatId,
+      chatType: input.chatType,
+      capabilityMode,
     });
+    if (!isOwner && input.chatType === "group" && !input.mentioned) {
+      if (!digitalAvatarSessionId) {
+        return;
+      }
+      const batchKey = getChannelBatchKey(provider, input.chatId);
+      const existing = channelBatchStateByKey.get(batchKey);
+      const state =
+        existing ??
+        {
+          provider,
+          runtimeScope: MAIN_CHAT_SCOPE,
+          runtimeSessionId,
+          digitalAvatarSessionId,
+          chatId: input.chatId,
+          replyText: input.replyText,
+          replyDocument: input.replyDocument,
+          sendAttachmentsFirst,
+          flushTimer: null,
+          items: [],
+        } satisfies ChannelBatchState;
+      state.runtimeSessionId = runtimeSessionId;
+      state.digitalAvatarSessionId = digitalAvatarSessionId;
+      state.replyText = input.replyText;
+      state.replyDocument = input.replyDocument;
+      state.sendAttachmentsFirst = sendAttachmentsFirst;
+      state.items.push({
+        text: text || "（仅上传了附件）",
+        senderId: input.fromUserId,
+        senderName: input.senderName,
+        createdAt: new Date().toISOString(),
+        mentioned: input.mentioned,
+      });
+      channelBatchStateByKey.set(batchKey, state);
+      logger.info("Non-owner group message queued for batch reply", {
+        provider,
+        chatId: input.chatId,
+        fromUserId: input.fromUserId,
+        runtimeSessionId,
+        batchSize: state.items.length,
+        mentioned: input.mentioned,
+      });
+      if (state.items.length > DIGITAL_AVATAR_BATCH_LIMIT) {
+        await flushChannelBatchState(batchKey);
+        return;
+      }
+      scheduleChannelBatchFlush(batchKey, state);
+      return;
+    }
 
-    const progressiveStreamer = createTelegramAssistantProgressiveStreamer({
-      sendToolRunningMessage: async (tool) => {
-        await input.replyText(formatTelegramToolRunningMessage(tool));
-      },
-      sendToolDoneMessage: async (tool) => {
-        await input.replyText(formatTelegramToolDoneMessage(tool));
-      },
-      sendAssistantMessage: async (message, isError) => {
-        const fileAttachments = extractTelegramFileAttachments(
-          message,
-          MAIN_CHAT_SCOPE,
-        );
-        const assistantText = stripTelegramFileMarkdown(message);
-        const messageText = formatTelegramAssistantBody({
-          message: assistantText,
-          hasAttachments: fileAttachments.length > 0,
-          isError,
-        });
-        if (messageText || fileAttachments.length === 0) {
-          if (!sendAttachmentsFirst) {
-            await input.replyText(messageText || "已生成附件，请查收。");
-          }
-        }
-
-        if (fileAttachments.length === 0) {
-          if (sendAttachmentsFirst && messageText) {
-            await input.replyText(messageText);
-          }
-          return;
-        }
-        if (!input.replyDocument) {
-          const lines = [
-            "附件路径:",
-            ...fileAttachments.map((item) => `- ${item}`),
-          ];
-          await input.replyText(lines.join("\n"));
-          if (sendAttachmentsFirst && messageText) {
-            await input.replyText(messageText);
-          }
-          return;
-        }
-
-        let sentAttachmentCount = 0;
-        for (const attachmentPath of fileAttachments) {
-          try {
-            await input.replyDocument(attachmentPath);
-            sentAttachmentCount += 1;
-          } catch (error) {
-            logger.warn(`Failed to send ${input.provider} bot attachment`, {
-              chatId: input.chatId,
-              attachmentPath,
-              error,
-            });
-          }
-        }
-        if (
-          !assistantText &&
-          fileAttachments.length > 0 &&
-          sentAttachmentCount === 0
-        ) {
-          await input.replyText("附件发送失败，请检查文件路径或权限。");
-          return;
-        }
-
-        if (sendAttachmentsFirst && messageText) {
-          await input.replyText(messageText);
-        }
-      },
-    });
-
-    const requestId = randomUUID();
-    const result = await chatService.send(
-      {
-        scope: MAIN_CHAT_SCOPE,
-        module: "main",
-        sessionId,
-        requestId,
-        message: text,
-        attachments: attachments.length > 0 ? attachments : undefined,
-      },
-      (streamEvent) => {
-        progressiveStreamer.pushEvent(streamEvent);
-      },
-    );
-    await progressiveStreamer.finalize({
-      fallbackAssistantMessage: result.assistantMessage,
-      toolActions: result.toolActions,
+    await sendChannelRuntimeTurn({
+      provider,
+      runtimeSessionId,
+      chatId: input.chatId,
+      text,
+      attachments,
+      capabilityMode,
+      replyText: input.replyText,
+      replyDocument: input.replyDocument,
+      sendAttachmentsFirst,
+      digitalAvatarSessionId,
+      chatType: input.chatType,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -2494,6 +3229,26 @@ const processDiscordMessage = async (
   if (!isDiscordMessageAllowedByScope({ runtime: state, chatId, guildId })) {
     return;
   }
+  const chatType: ChannelChatType = guildId ? "group" : "direct";
+  const mentioned =
+    chatType === "direct"
+      ? true
+      : (message.mentions ?? []).some(
+          (mention) => normalizeChatId(mention.id) === state.botUserId,
+        );
+  const senderName =
+    message.author?.global_name?.trim() ||
+    message.author?.username?.trim() ||
+    fromUserId;
+  let chatName = "";
+  try {
+    chatName = await fetchDiscordChannelDisplayName(state.token, chatId);
+  } catch (error) {
+    logger.warn("Failed to resolve Discord channel display name", {
+      chatId,
+      error,
+    });
+  }
   const attachments = await loadDiscordInboundAttachments({
     token: state.token,
     scope: MAIN_CHAT_SCOPE,
@@ -2521,9 +3276,12 @@ const processDiscordMessage = async (
     state,
     chatId,
     fromUserId,
+    senderName,
+    chatName,
+    chatType,
+    mentioned,
     text: message.content ?? "",
     attachments,
-    enforceUserWhitelist: false,
     replyText: async (text) => {
       await ensureReaction();
       await sendDiscordBotMessage(
@@ -2561,7 +3319,8 @@ const processFeishuMessage = async (
   const chatId = normalizeChatId(message.chat_id ?? fallbackChatId);
   const replyToMessageId = message.message_id?.trim() || "";
   let reactedToUserMessage = false;
-  const fromUserId = resolveFeishuSenderId(message);
+  const senderRef = resolveFeishuSenderRef(message);
+  const fromUserId = senderRef.userId;
   if (!chatId || !fromUserId) {
     logger.warn("Feishu inbound message ignored: missing chat/user id", {
       messageId: message.message_id,
@@ -2572,6 +3331,37 @@ const processFeishuMessage = async (
     return;
   }
   const text = parseFeishuTextContent(message);
+  const chatType = toChannelChatType(message.chat_type);
+  const mentioned = chatType === "direct" ? true : isFeishuMessageMentioned(message);
+  let senderName = fromUserId;
+  let chatName = "";
+  try {
+    const resolvedSenderName = await fetchFeishuUserDisplayName({
+      token: state.token,
+      userId: fromUserId,
+      chatId,
+      userIdType: senderRef.userIdType,
+    });
+    if (resolvedSenderName) {
+      senderName = resolvedSenderName;
+    }
+  } catch (error) {
+    logger.warn("Failed to resolve Feishu sender display name", {
+      userId: fromUserId,
+      userIdType: senderRef.userIdType,
+      error,
+    });
+  }
+  if (chatType === "group") {
+    try {
+      chatName = await fetchFeishuChatDisplayName(state.token, chatId);
+    } catch (error) {
+      logger.warn("Failed to resolve Feishu chat display name", {
+        chatId,
+        error,
+      });
+    }
+  }
   const attachments = await loadFeishuInboundAttachments({
     token: state.token,
     scope: MAIN_CHAT_SCOPE,
@@ -2605,9 +3395,12 @@ const processFeishuMessage = async (
     state,
     chatId,
     fromUserId,
+    senderName,
+    chatName,
+    chatType,
+    mentioned,
     text,
     attachments,
-    enforceUserWhitelist: false,
     sendAttachmentsFirst: true,
     replyText: async (text) => {
       await ensureReaction();
@@ -2775,7 +3568,9 @@ const startPolling = (input: {
   token: string;
   scope: ChatScope;
   projectId: string;
-  userIds: string[];
+  ownerUserIds: string[];
+  botUserId: string;
+  botUsername: string;
   lastUpdateId: number;
 }): void => {
   running = true;
@@ -2785,19 +3580,23 @@ const startPolling = (input: {
     token: input.token,
     projectId: input.projectId,
     scope: input.scope,
-    allowedUserIds: new Set(
-      input.userIds
+    ownerUserIds: new Set(
+      input.ownerUserIds
         .map((item) => item.trim())
         .filter((item) => item.length > 0),
     ),
+    botUserId: input.botUserId,
+    botUsername: input.botUsername,
     offset: input.lastUpdateId,
   };
   schedulePoll(0);
   logger.info("Telegram chat channel started", {
     projectId: input.projectId,
     scope: input.scope,
-    userIds: input.userIds,
-    userWhitelistSize: runtime.allowedUserIds.size,
+    ownerUserIds: input.ownerUserIds,
+    ownerWhitelistSize: runtime.ownerUserIds.size,
+    botUserId: input.botUserId,
+    botUsername: input.botUsername,
   });
 };
 
@@ -2819,8 +3618,11 @@ const stopService = (): void => {
   feishuPolling = false;
   discordLastMessageIdByChat = new Map<string, string>();
   discordGuildIdByChannel = new Map<string, string | null>();
+  discordChannelDisplayNameByChannel = new Map<string, string | null>();
   feishuLastMessageTsByChat = new Map<string, number>();
   feishuLastChatSyncAt = 0;
+  feishuChatDisplayNameByChat = new Map<string, string | null>();
+  feishuUserDisplayNameByUser = new Map<string, string | null>();
   clearFeishuTenantTokenCache();
   discordRuntime = null;
   feishuRuntime = null;
@@ -3055,17 +3857,19 @@ export const chatChannelService = {
 
     const token = telegram.secret?.trim() ?? "";
     const resolvedTelegramProjectId = resolveProjectId("");
-    const userIds = telegram.userIds
+    const telegramOwnerUserIds = telegram.ownerUserIds
       .map((item) => item.trim())
       .filter((item) => item.length > 0 && /^\d+$/.test(item));
     const telegramReady =
       telegram.enabled &&
       token.length > 0 &&
-      (mainSubModeEnabled || resolvedTelegramProjectId.length > 0) &&
-      userIds.length > 0;
+      (mainSubModeEnabled || resolvedTelegramProjectId.length > 0);
 
     const discordToken = discord.secret?.trim() ?? "";
     const resolvedDiscordProjectId = resolveProjectId("");
+    const discordOwnerUserIds = discord.ownerUserIds
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0 && /^\d+$/.test(item));
     const discordServerIds = discord.serverIds
       .map((item) => item.trim())
       .filter((item) => item.length > 0 && /^\d+$/.test(item));
@@ -3086,6 +3890,9 @@ export const chatChannelService = {
         ? `${feishuAppId}:${feishuAppSecret}`
         : "";
     const resolvedFeishuProjectId = resolveProjectId("");
+    const feishuOwnerUserIds = feishu.ownerUserIds
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     const feishuReady =
       feishu.enabled &&
       feishuToken.length > 0 &&
@@ -3111,7 +3918,7 @@ export const chatChannelService = {
           token,
           projectId: resolvedTelegramProjectId,
           scopeType: mainSubModeEnabled ? "main" : "project",
-          userIds,
+          userIds: telegramOwnerUserIds,
         }),
         lastUpdateId: telegram.lastUpdateId,
         ready: telegramReady,
@@ -3122,7 +3929,7 @@ export const chatChannelService = {
           token: discordToken,
           projectId: resolvedDiscordProjectId,
           scopeType: mainSubModeEnabled ? "main" : "project",
-          userIds: [],
+          userIds: discordOwnerUserIds,
           serverIds: discordServerIds,
           channelIds: discordChannelIds,
         }),
@@ -3134,7 +3941,7 @@ export const chatChannelService = {
           token: feishuToken,
           projectId: resolvedFeishuProjectId,
           scopeType: mainSubModeEnabled ? "main" : "project",
-          userIds: [],
+          userIds: feishuOwnerUserIds,
         }),
         ready: feishuReady,
       },
@@ -3167,11 +3974,14 @@ export const chatChannelService = {
     feishuPolling = false;
 
     if (telegramReady) {
+      const telegramBotProfile = await fetchTelegramBotProfile(token);
       startPolling({
         token,
         scope: resolveScope(resolvedTelegramProjectId),
         projectId: resolvedTelegramProjectId,
-        userIds,
+        ownerUserIds: telegramOwnerUserIds,
+        botUserId: telegramBotProfile.id,
+        botUsername: telegramBotProfile.username,
         lastUpdateId: telegram.lastUpdateId,
       });
     } else if (wasTelegramRunning) {
@@ -3180,6 +3990,7 @@ export const chatChannelService = {
 
     if (discordReady) {
       discordGuildIdByChannel = new Map<string, string | null>();
+      discordChannelDisplayNameByChannel = new Map<string, string | null>();
       const allowedServerIdSet = new Set(discordServerIds);
       const activeDiscordChats = new Set<string>();
       for (const channelId of discordChannelIds) {
@@ -3220,13 +4031,16 @@ export const chatChannelService = {
         discordRuntime = null;
         discordLastMessageIdByChat = new Map<string, string>();
         discordGuildIdByChannel = new Map<string, string | null>();
+        discordChannelDisplayNameByChannel = new Map<string, string | null>();
       } else {
+        const discordBotProfile = await fetchDiscordBotProfile(discordToken);
         discordRuntime = {
           provider: "discord",
           token: discordToken,
           projectId: resolvedDiscordProjectId,
           scope: resolveScope(resolvedDiscordProjectId),
-          allowedUserIds: new Set(),
+          ownerUserIds: new Set(discordOwnerUserIds),
+          botUserId: discordBotProfile.id,
           allowedServerIds: new Set(discordServerIds),
           allowedChannelIds: new Set(discordChannelIds),
           activeChatIds: activeDiscordChats,
@@ -3238,6 +4052,9 @@ export const chatChannelService = {
           !previousDiscordRuntime ||
           previousDiscordRuntime.token !== discordRuntime.token ||
           previousDiscordRuntime.projectId !== discordRuntime.projectId ||
+          JSON.stringify(
+            Array.from(previousDiscordRuntime.ownerUserIds).sort(),
+          ) !== JSON.stringify(Array.from(discordRuntime.ownerUserIds).sort()) ||
           JSON.stringify(
             Array.from(previousDiscordRuntime.allowedServerIds).sort(),
           ) !==
@@ -3251,6 +4068,7 @@ export const chatChannelService = {
         ) {
           logger.info("Discord chat channel started", {
             projectId: discordRuntime.projectId,
+            ownerWhitelistSize: discordRuntime.ownerUserIds.size,
             serverWhitelistSize: discordRuntime.allowedServerIds.size,
             channelWhitelistSize: discordRuntime.allowedChannelIds.size,
             activeChatSize: discordRuntime.activeChatIds.size,
@@ -3265,17 +4083,20 @@ export const chatChannelService = {
       discordRuntime = null;
       discordLastMessageIdByChat = new Map<string, string>();
       discordGuildIdByChannel = new Map<string, string | null>();
+      discordChannelDisplayNameByChannel = new Map<string, string | null>();
     }
 
     if (feishuReady) {
-        feishuRuntime = {
-          provider: "feishu",
-          token: feishuToken,
-          projectId: resolvedFeishuProjectId,
-          scope: resolveScope(resolvedFeishuProjectId),
-          allowedUserIds: new Set(),
-          activeChatIds: new Set(),
-        };
+      feishuChatDisplayNameByChat = new Map<string, string | null>();
+      feishuUserDisplayNameByUser = new Map<string, string | null>();
+      feishuRuntime = {
+        provider: "feishu",
+        token: feishuToken,
+        projectId: resolvedFeishuProjectId,
+        scope: resolveScope(resolvedFeishuProjectId),
+        ownerUserIds: new Set(feishuOwnerUserIds),
+        activeChatIds: new Set(),
+      };
       void syncFeishuActiveChats(feishuRuntime, { force: true }).catch(
         (error) => {
           logger.warn("Failed to sync Feishu active chats on startup", {
@@ -3288,10 +4109,14 @@ export const chatChannelService = {
       if (
         !previousFeishuRuntime ||
         previousFeishuRuntime.token !== feishuRuntime.token ||
-        previousFeishuRuntime.projectId !== feishuRuntime.projectId
+        previousFeishuRuntime.projectId !== feishuRuntime.projectId ||
+        JSON.stringify(
+          Array.from(previousFeishuRuntime.ownerUserIds).sort(),
+        ) !== JSON.stringify(Array.from(feishuRuntime.ownerUserIds).sort())
       ) {
         logger.info("Feishu chat channel started", {
           projectId: feishuRuntime.projectId,
+          ownerWhitelistSize: feishuRuntime.ownerUserIds.size,
           activeChatSize: feishuRuntime.activeChatIds.size,
         });
       }
@@ -3308,6 +4133,8 @@ export const chatChannelService = {
       feishuRuntime = null;
       feishuLastMessageTsByChat = new Map<string, number>();
       feishuLastChatSyncAt = 0;
+      feishuChatDisplayNameByChat = new Map<string, string | null>();
+      feishuUserDisplayNameByUser = new Map<string, string | null>();
       clearFeishuTenantTokenCache();
     }
 

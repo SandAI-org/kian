@@ -5,6 +5,7 @@ import type {
   AppBuildResultDTO,
   BroadcastChannelDTO,
   ChatScope,
+  ChatSessionKind,
   CustomAgentModelConfigDTO,
   GeneralConfigDTO,
   ShortcutConfigDTO,
@@ -133,10 +134,21 @@ export const api = {
       unwrap(await window.api.assets.generateByAgent(payload))
   },
   chat: {
-    createSession: async (payload: { scope: ChatScope; module: ModuleType | 'main'; title: string }) =>
+    createSession: async (payload: {
+      scope: ChatScope;
+      module: ModuleType | 'main';
+      title: string;
+      kind?: 'normal' | 'digital_avatar' | 'channel_runtime';
+      hidden?: boolean;
+      metadataJson?: string | null;
+    }) =>
       unwrap(await window.api.chat.createSession(payload)),
-    getSessions: async (scope: ChatScope) =>
-      unwrap(await window.api.chat.getSessions(scope)),
+    getDigitalAvatarSession: async (scope: ChatScope) =>
+      unwrap(await window.api.chat.getDigitalAvatarSession(scope)),
+    getSessions: async (
+      scope: ChatScope,
+      options?: { kinds?: ChatSessionKind[] },
+    ) => unwrap(await window.api.chat.getSessions(scope, options)),
     getMessages: async (scope: ChatScope, sessionId: string) =>
       unwrap(await window.api.chat.getMessages(scope, sessionId)),
     getQueuedMessages: async (
@@ -231,13 +243,14 @@ export const api = {
     saveTelegramChatChannelConfig: async (payload: {
       enabled: boolean;
       botToken?: string;
-      userIds: string[];
+      ownerUserIds: string[];
     }) => unwrap(await window.api.settings.saveTelegramChatChannelConfig(payload)),
     getDiscordChatChannelStatus: async (): Promise<DiscordChatChannelStatus> =>
       unwrap(await window.api.settings.getDiscordChatChannelStatus()),
     saveDiscordChatChannelConfig: async (payload: {
       enabled: boolean;
       botToken?: string;
+      ownerUserIds: string[];
       serverIds: string[];
       channelIds: string[];
     }) => unwrap(await window.api.settings.saveDiscordChatChannelConfig(payload)),
@@ -247,6 +260,7 @@ export const api = {
       enabled: boolean;
       appId?: string;
       appSecret?: string;
+      ownerUserIds: string[];
     }) => unwrap(await window.api.settings.saveFeishuChatChannelConfig(payload)),
     getWeixinChatChannelStatus: async (): Promise<WeixinChatChannelStatus> =>
       unwrap(await window.api.settings.getWeixinChatChannelStatus()),

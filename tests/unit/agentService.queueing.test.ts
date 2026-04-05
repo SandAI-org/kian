@@ -384,6 +384,138 @@ describe("agentService queued delivery", () => {
     await sendPromise;
   });
 
+  it("uses the avatar prompt and disables skills and tools for digital avatar sessions", async () => {
+    state.getChatSession.mockResolvedValue({
+      id: "session-avatar",
+      module: "main",
+      kind: "digital_avatar",
+    });
+    state.createMcpRuntime.mockResolvedValue({
+      tools: [{ name: "mock_mcp_tool" }],
+      warnings: [],
+      dispose: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const { agentService } = await import("../../electron/main/services/agentService");
+
+    const sendPromise = agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-avatar",
+      requestId: "req-avatar",
+      message: "帮我回复这段消息",
+    });
+
+    await vi.waitFor(() => {
+      expect(state.createAgentSession).toHaveBeenCalled();
+    });
+
+    expect(state.getAgentSystemPrompt).toHaveBeenCalledWith(
+      "main",
+      "digital_avatar",
+    );
+    expect(state.listActiveSkillsForScope).not.toHaveBeenCalled();
+    expect(
+      (
+        state.createAgentSession.mock.calls[0]?.[0] as {
+          customTools?: Array<{ name?: string }>;
+        }
+      ).customTools ?? [],
+    ).toEqual([]);
+
+    state.sessionListener?.({ type: "agent_end" });
+    await sendPromise;
+  });
+
+  it("rebuilds an existing session when the session switches to digital avatar", async () => {
+    const { agentService } = await import("../../electron/main/services/agentService");
+
+    state.getChatSession.mockResolvedValueOnce(null);
+    let sendPromise = agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-switch",
+      requestId: "req-normal",
+      message: "普通会话消息",
+    });
+    await vi.waitFor(() => {
+      expect(state.createAgentSession).toHaveBeenCalledTimes(1);
+    });
+    state.sessionListener?.({ type: "agent_end" });
+    await sendPromise;
+
+    state.getChatSession.mockResolvedValue({
+      id: "session-switch",
+      module: "main",
+      kind: "digital_avatar",
+    });
+    state.getAgentSystemPrompt.mockClear();
+
+    sendPromise = agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-switch",
+      requestId: "req-avatar-switch",
+      message: "数字分身消息",
+    });
+    await vi.waitFor(() => {
+      expect(state.createAgentSession).toHaveBeenCalledTimes(2);
+    });
+
+    expect(state.getAgentSystemPrompt).toHaveBeenCalledWith(
+      "main",
+      "digital_avatar",
+    );
+
+    state.sessionListener?.({ type: "agent_end" });
+    await sendPromise;
+  });
+
+  it("uses the avatar prompt and disables skills for channel runtime sessions", async () => {
+    state.getChatSession.mockResolvedValue({
+      id: "session-channel-runtime",
+      module: "main",
+      kind: "channel_runtime",
+      hidden: true,
+    });
+    state.createMcpRuntime.mockResolvedValue({
+      tools: [{ name: "mock_mcp_tool" }],
+      warnings: [],
+      dispose: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const { agentService } = await import("../../electron/main/services/agentService");
+
+    const sendPromise = agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-channel-runtime",
+      requestId: "req-channel-runtime",
+      message: "来自渠道的数字人消息",
+      capabilityMode: "chat_only",
+    });
+
+    await vi.waitFor(() => {
+      expect(state.createAgentSession).toHaveBeenCalled();
+    });
+
+    expect(state.getAgentSystemPrompt).toHaveBeenCalledWith(
+      "main",
+      "channel_runtime",
+    );
+    expect(state.listActiveSkillsForScope).not.toHaveBeenCalled();
+    expect(
+      (
+        state.createAgentSession.mock.calls[0]?.[0] as {
+          customTools?: Array<{ name?: string }>;
+        }
+      ).customTools ?? [],
+    ).toEqual([]);
+
+    state.sessionListener?.({ type: "agent_end" });
+    await sendPromise;
+  });
+
   it("finalizes an active queued turn when the root prompt is aborted", async () => {
     const { agentService } = await import("../../electron/main/services/agentService");
     const streamEvents: Array<{

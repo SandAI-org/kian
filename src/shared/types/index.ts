@@ -3,6 +3,8 @@ import type { AppThemeMode } from "@shared/theme";
 
 export type ModuleType = 'docs' | 'creation' | 'assets' | 'app';
 export type ChatModuleType = ModuleType | 'main';
+export type ChatSessionKind = 'normal' | 'digital_avatar' | 'channel_runtime';
+export type ChatCapabilityMode = 'full' | 'chat_only';
 export type AppType = 'react' | 'vue' | 'svelte' | 'nextjs' | 'nuxt' | 'angular' | 'vanilla' | 'unknown';
 export type ProjectCreationSource = 'manual' | 'agent';
 export type ClaudeProvider = string;
@@ -165,8 +167,11 @@ export interface ChatSessionDTO {
   scopeType: 'project' | 'main';
   projectId?: string;
   module: ChatModuleType;
+  kind: ChatSessionKind;
+  hidden: boolean;
   title: string;
   sdkSessionId?: string | null;
+  metadataJson?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -191,7 +196,12 @@ export interface DelegationContext {
 }
 
 export interface ChatMessageMetadata {
-  kind: 'delegation' | 'sub_agent_report' | 'delegation_receipt' | 'thinking';
+  kind:
+    | 'delegation'
+    | 'sub_agent_report'
+    | 'delegation_receipt'
+    | 'thinking'
+    | 'channel_event';
   delegationId?: string;
   sourceProjectId?: string;
   sourceProjectName?: string;
@@ -199,6 +209,14 @@ export interface ChatMessageMetadata {
   targetProjectId?: string;
   targetProjectName?: string;
   targetSessionId?: string;
+  provider?: ChatChannelProvider;
+  chatType?: 'direct' | 'group';
+  senderId?: string;
+  senderName?: string;
+  isOwner?: boolean;
+  mentioned?: boolean;
+  batchedCount?: number;
+  capabilityMode?: ChatCapabilityMode;
 }
 
 export interface ChatMessageDTO {
@@ -247,6 +265,7 @@ export interface ChatSendPayload {
   thinkingLevel?: ChatThinkingLevel;
   attachments?: ChatAttachmentDTO[];
   contextSnapshot?: unknown;
+  capabilityMode?: ChatCapabilityMode;
   delegationContext?: DelegationContext;
   skipUserMessagePersistence?: boolean;
 }
@@ -263,6 +282,7 @@ export interface ChatQueuePayload {
   thinkingLevel?: ChatThinkingLevel;
   attachments?: ChatAttachmentDTO[];
   contextSnapshot?: unknown;
+  capabilityMode?: ChatCapabilityMode;
   deliveryMode: ChatQueueDeliveryMode;
 }
 
@@ -456,12 +476,18 @@ export interface ModelProviderConfigStatus {
   models: ProviderModelDTO[];
 }
 
+export interface ChatChannelOwnerCandidateDTO {
+  userId: string;
+  displayName?: string;
+}
+
 export interface TelegramChatChannelStatus {
   provider: 'telegram';
   enabled: boolean;
   configured: boolean;
   botToken: string;
-  userIds: string[];
+  ownerUserIds: string[];
+  ownerCandidates: ChatChannelOwnerCandidateDTO[];
 }
 
 export interface DiscordChatChannelStatus {
@@ -469,6 +495,8 @@ export interface DiscordChatChannelStatus {
   enabled: boolean;
   configured: boolean;
   botToken: string;
+  ownerUserIds: string[];
+  ownerCandidates: ChatChannelOwnerCandidateDTO[];
   serverIds: string[];
   channelIds: string[];
 }
@@ -479,6 +507,8 @@ export interface FeishuChatChannelStatus {
   configured: boolean;
   appId: string;
   appSecret: string;
+  ownerUserIds: string[];
+  ownerCandidates: ChatChannelOwnerCandidateDTO[];
 }
 
 export type WeixinQrLoginStatus =

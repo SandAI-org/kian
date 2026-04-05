@@ -4,6 +4,7 @@ import type {
   ChatHistoryUpdatedEvent,
   ChatMessageDTO,
   ChatQueueUpdatedEvent,
+  ChatSessionKind,
   ChatScope,
   ChatSessionDTO,
 } from "@shared/types";
@@ -13,8 +14,28 @@ let chatQueryBridgeInitialized = false;
 export const getChatScopeKey = (scope: ChatScope): string =>
   scope.type === "main" ? "main" : scope.projectId;
 
-export const getChatSessionsQueryKey = (scopeKey: string) =>
-  ["chat-sessions", scopeKey] as const;
+const normalizeSessionKinds = (
+  kinds?: ChatSessionKind[],
+): ChatSessionKind[] | undefined => {
+  if (!kinds || kinds.length === 0) {
+    return undefined;
+  }
+  return [...new Set(kinds)].sort();
+};
+
+export const getChatSessionsQueryKey = (
+  scopeKey: string,
+  kinds?: ChatSessionKind[],
+) => {
+  const normalizedKinds = normalizeSessionKinds(kinds);
+  if (
+    !normalizedKinds ||
+    (normalizedKinds.length === 1 && normalizedKinds[0] === "normal")
+  ) {
+    return ["chat-sessions", scopeKey] as const;
+  }
+  return ["chat-sessions", scopeKey, normalizedKinds.join(",")] as const;
+};
 
 export const getChatMessagesQueryKey = (scopeKey: string, sessionId: string) =>
   ["chat-messages", scopeKey, sessionId] as const;
@@ -43,8 +64,11 @@ const buildSessionFromHistoryEvent = (
     scopeType: event.scope.type,
     projectId: event.scope.type === "project" ? event.scope.projectId : undefined,
     module: event.sessionModule,
+    kind: "normal",
+    hidden: false,
     title: event.sessionTitle?.trim() ?? "",
     sdkSessionId: null,
+    metadataJson: null,
     createdAt: event.createdAt,
     updatedAt: event.sessionUpdatedAt ?? event.createdAt,
   };
@@ -54,9 +78,10 @@ export const upsertChatSessionList = (
   queryClient: QueryClient,
   scope: ChatScope,
   session: ChatSessionDTO,
+  sessionKinds?: ChatSessionKind[],
 ): void => {
   queryClient.setQueryData<ChatSessionDTO[] | undefined>(
-    getChatSessionsQueryKey(getChatScopeKey(scope)),
+    getChatSessionsQueryKey(getChatScopeKey(scope), sessionKinds),
     (current) => {
       if (!current || current.length === 0) {
         return [session];
@@ -82,9 +107,10 @@ export const patchChatSessionList = (
   scope: ChatScope,
   sessionId: string,
   updater: (session: ChatSessionDTO) => ChatSessionDTO,
+  sessionKinds?: ChatSessionKind[],
 ): void => {
   queryClient.setQueryData<ChatSessionDTO[] | undefined>(
-    getChatSessionsQueryKey(getChatScopeKey(scope)),
+    getChatSessionsQueryKey(getChatScopeKey(scope), sessionKinds),
     (current) => {
       if (!current) return current;
 
@@ -114,7 +140,9 @@ export const applyChatHistoryUpdateToCache = (
   queryClient: QueryClient,
   event: ChatHistoryUpdatedEvent,
 ): void => {
-  const sessionsQueryKey = getChatSessionsQueryKey(getChatScopeKey(event.scope));
+  const scopeKey = getChatScopeKey(event.scope);
+  const sessionsQueryKey = getChatSessionsQueryKey(scopeKey);
+  const sessionsQueryPrefix = ["chat-sessions", scopeKey] as const;
   const currentSessions =
     queryClient.getQueryData<ChatSessionDTO[]>(sessionsQueryKey) ?? [];
   const existingSession = currentSessions.find(
@@ -151,8 +179,7 @@ export const applyChatHistoryUpdateToCache = (
   });
 
   void queryClient.invalidateQueries({
-    queryKey: sessionsQueryKey,
-    exact: true,
+    queryKey: sessionsQueryPrefix,
   });
 
   if (!event.messageId.trim()) {

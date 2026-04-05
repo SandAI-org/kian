@@ -3,6 +3,7 @@ import type {
   AgentModelDTO,
   AgentProviderDTO,
   BroadcastChannelDTO,
+  ChatSessionKind,
   ChatScope,
   ChatThinkingLevel,
   ClaudeConfigStatus,
@@ -34,6 +35,7 @@ import { normalizeShortcutConfig } from "@shared/utils/shortcuts";
 import { app } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { chatChannelOwnerDiscoveryService } from "./chatChannelOwnerDiscoveryService";
 import { FAL_SUPPORTED_MODELS } from "./modelProviders/falProvider";
 import { logger } from "./logger";
 import { GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_PATH, INTERNAL_ROOT, WORKSPACE_ROOT } from "./workspacePaths";
@@ -80,20 +82,21 @@ interface ProviderEntry {
 interface TelegramChatChannelSettings {
   enabled: boolean;
   botToken: string;
-  userIds: string[];
+  ownerUserIds: string[];
   lastUpdateId: number;
 }
 
 interface DiscordChatChannelSettings {
   enabled: boolean;
   botToken: string;
+  ownerUserIds: string[];
   serverIds: string[];
   channelIds: string[];
 }
 
 interface BotChatChannelSettings {
   enabled: boolean;
-  userIds: string[];
+  ownerUserIds: string[];
 }
 
 interface FeishuChatChannelSettings extends BotChatChannelSettings {
@@ -131,11 +134,13 @@ interface McpServerSettings {
 interface LegacyTelegramChatChannelSettings extends Partial<TelegramChatChannelSettings> {
   projectId?: string;
   userId?: string;
+  userIds?: string[];
 }
 
 interface LegacyDiscordChatChannelSettings extends Partial<DiscordChatChannelSettings> {
   projectId?: string;
   userId?: string;
+  userIds?: string[];
   serverId?: string;
   channelId?: string;
 }
@@ -143,6 +148,7 @@ interface LegacyDiscordChatChannelSettings extends Partial<DiscordChatChannelSet
 interface LegacyBotChatChannelSettings extends Partial<BotChatChannelSettings> {
   projectId?: string;
   userId?: string;
+  userIds?: string[];
 }
 
 interface LegacyBroadcastChannelSettings {
@@ -195,18 +201,19 @@ const DEFAULT_FAL_ENABLED_MODELS = FAL_SUPPORTED_MODELS.map(
 const DEFAULT_TELEGRAM_CHAT_CHANNEL: TelegramChatChannelSettings = {
   enabled: false,
   botToken: "",
-  userIds: [],
+  ownerUserIds: [],
   lastUpdateId: 0,
 };
 const DEFAULT_DISCORD_CHAT_CHANNEL: DiscordChatChannelSettings = {
   enabled: false,
   botToken: "",
+  ownerUserIds: [],
   serverIds: [],
   channelIds: [],
 };
 const DEFAULT_FEISHU_CHAT_CHANNEL: FeishuChatChannelSettings = {
   enabled: false,
-  userIds: [],
+  ownerUserIds: [],
   appId: "",
   appSecret: "",
 };
@@ -889,8 +896,11 @@ const normalizeSettingsFile = (
             },
           ]
         : DEFAULT_BROADCAST_CHANNELS;
-  const telegramUserIds = uniqueTelegramUserIds(telegramRaw?.userIds);
+  const telegramUserIds = uniqueTelegramUserIds(
+    telegramRaw?.ownerUserIds ?? telegramRaw?.userIds,
+  );
   const legacyTelegramUserIds = parseLegacyTelegramUserIds(telegramRaw?.userId);
+  const discordOwnerUserIds = uniqueStrings(discordRaw?.ownerUserIds);
   const discordServerIds = uniqueDiscordSnowflakeIds(discordRaw?.serverIds);
   const legacyDiscordServerIds = parseLegacyDiscordSnowflakeIds(
     discordRaw?.serverId,
@@ -899,7 +909,9 @@ const normalizeSettingsFile = (
   const legacyDiscordChannelIds = parseLegacyDiscordSnowflakeIds(
     discordRaw?.channelId,
   );
-  const feishuUserIds = uniqueStrings(feishuRaw?.userIds);
+  const feishuUserIds = uniqueStrings(
+    feishuRaw?.ownerUserIds ?? feishuRaw?.userIds,
+  );
   const legacyFeishuUserIds = parseLegacyUserIds(feishuRaw?.userId);
   return {
     providers,
@@ -917,7 +929,7 @@ const normalizeSettingsFile = (
             ? telegramRaw.enabled
             : DEFAULT_TELEGRAM_CHAT_CHANNEL.enabled,
         botToken: normalizeSecretValue(telegramRaw?.botToken),
-        userIds:
+        ownerUserIds:
           telegramUserIds.length > 0 ? telegramUserIds : legacyTelegramUserIds,
         lastUpdateId: toNonNegativeInt(
           telegramRaw?.lastUpdateId,
@@ -930,6 +942,7 @@ const normalizeSettingsFile = (
             ? discordRaw.enabled
             : DEFAULT_DISCORD_CHAT_CHANNEL.enabled,
         botToken: normalizeSecretValue(discordRaw?.botToken),
+        ownerUserIds: discordOwnerUserIds,
         serverIds:
           discordServerIds.length > 0
             ? discordServerIds
@@ -944,7 +957,8 @@ const normalizeSettingsFile = (
           typeof feishuRaw?.enabled === "boolean"
             ? feishuRaw.enabled
             : DEFAULT_FEISHU_CHAT_CHANNEL.enabled,
-        userIds: feishuUserIds.length > 0 ? feishuUserIds : legacyFeishuUserIds,
+        ownerUserIds:
+          feishuUserIds.length > 0 ? feishuUserIds : legacyFeishuUserIds,
         appId: normalizeSecretValue(feishuRaw?.appId),
         appSecret: normalizeSecretValue(feishuRaw?.appSecret),
       },
@@ -1326,11 +1340,16 @@ export const settingsService = {
     };
   },
 
-  async getAgentSystemPrompt(scopeType: ChatScope["type"] = "project"): Promise<string> {
+  async getAgentSystemPrompt(
+    scopeType: ChatScope["type"] = "project",
+    sessionKind: ChatSessionKind = "normal",
+  ): Promise<string> {
     return readBundledPromptFile(
-      scopeType === "main"
-        ? "default-main-system-prompt.md"
-        : "default-system-prompt.md",
+      sessionKind === "digital_avatar" || sessionKind === "channel_runtime"
+        ? "default-avatar-system-prompt.md"
+        : scopeType === "main"
+          ? "default-main-system-prompt.md"
+          : "default-system-prompt.md",
     );
   },
 
@@ -1430,9 +1449,9 @@ export const settingsService = {
   async saveTelegramChatChannelConfig(input: {
     enabled: boolean;
     botToken?: string;
-    userIds: string[];
+    ownerUserIds: string[];
   }): Promise<void> {
-    const userIds = uniqueTelegramUserIds(input.userIds);
+    const ownerUserIds = uniqueTelegramUserIds(input.ownerUserIds);
 
     await withSettingsWriteLock(async () => {
       const settings = await readSettingsFile();
@@ -1440,11 +1459,11 @@ export const settingsService = {
         await resolveTelegramBotTokenFromSettings(settings);
       const providedToken = normalizeSecretValue(input.botToken);
       const nextToken = providedToken || existingToken;
-      const nextUserIds = input.enabled
-        ? userIds
-        : userIds.length > 0
-          ? userIds
-          : hydratedSettings.chatChannels.telegram.userIds;
+      const nextOwnerUserIds = input.enabled
+        ? ownerUserIds
+        : ownerUserIds.length > 0
+          ? ownerUserIds
+          : hydratedSettings.chatChannels.telegram.ownerUserIds;
 
       const tokenChanged = Boolean(
         providedToken && providedToken !== existingToken,
@@ -1457,7 +1476,7 @@ export const settingsService = {
             ...hydratedSettings.chatChannels.telegram,
             enabled: input.enabled,
             botToken: nextToken,
-            userIds: nextUserIds,
+            ownerUserIds: nextOwnerUserIds,
             lastUpdateId: tokenChanged
               ? 0
               : hydratedSettings.chatChannels.telegram.lastUpdateId,
@@ -1478,7 +1497,8 @@ export const settingsService = {
         enabled: telegram.enabled,
         configured: Boolean(token),
         botToken: token ?? "",
-        userIds: telegram.userIds,
+        ownerUserIds: telegram.ownerUserIds,
+        ownerCandidates: chatChannelOwnerDiscoveryService.list("telegram"),
       };
     });
   },
@@ -1486,7 +1506,7 @@ export const settingsService = {
   async getTelegramChatChannelRuntime(): Promise<{
     enabled: boolean;
     configured: boolean;
-    userIds: string[];
+    ownerUserIds: string[];
     secret: string | null;
     lastUpdateId: number;
   }> {
@@ -1498,7 +1518,7 @@ export const settingsService = {
       return {
         enabled: telegram.enabled,
         configured: Boolean(token),
-        userIds: telegram.userIds,
+        ownerUserIds: telegram.ownerUserIds,
         secret: token || null,
         lastUpdateId: telegram.lastUpdateId,
       };
@@ -1508,9 +1528,11 @@ export const settingsService = {
   async saveDiscordChatChannelConfig(input: {
     enabled: boolean;
     botToken?: string;
+    ownerUserIds: string[];
     serverIds: string[];
     channelIds: string[];
   }): Promise<void> {
+    const ownerUserIds = uniqueStrings(input.ownerUserIds);
     const serverIds = uniqueDiscordSnowflakeIds(input.serverIds);
     const channelIds = uniqueDiscordSnowflakeIds(input.channelIds);
 
@@ -1539,6 +1561,7 @@ export const settingsService = {
             ...hydratedSettings.chatChannels.discord,
             enabled: input.enabled,
             botToken: nextToken,
+            ownerUserIds,
             serverIds: nextServerIds,
             channelIds: nextChannelIds,
           },
@@ -1557,6 +1580,8 @@ export const settingsService = {
         enabled: hydratedSettings.chatChannels.discord.enabled,
         configured: Boolean(token),
         botToken: token ?? "",
+        ownerUserIds: hydratedSettings.chatChannels.discord.ownerUserIds,
+        ownerCandidates: chatChannelOwnerDiscoveryService.list("discord"),
         serverIds: hydratedSettings.chatChannels.discord.serverIds,
         channelIds: hydratedSettings.chatChannels.discord.channelIds,
       };
@@ -1566,6 +1591,7 @@ export const settingsService = {
   async getDiscordChatChannelRuntime(): Promise<{
     enabled: boolean;
     configured: boolean;
+    ownerUserIds: string[];
     serverIds: string[];
     channelIds: string[];
     secret: string | null;
@@ -1577,6 +1603,7 @@ export const settingsService = {
       return {
         enabled: hydratedSettings.chatChannels.discord.enabled,
         configured: Boolean(token),
+        ownerUserIds: hydratedSettings.chatChannels.discord.ownerUserIds,
         serverIds: hydratedSettings.chatChannels.discord.serverIds,
         channelIds: hydratedSettings.chatChannels.discord.channelIds,
         secret: token || null,
@@ -1588,12 +1615,14 @@ export const settingsService = {
     enabled: boolean;
     appId?: string;
     appSecret?: string;
+    ownerUserIds: string[];
   }): Promise<void> {
     await withSettingsWriteLock(async () => {
       const settings = await readSettingsFile();
       const existingCredentials = await getFeishuAppCredentials(settings);
       const nextAppId = input.appId ?? existingCredentials.appId ?? "";
       const nextAppSecret = input.appSecret ?? existingCredentials.appSecret ?? "";
+      const ownerUserIds = uniqueStrings(input.ownerUserIds);
 
       await writeSettingsFile({
         ...settings,
@@ -1604,6 +1633,7 @@ export const settingsService = {
             enabled: input.enabled,
             appId: nextAppId,
             appSecret: nextAppSecret,
+            ownerUserIds,
           },
         },
       });
@@ -1619,6 +1649,8 @@ export const settingsService = {
       configured: Boolean(credentials.appId && credentials.appSecret),
       appId: credentials.appId ?? "",
       appSecret: credentials.appSecret ?? "",
+      ownerUserIds: settings.chatChannels.feishu.ownerUserIds,
+      ownerCandidates: chatChannelOwnerDiscoveryService.list("feishu"),
     };
   },
 
@@ -1627,6 +1659,7 @@ export const settingsService = {
     configured: boolean;
     appId: string | null;
     appSecret: string | null;
+    ownerUserIds: string[];
   }> {
     const settings = await readSettingsFile();
     const credentials = await getFeishuAppCredentials(settings);
@@ -1635,6 +1668,7 @@ export const settingsService = {
       configured: Boolean(credentials.appId && credentials.appSecret),
       appId: credentials.appId,
       appSecret: credentials.appSecret,
+      ownerUserIds: settings.chatChannels.feishu.ownerUserIds,
     };
   },
 

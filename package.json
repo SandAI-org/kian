@@ -94,6 +94,7 @@
       "out/**/*",
       "default-system-prompt.md",
       "default-main-system-prompt.md",
+      "default-avatar-system-prompt.md",
       "skills/**/*",
       "skills/**/.skill.json"
     ],

@@ -96,6 +96,7 @@ export const chatSendSchema = z.object({
   thinkingLevel: z.enum(['low', 'medium', 'high']).optional(),
   attachments: z.array(chatAttachmentSchema).max(20).optional(),
   contextSnapshot: z.any().optional(),
+  capabilityMode: z.enum(['full', 'chat_only']).optional(),
   skipUserMessagePersistence: z.boolean().optional(),
   delegationContext: z
     .object({
@@ -124,6 +125,7 @@ export const chatQueueSchema = z.object({
   thinkingLevel: z.enum(['low', 'medium', 'high']).optional(),
   attachments: z.array(chatAttachmentSchema).max(20).optional(),
   contextSnapshot: z.any().optional(),
+  capabilityMode: z.enum(['full', 'chat_only']).optional(),
   deliveryMode: z.enum(['steer', 'followUp'])
 }).refine(
   (input) => input.message.trim().length > 0 || (input.attachments?.length ?? 0) > 0,
@@ -187,7 +189,15 @@ export const windowOpenUrlSchema = z.object({
 export const sessionCreateSchema = z.object({
   scope: chatScopeSchema,
   module: chatModuleSchema,
-  title: z.string().max(100)
+  title: z.string().max(100),
+  kind: z.enum(['normal', 'digital_avatar', 'channel_runtime']).optional(),
+  hidden: z.boolean().optional(),
+  metadataJson: z.string().optional()
+});
+
+export const chatListSessionsSchema = z.object({
+  scope: chatScopeSchema,
+  kinds: z.array(z.enum(['normal', 'digital_avatar', 'channel_runtime'])).min(1).optional()
 });
 
 const httpUrlStringSchema = z
@@ -301,7 +311,7 @@ export const saveTelegramChatChannelConfigSchema = z.object({
     .trim()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
-  userIds: z.array(z.string().trim()).max(100).default([])
+  ownerUserIds: z.array(z.string().trim()).max(100).default([])
 });
 
 const botTokenSchema = z
@@ -347,6 +357,7 @@ const discordChannelIdsSchema = z
 export const saveDiscordChatChannelConfigSchema = z.object({
   enabled: z.boolean().default(false),
   botToken: botTokenSchema,
+  ownerUserIds: z.array(z.string().trim()).max(100).default([]),
   serverIds: discordServerIdsSchema,
   channelIds: discordChannelIdsSchema
 });
@@ -354,7 +365,8 @@ export const saveDiscordChatChannelConfigSchema = z.object({
 export const saveFeishuChatChannelConfigSchema = z.object({
   enabled: z.boolean().default(false),
   appId: feishuAppIdSchema,
-  appSecret: feishuAppSecretSchema
+  appSecret: feishuAppSecretSchema,
+  ownerUserIds: z.array(z.string().trim()).max(100).default([])
 });
 
 export const saveWeixinChatChannelConfigSchema = z.object({

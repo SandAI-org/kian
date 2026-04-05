@@ -19,6 +19,7 @@ export interface CompactSelectProps {
   /** Placeholder when no value selected */
   placeholder?: string;
   className?: string;
+  labelClassName?: string;
   /** Min width of the dropdown popup */
   popupMinWidth?: number;
   disabled?: boolean;
@@ -31,6 +32,7 @@ export const CompactSelect = ({
   menuHeader,
   placeholder = '请选择',
   className = '',
+  labelClassName = '',
   popupMinWidth = 160,
   disabled = false,
 }: CompactSelectProps) => {
@@ -112,7 +114,7 @@ export const CompactSelect = ({
             : "hover:bg-slate-100 hover:text-slate-700"
         } ${className}`}
       >
-        <span className="max-w-[200px] truncate">
+        <span className={`max-w-[200px] truncate ${labelClassName}`}>
           {selectedOption?.label ?? resolvedValue ?? placeholder}
         </span>
         <DownOutlined className={`text-[9px] ${disabled ? "opacity-40" : ""}`} />

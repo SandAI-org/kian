@@ -81,8 +81,7 @@ describe("chatQueryCache", () => {
       },
     ]);
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: sessionsKey,
-      exact: true,
+      queryKey: ["chat-sessions", "main"],
     });
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: messagesKey,
@@ -169,6 +168,14 @@ describe("chatQueryCache", () => {
         queuedAt: "2026-03-23T00:00:10.000Z",
         persistUserMessage: true,
       },
+    ]);
+  });
+
+  it("builds a separate query key for digital avatar session lists", () => {
+    expect(getChatSessionsQueryKey("main", ["digital_avatar"])).toEqual([
+      "chat-sessions",
+      "main",
+      "digital_avatar",
     ]);
   });
 });

@@ -44,6 +44,8 @@ const StopSquareIcon = (): ReactNode => (
 
 interface ChatComposerProps {
   variant?: "default" | "embedded";
+  mode?: "default" | "controls-only";
+  readOnlyNotice?: ReactNode;
   queuedMessages?: QueuedComposerMessage[];
   queuedMessagesLabel?: string;
   queuedSourcePrefix?: string;
@@ -86,6 +88,8 @@ interface ChatComposerProps {
 
 export const ChatComposer = ({
   variant = "default",
+  mode = "default",
+  readOnlyNotice,
   queuedMessages = [],
   queuedMessagesLabel = "",
   queuedSourcePrefix = "",
@@ -125,6 +129,7 @@ export const ChatComposer = ({
   onSend,
   canSend,
 }: ChatComposerProps) => {
+  const controlsOnly = mode === "controls-only";
   const showFilePicker = Boolean(fileInputRef && onSelectFiles && fileAccept);
   const showModelSelector =
     modelOptions.length > 0 || Boolean(selectedModel?.trim());
@@ -137,7 +142,7 @@ export const ChatComposer = ({
 
   return (
     <div className={containerClassName}>
-      {queuedMessages.length > 0 ? (
+      {!controlsOnly && queuedMessages.length > 0 ? (
         <div className="mb-3 rounded-lg border border-[#dbe5f5] bg-[#f7faff]">
           <div className="border-b border-[#dbe5f5] px-3 py-2 text-[12px] font-medium text-slate-600">
             {queuedMessagesLabel}
@@ -183,7 +188,7 @@ export const ChatComposer = ({
         </div>
       ) : null}
 
-      {pendingFiles.length > 0 ? (
+      {!controlsOnly && pendingFiles.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {pendingFiles.map((file) => (
             <div key={file.key} className="relative h-14 w-14">
@@ -222,7 +227,7 @@ export const ChatComposer = ({
         </div>
       ) : null}
 
-      {showInputShortcutTip && onDismissInputShortcutTip ? (
+      {!controlsOnly && showInputShortcutTip && onDismissInputShortcutTip ? (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#dbe5f5] bg-[#f7faff] px-3 py-2 text-[12px] text-slate-600">
           <span>{chatInputShortcutHint}</span>
           <Button
@@ -236,24 +241,38 @@ export const ChatComposer = ({
         </div>
       ) : null}
 
-      <div ref={inputContainerRef} className="min-h-[84px]">
-        <Input.TextArea
-          autoSize={{ minRows: 2, maxRows: 6 }}
-          value={input}
-          onChange={(event) => onInputChange(event.target.value)}
-          onCompositionStart={onCompositionStart}
-          onCompositionEnd={(event) => {
-            onCompositionEnd(event.currentTarget.value);
-          }}
-          onKeyDown={onInputKeyDown}
-          className="!border-0 !bg-transparent !px-0 !py-0 !shadow-none"
-          placeholder={placeholder}
-        />
-      </div>
+      {controlsOnly ? (
+        readOnlyNotice ? (
+          <div className="rounded-lg border border-[#dbe5f5] bg-[#f7faff] px-3 py-2 text-[12px] text-slate-600">
+            {readOnlyNotice}
+          </div>
+        ) : null
+      ) : (
+        <div ref={inputContainerRef} className="min-h-[84px]">
+          <Input.TextArea
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            value={input}
+            onChange={(event) => onInputChange(event.target.value)}
+            onCompositionStart={onCompositionStart}
+            onCompositionEnd={(event) => {
+              onCompositionEnd(event.currentTarget.value);
+            }}
+            onKeyDown={onInputKeyDown}
+            className="!border-0 !bg-transparent !px-0 !py-0 !shadow-none"
+            placeholder={placeholder}
+          />
+        </div>
+      )}
 
-      <div className="mt-3 flex items-center justify-between pt-2">
+      <div
+        className={
+          controlsOnly
+            ? "flex items-center justify-between"
+            : "mt-3 flex items-center justify-between pt-2"
+        }
+      >
         <div className="flex items-center gap-2">
-          {showFilePicker ? (
+          {!controlsOnly && showFilePicker ? (
             <button
               type="button"
               onClick={() => fileInputRef?.current?.click()}
@@ -269,6 +288,8 @@ export const ChatComposer = ({
               value={selectedModel}
               onChange={(value: string) => onModelChange?.(value)}
               options={modelOptions}
+              className={controlsOnly ? "min-w-[220px] justify-center" : ""}
+              labelClassName={controlsOnly ? "text-center" : ""}
               popupMinWidth={200}
               disabled={disableModelSelector}
             />
@@ -284,33 +305,35 @@ export const ChatComposer = ({
             popupMinWidth={132}
           />
         </div>
-        <Tooltip title={chatInputShortcutHint} placement="left">
-          <span className="inline-flex">
-            {canInterrupt ? (
-              <Button
-                type="primary"
-                shape="circle"
-                icon={<StopSquareIcon />}
-                loading={interruptLoading}
-                onClick={onInterrupt}
-                className="!inline-flex !h-8 !w-8 !min-w-8 !items-center !justify-center !border-[#f97316] !bg-[#f97316] !p-0 !text-[13px] !text-white transition-all duration-200 enabled:hover:!cursor-pointer enabled:hover:!border-[#ea580c] enabled:hover:!bg-[#ea580c] enabled:hover:!shadow-[0_0_0_4px_rgba(249,115,22,0.18)] motion-safe:animate-pulse disabled:!cursor-not-allowed"
-              />
-            ) : (
-              <Button
-                type="primary"
-                shape="circle"
-                icon={<ArrowUpOutlined />}
-                loading={sendLoading}
-                onClick={onSend}
-                disabled={!canSend}
-                className="!inline-flex !h-8 !w-8 !min-w-8 !items-center !justify-center !p-0 !text-[14px] transition-all duration-200 enabled:hover:!cursor-pointer enabled:hover:!shadow-[0_0_0_4px_rgba(37,99,235,0.15)] enabled:hover:!scale-[1.04] enabled:active:!scale-[0.96] disabled:!cursor-not-allowed"
-              />
-            )}
-          </span>
-        </Tooltip>
+        {!controlsOnly ? (
+          <Tooltip title={chatInputShortcutHint} placement="left">
+            <span className="inline-flex">
+              {canInterrupt ? (
+                <Button
+                  type="primary"
+                  shape="circle"
+                  icon={<StopSquareIcon />}
+                  loading={interruptLoading}
+                  onClick={onInterrupt}
+                  className="!inline-flex !h-8 !w-8 !min-w-8 !items-center !justify-center !border-[#f97316] !bg-[#f97316] !p-0 !text-[13px] !text-white transition-all duration-200 enabled:hover:!cursor-pointer enabled:hover:!border-[#ea580c] enabled:hover:!bg-[#ea580c] enabled:hover:!shadow-[0_0_0_4px_rgba(249,115,22,0.18)] motion-safe:animate-pulse disabled:!cursor-not-allowed"
+                />
+              ) : (
+                <Button
+                  type="primary"
+                  shape="circle"
+                  icon={<ArrowUpOutlined />}
+                  loading={sendLoading}
+                  onClick={onSend}
+                  disabled={!canSend}
+                  className="!inline-flex !h-8 !w-8 !min-w-8 !items-center !justify-center !p-0 !text-[14px] transition-all duration-200 enabled:hover:!cursor-pointer enabled:hover:!shadow-[0_0_0_4px_rgba(37,99,235,0.15)] enabled:hover:!scale-[1.04] enabled:active:!scale-[0.96] disabled:!cursor-not-allowed"
+                />
+              )}
+            </span>
+          </Tooltip>
+        ) : null}
       </div>
 
-      {showFilePicker ? (
+      {!controlsOnly && showFilePicker ? (
         <input
           ref={fileInputRef}
           type="file"

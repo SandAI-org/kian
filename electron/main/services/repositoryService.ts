@@ -3,6 +3,7 @@ import {
   type AppWorkspaceStatusDTO,
   type AssetDTO,
   type ChatAttachmentDTO,
+  type ChatSessionKind,
   type ChatModuleType,
   type ChatMessageDTO,
   type ChatScope,
@@ -2049,7 +2050,10 @@ const normalizeChatSession = (
       ? row.projectId ?? scope.projectId
       : undefined,
   module: row.module ?? (scope.type === "main" ? "main" : "docs"),
+  kind: row.kind ?? "normal",
+  hidden: row.hidden ?? false,
   sdkSessionId: row.sdkSessionId ?? null,
+  metadataJson: row.metadataJson ?? null,
 });
 
 const sortMessagesForRead = (messages: ChatMessageDTO[]): ChatMessageDTO[] =>
@@ -2147,12 +2151,19 @@ const sortChatSessionsForList = async (
 
 const findLatestEmptyChatSession = async (
   scope: ChatScope,
+  options?: {
+    kind?: ChatSessionKind;
+    hidden?: boolean;
+  },
 ): Promise<ChatSessionDTO | null> => {
-  const sessions = await sortChatSessionsForList(
-    scope,
-    await loadCachedChatSessions(scope),
+  const sessions = await sortChatSessionsForList(scope, await loadCachedChatSessions(scope));
+  const expectedKind = options?.kind ?? "normal";
+  const expectedHidden = options?.hidden ?? false;
+  const candidates = sessions.filter(
+    (session) =>
+      session.kind === expectedKind && session.hidden === expectedHidden,
   );
-  const candidate = sessions[0];
+  const candidate = candidates[0];
   if (!candidate) {
     return null;
   }
@@ -3080,9 +3091,17 @@ export const repositoryService = {
     scope: ChatScope;
     module: ChatModuleType;
     title: string;
+    kind?: ChatSessionKind;
+    hidden?: boolean;
+    metadataJson?: string | null;
   }): Promise<ChatSessionDTO> {
     await ensureChatScopeStructure(input.scope);
-    const reusableSession = await findLatestEmptyChatSession(input.scope);
+    const kind = input.kind ?? "normal";
+    const hidden = input.hidden ?? false;
+    const reusableSession =
+      kind === "normal" && hidden === false
+        ? await findLatestEmptyChatSession(input.scope, { kind, hidden })
+        : null;
     if (reusableSession) {
       return reusableSession;
     }
@@ -3095,8 +3114,11 @@ export const repositoryService = {
       scopeType: getScopeType(input.scope),
       projectId: input.scope.type === "project" ? input.scope.projectId : undefined,
       module: input.module,
+      kind,
+      hidden,
       title: input.title.trim(),
       sdkSessionId: null,
+      metadataJson: input.metadataJson ?? null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -3121,11 +3143,28 @@ export const repositoryService = {
     return next;
   },
 
-  async listChatSessions(scope: ChatScope): Promise<ChatSessionDTO[]> {
-    return await sortChatSessionsForList(
+  async listChatSessions(
+    scope: ChatScope,
+    options?: {
+      includeHidden?: boolean;
+      kinds?: ChatSessionKind[];
+    },
+  ): Promise<ChatSessionDTO[]> {
+    const includeHidden = options?.includeHidden ?? false;
+    const allowedKinds = options?.kinds ?? ["normal"];
+    const sessions = await sortChatSessionsForList(
       scope,
       await loadCachedChatSessions(scope),
     );
+    return sessions.filter((session) => {
+      if (!includeHidden && session.hidden) {
+        return false;
+      }
+      if (allowedKinds && !allowedKinds.includes(session.kind)) {
+        return false;
+      }
+      return true;
+    });
   },
 
   async getChatSession(
@@ -3139,6 +3178,76 @@ export const repositoryService = {
       return null;
     }
     return session;
+  },
+
+  async getOrCreateDigitalAvatarSession(
+    scope: ChatScope,
+    options?: {
+      metadataJson?: string;
+      title?: string;
+    },
+  ): Promise<ChatSessionDTO> {
+    const sessions = await loadCachedChatSessions(scope);
+    const expectedMetadataJson = options?.metadataJson?.trim() || null;
+    const existing = sessions.find(
+      (session) =>
+        session.kind === "digital_avatar" &&
+        session.hidden === false &&
+        session.module === "main" &&
+        (expectedMetadataJson
+          ? session.metadataJson === expectedMetadataJson
+          : session.metadataJson == null),
+    );
+    if (existing) {
+      const nextTitle = options?.title?.trim() ?? "";
+      if (!existing.title.trim() && nextTitle) {
+        await this.updateChatSessionTitle({
+          scope,
+          sessionId: existing.id,
+          title: nextTitle,
+        });
+        return {
+          ...existing,
+          title: nextTitle,
+        };
+      }
+      return existing;
+    }
+    return await this.createChatSession({
+      scope,
+      module: "main",
+      kind: "digital_avatar",
+      hidden: false,
+      title: options?.title ?? "",
+      metadataJson: expectedMetadataJson,
+    });
+  },
+
+  async getOrCreateChannelRuntimeSession(input: {
+    scope: ChatScope;
+    module: ChatModuleType;
+    metadataJson: string;
+    title?: string;
+  }): Promise<ChatSessionDTO> {
+    const sessions = await loadCachedChatSessions(input.scope);
+    const existing = sessions.find(
+      (session) =>
+        session.kind === "channel_runtime" &&
+        session.hidden === true &&
+        session.metadataJson === input.metadataJson &&
+        session.module === input.module,
+    );
+    if (existing) {
+      return existing;
+    }
+    return await this.createChatSession({
+      scope: input.scope,
+      module: input.module,
+      kind: "channel_runtime",
+      hidden: true,
+      title: input.title ?? "",
+      metadataJson: input.metadataJson,
+    });
   },
 
   async setChatSessionSdkSessionId(input: {

@@ -7,6 +7,7 @@ import {
   assetImportSchema,
   chatQueueSchema,
   chatQueuedMessagesSchema,
+  chatListSessionsSchema,
   chatSendSchema,
   chatScopeSchema,
   chatInterruptSchema,
@@ -265,9 +266,17 @@ export const registerHandlers = (): void => {
 
   handle('chat:createSession', sessionCreateSchema, async (input) => repositoryService.createChatSession(input));
   handle(
-    'chat:getSessions',
+    'chat:getDigitalAvatarSession',
     z.object({ scope: chatScopeSchema }),
-    async (input) => repositoryService.listChatSessions(input.scope)
+    async (input) => repositoryService.getOrCreateDigitalAvatarSession(input.scope)
+  );
+  handle(
+    'chat:getSessions',
+    chatListSessionsSchema,
+    async (input) =>
+      repositoryService.listChatSessions(input.scope, {
+        kinds: input.kinds,
+      })
   );
   handle('chat:getMessages', z.object({ scope: chatScopeSchema, sessionId: z.string() }), async (input) =>
     repositoryService.listMessages(input.scope, input.sessionId)
@@ -444,7 +453,7 @@ export const registerHandlers = (): void => {
     await settingsService.saveTelegramChatChannelConfig({
       enabled: input.enabled,
       botToken: input.botToken,
-      userIds: input.userIds
+      ownerUserIds: input.ownerUserIds
     });
     await settingsRuntimeService.reload({
       targets: [...settingsReloadTargets.chatChannels]
@@ -462,6 +471,7 @@ export const registerHandlers = (): void => {
     await settingsService.saveDiscordChatChannelConfig({
       enabled: input.enabled,
       botToken: input.botToken,
+      ownerUserIds: input.ownerUserIds,
       serverIds: input.serverIds,
       channelIds: input.channelIds
     });
@@ -484,7 +494,8 @@ export const registerHandlers = (): void => {
     await settingsService.saveFeishuChatChannelConfig({
       enabled: input.enabled,
       appId: input.appId,
-      appSecret: input.appSecret
+      appSecret: input.appSecret,
+      ownerUserIds: input.ownerUserIds
     });
     await settingsRuntimeService.reload({
       targets: [...settingsReloadTargets.chatChannels]

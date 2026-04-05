@@ -8,6 +8,7 @@ import {
   patchChatSessionList,
 } from "@renderer/modules/chat/chatQueryCache";
 import type {
+  ChatSessionKind,
   ChatModuleType,
   ChatScope,
   ChatSessionDTO,
@@ -22,6 +23,8 @@ interface ChatSessionListProps {
   currentSessionId?: string;
   onSelectSession: (sessionId: string) => void;
   onNewSession: () => void;
+  sessionKinds?: ChatSessionKind[];
+  allowCreate?: boolean;
   /** When true, renders only the list without a header (header managed externally). */
   hideHeader?: boolean;
   /** When true and header is shown, display a collapse button. */
@@ -60,6 +63,8 @@ export const ChatSessionList = ({
   currentSessionId,
   onSelectSession,
   onNewSession,
+  sessionKinds,
+  allowCreate = true,
   hideHeader = false,
   collapsible = false,
   onCollapse,
@@ -73,12 +78,14 @@ export const ChatSessionList = ({
   const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   const sessionsQuery = useQuery({
-    queryKey: ["chat-sessions", scopeKey],
-    queryFn: () => api.chat.getSessions(scope),
+    queryKey: getChatSessionsQueryKey(scopeKey, sessionKinds),
+    queryFn: () => api.chat.getSessions(scope, { kinds: sessionKinds }),
     enabled: Boolean(scopeKey),
   });
 
   const sessions = sessionsQuery.data ?? [];
+  const isDigitalAvatarList =
+    sessionKinds?.length === 1 && sessionKinds[0] === "digital_avatar";
 
   useEffect(() => {
     if (!editingSessionId) return;
@@ -101,7 +108,7 @@ export const ChatSessionList = ({
           const remaining = sessions.filter((s) => s.id !== sessionId);
           if (remaining.length > 0) {
             onSelectSession(remaining[0].id);
-          } else {
+          } else if (allowCreate) {
             // No sessions left, create a new one
             onNewSession();
           }
@@ -111,6 +118,7 @@ export const ChatSessionList = ({
       }
     },
     [
+      allowCreate,
       currentSessionId,
       onNewSession,
       onSelectSession,
@@ -158,24 +166,30 @@ export const ChatSessionList = ({
     }
 
     setIsSavingTitle(true);
-    const sessionsQueryKey = getChatSessionsQueryKey(scopeKey);
+    const sessionsQueryKey = getChatSessionsQueryKey(scopeKey, sessionKinds);
     const previousSessions =
       queryClient.getQueryData<ChatSessionDTO[]>(sessionsQueryKey);
     const optimisticUpdatedAt = new Date().toISOString();
-    patchChatSessionList(queryClient, scope, editingSessionId, (currentItem) => {
-      if (
-        currentItem.title === nextTitle &&
-        currentItem.updatedAt === optimisticUpdatedAt
-      ) {
-        return currentItem;
-      }
+    patchChatSessionList(
+      queryClient,
+      scope,
+      editingSessionId,
+      (currentItem) => {
+        if (
+          currentItem.title === nextTitle &&
+          currentItem.updatedAt === optimisticUpdatedAt
+        ) {
+          return currentItem;
+        }
 
-      return {
-        ...currentItem,
-        title: nextTitle,
-        updatedAt: optimisticUpdatedAt,
-      };
-    });
+        return {
+          ...currentItem,
+          title: nextTitle,
+          updatedAt: optimisticUpdatedAt,
+        };
+      },
+      sessionKinds,
+    );
     setEditingSessionId(null);
     setTitleDraft("");
 
@@ -195,16 +209,92 @@ export const ChatSessionList = ({
     queryClient,
     scope,
     scopeKey,
+    sessionKinds,
     sessions,
     t,
     titleDraft,
   ]);
 
   const listContent = sessions.length === 0 ? (
-    <div className="flex flex-col items-center justify-center gap-1 py-8">
-      <Typography.Text className="!text-xs !text-slate-400">
-        {t("暂无对话")}
-      </Typography.Text>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 text-center select-none">
+      {isDigitalAvatarList ? (
+        <>
+          <svg
+            width="56"
+            height="56"
+            viewBox="0 0 64 64"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="mb-3 opacity-30"
+          >
+            <rect
+              x="6"
+              y="12"
+              width="30"
+              height="20"
+              rx="6"
+              stroke="#94a3b8"
+              strokeWidth="1.2"
+            />
+            <path
+              d="M12 32 L12 38 L19 32"
+              stroke="#94a3b8"
+              strokeWidth="1.2"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle cx="15" cy="22" r="1.5" fill="#94a3b8" />
+            <circle cx="21" cy="22" r="1.5" fill="#94a3b8" />
+            <circle cx="27" cy="22" r="1.5" fill="#94a3b8" />
+            <rect
+              x="28"
+              y="28"
+              width="30"
+              height="20"
+              rx="6"
+              stroke="#94a3b8"
+              strokeWidth="1.2"
+            />
+            <path
+              d="M52 48 L52 54 L45 48"
+              stroke="#94a3b8"
+              strokeWidth="1.2"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <rect
+              x="35"
+              y="36"
+              width="16"
+              height="2"
+              rx="1"
+              fill="#94a3b8"
+              opacity="0.5"
+            />
+            <rect
+              x="35"
+              y="41"
+              width="10"
+              height="2"
+              rx="1"
+              fill="#94a3b8"
+              opacity="0.35"
+            />
+          </svg>
+          <Typography.Text className="!mb-1 !text-sm !font-medium !text-slate-500">
+            {t("暂无对话")}
+          </Typography.Text>
+          <Typography.Text className="!text-xs !text-slate-400">
+            {t("新消息会显示在这里")}
+          </Typography.Text>
+        </>
+      ) : (
+        <Typography.Text className="!text-xs !text-slate-400">
+          {t("暂无对话")}
+        </Typography.Text>
+      )}
     </div>
   ) : (
     <ScrollArea className="min-h-0 flex-1 pr-[10px]">
@@ -265,7 +355,7 @@ export const ChatSessionList = ({
               </div>
               <button
                 type="button"
-                className={`ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded transition-opacity hover:bg-red-50 hover:text-red-500 ${
+                className={`chat-session-list__delete ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded transition-opacity hover:bg-red-50 hover:text-red-500 ${
                   isEditing
                     ? "pointer-events-none invisible opacity-0"
                     : "opacity-0 group-hover:opacity-100"
@@ -295,15 +385,17 @@ export const ChatSessionList = ({
           {scope.type === "main" ? t("对话历史") : t("对话")}
         </Typography.Text>
         <div className="flex items-center gap-0.5">
-          <Button
-            type="text"
-            shape="circle"
-            icon={<PlusOutlined />}
-            title={t("新建对话")}
-            aria-label={t("新建对话")}
-            size="small"
-            onClick={onNewSession}
-          />
+          {allowCreate ? (
+            <Button
+              type="text"
+              shape="circle"
+              icon={<PlusOutlined />}
+              title={t("新建对话")}
+              aria-label={t("新建对话")}
+              size="small"
+              onClick={onNewSession}
+            />
+          ) : null}
           {collapsible ? (
             <Button
               type="text"

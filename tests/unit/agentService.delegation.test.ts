@@ -731,7 +731,18 @@ describe("agentService delegation reporting", () => {
       {
         scope: "main-agent",
         chatSessionId: "main-session",
+        sessionKind: "normal",
       },
+    );
+
+    const templateLog = mockedLoggerInfo.mock.calls.find(
+      ([message]) =>
+        typeof message === "string" &&
+        message.includes("Selected system prompt template Markdown (development)"),
+    );
+
+    expect(templateLog?.[0]).toContain(
+      "Selected system prompt template Markdown (development)\n\n# 标题\n\n- 条目 A",
     );
 
     const markdownLog = mockedLoggerInfo.mock.calls.find(
@@ -744,6 +755,57 @@ describe("agentService delegation reporting", () => {
       "Final system prompt Markdown (development)\n\n# 标题\n\n- 条目 A",
     );
     expect(markdownLog?.[0]).toContain("## 扩展\n内容");
+  });
+
+  it("logs the selected avatar system prompt template for digital avatar sessions", async () => {
+    const { logger } = await import("../../electron/main/services/logger");
+    const mockedLoggerInfo = vi.mocked(logger.info);
+    mockedLoggerInfo.mockClear();
+
+    state.getChatSession.mockResolvedValue({
+      id: "avatar-session",
+      module: "main",
+      kind: "digital_avatar",
+    });
+    state.getAgentSystemPrompt
+      .mockReset()
+      .mockResolvedValue("# Avatar Prompt");
+    state.buildSessionSystemPrompt
+      .mockReset()
+      .mockImplementation((prompt) => prompt);
+    state.prompt.mockReset().mockImplementation(async () => {
+      state.sessionListener?.({ type: "agent_end" });
+    });
+
+    const { agentService } =
+      await import("../../electron/main/services/agentService");
+
+    await agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "avatar-session",
+      requestId: "avatar-request-system-prompt-log",
+      message: "测试数字分身 system prompt 日志",
+    });
+
+    expect(mockedLoggerInfo).toHaveBeenCalledWith(
+      "Final system prompt metadata (development)",
+      {
+        scope: "main-agent",
+        chatSessionId: "avatar-session",
+        sessionKind: "digital_avatar",
+      },
+    );
+
+    const templateLog = mockedLoggerInfo.mock.calls.find(
+      ([message]) =>
+        typeof message === "string" &&
+        message.includes("Selected system prompt template Markdown (development)"),
+    );
+
+    expect(templateLog?.[0]).toContain(
+      "Selected system prompt template Markdown (development)\n\n# Avatar Prompt",
+    );
   });
 
   it("passes global config dir and build version into runtime environment section", async () => {

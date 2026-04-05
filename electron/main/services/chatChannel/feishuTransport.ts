@@ -35,9 +35,45 @@ interface FeishuChatListResponse {
   code?: number;
   msg?: string;
   data?: {
-    items?: Array<{ chat_id?: string }>;
+    items?: Array<{ chat_id?: string; name?: string }>;
     has_more?: boolean;
     page_token?: string;
+  };
+}
+
+interface FeishuChatInfoResponse {
+  code?: number;
+  msg?: string;
+  data?: {
+    name?: string;
+  };
+}
+
+interface FeishuUserInfoResponse {
+  code?: number;
+  msg?: string;
+  data?: {
+    user?: {
+      name?: string;
+      en_name?: string;
+      nickname?: string;
+    };
+  };
+}
+
+interface FeishuChatMembersResponse {
+  code?: number;
+  msg?: string;
+  data?: {
+    items?: Array<{
+      member_id_type?: string;
+      member_id?: string;
+      name?: string;
+      tenant_key?: string;
+    }>;
+    page_token?: string;
+    has_more?: boolean;
+    member_total?: number;
   };
 }
 
@@ -667,4 +703,134 @@ export const fetchFeishuChatIds = async (token: string): Promise<string[]> => {
   }
 
   return Array.from(chatIds);
+};
+
+export const fetchFeishuChatDisplayName = async (input: {
+  token: string;
+  chatId: string;
+  cache: Map<string, string | null>;
+}): Promise<string> => {
+  if (input.cache.has(input.chatId)) {
+    return input.cache.get(input.chatId) ?? "";
+  }
+  const accessToken = await resolveFeishuAccessToken(input.token);
+  const response = await fetch(
+    `${FEISHU_API_BASE}/im/v1/chats/${encodeURIComponent(input.chatId)}`,
+    {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+  await assertHttpOk(response, "飞书", "会话详情拉取");
+  const payload = (await response.json()) as FeishuChatInfoResponse;
+  if (typeof payload.code === "number" && payload.code !== 0) {
+    throw new Error(payload.msg || "飞书会话详情拉取失败");
+  }
+  const displayName = payload.data?.name?.trim() ?? "";
+  input.cache.set(input.chatId, displayName || null);
+  return displayName;
+};
+
+export const fetchFeishuUserDisplayName = async (input: {
+  token: string;
+  userId: string;
+  chatId?: string;
+  userIdType?: "open_id" | "user_id" | "union_id";
+  cache: Map<string, string | null>;
+}): Promise<string> => {
+  const userId = normalizeChatId(input.userId);
+  if (!userId) return "";
+
+  const cacheKey = `${input.userIdType ?? "unknown"}:${userId}`;
+  if (input.cache.has(cacheKey)) {
+    return input.cache.get(cacheKey) ?? "";
+  }
+
+  const accessToken = await resolveFeishuAccessToken(input.token);
+  const userIdTypes = input.userIdType
+    ? [input.userIdType]
+    : (["open_id", "user_id", "union_id"] as const);
+
+  const chatId = normalizeChatId(input.chatId);
+  if (chatId) {
+    for (const userIdType of userIdTypes) {
+      let pageToken = "";
+      for (let page = 0; page < 20; page += 1) {
+        const query = new URLSearchParams({
+          member_id_type: userIdType,
+          page_size: "100",
+        });
+        if (pageToken) {
+          query.set("page_token", pageToken);
+        }
+        const response = await fetch(
+          `${FEISHU_API_BASE}/im/v1/chats/${encodeURIComponent(chatId)}/members?${query.toString()}`,
+          {
+            headers: {
+              authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        await assertHttpOk(response, "飞书", "会话成员拉取");
+        const payload = (await response.json()) as FeishuChatMembersResponse;
+        if (typeof payload.code === "number" && payload.code !== 0) {
+          break;
+        }
+
+        const matchedMember = payload.data?.items?.find(
+          (item) => normalizeChatId(item.member_id) === userId,
+        );
+        const memberName = matchedMember?.name?.trim() ?? "";
+        if (memberName) {
+          input.cache.set(cacheKey, memberName);
+          input.cache.set(`${userIdType}:${userId}`, memberName);
+          return memberName;
+        }
+
+        const hasMore = payload.data?.has_more === true;
+        const nextPageToken =
+          typeof payload.data?.page_token === "string"
+            ? payload.data.page_token.trim()
+            : "";
+        if (!hasMore || !nextPageToken) {
+          break;
+        }
+        pageToken = nextPageToken;
+      }
+    }
+  }
+
+  for (const userIdType of userIdTypes) {
+    const query = new URLSearchParams({ user_id_type: userIdType });
+    const response = await fetch(
+      `${FEISHU_API_BASE}/contact/v3/users/${encodeURIComponent(userId)}?${query.toString()}`,
+      {
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+    await assertHttpOk(response, "飞书", "用户详情拉取");
+    const payload = (await response.json()) as FeishuUserInfoResponse;
+    if (typeof payload.code === "number" && payload.code !== 0) {
+      continue;
+    }
+
+    const displayName =
+      payload.data?.user?.name?.trim() ||
+      payload.data?.user?.en_name?.trim() ||
+      payload.data?.user?.nickname?.trim() ||
+      "";
+    if (!displayName) {
+      continue;
+    }
+
+    input.cache.set(cacheKey, displayName);
+    input.cache.set(`${userIdType}:${userId}`, displayName);
+    return displayName;
+  }
+
+  input.cache.set(cacheKey, null);
+  return "";
 };

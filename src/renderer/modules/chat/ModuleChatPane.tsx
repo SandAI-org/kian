@@ -100,6 +100,9 @@ interface ModuleChatPaneProps {
   timelineMaxHeight?: number;
   composerVariant?: "default" | "embedded";
   sessionBootstrapMode?: "default" | "lazy-new";
+  preserveEmptySessionSelection?: boolean;
+  readOnly?: boolean;
+  readOnlyNotice?: string;
 }
 
 interface SendPayload {
@@ -1086,7 +1089,8 @@ const parseMessageMetadataJson = (
       parsed.kind === "delegation" ||
       parsed.kind === "sub_agent_report" ||
       parsed.kind === "delegation_receipt" ||
-      parsed.kind === "thinking"
+      parsed.kind === "thinking" ||
+      parsed.kind === "channel_event"
     ) {
       return parsed;
     }
@@ -1147,6 +1151,87 @@ const formatThinkingQuoteMarkdown = (content: string): string =>
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
+
+const ChannelEventCard = memo(
+  ({
+    content,
+    role,
+    metadata,
+    projectId,
+    labels,
+  }: {
+    content: string;
+    role: ChatMessageDTO["role"];
+    metadata: ChatMessageMetadata | null;
+    projectId?: string;
+    labels: {
+      inbound: string;
+      reply: string;
+      direct: string;
+      group: string;
+      owner: string;
+      visitor: string;
+      mentioned: string;
+      batchedReply: string;
+    };
+  }) => {
+    const isInbound = role !== "assistant";
+    const senderLabel = metadata?.senderName?.trim() || metadata?.senderId?.trim();
+    const channelLabel =
+      metadata?.chatType === "group" ? labels.group : labels.direct;
+    const headerLabel = senderLabel
+      ? `${isInbound ? labels.inbound : labels.reply} · ${senderLabel}`
+      : isInbound
+        ? labels.inbound
+        : labels.reply;
+    const containerClassName = isInbound
+      ? "w-full"
+      : "w-full rounded-2xl border border-[#dbe5f5] bg-[#f8fbff] px-4 py-3 text-slate-800";
+    const pillClassName = isInbound
+      ? "inline-flex rounded-full border border-[#99b8ff]/45 bg-[#2149b8]/55 px-2.5 py-1 text-[11px] text-[#f3f7ff]"
+      : "inline-flex rounded-full border border-[#d8e2f2] bg-white px-2.5 py-1 text-[11px] text-slate-600";
+    const headerPillClassName = isInbound
+      ? `${pillClassName} font-semibold text-white`
+      : "inline-flex rounded-full border border-[#d8e2f2] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700";
+
+    return (
+      <div className={containerClassName}>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className={headerPillClassName}>
+            {headerLabel}
+          </span>
+          <span className={pillClassName}>
+            {metadata?.provider === "feishu"
+              ? "Feishu"
+              : metadata?.provider === "discord"
+                ? "Discord"
+              : metadata?.provider === "telegram"
+                ? "Telegram"
+                  : metadata?.provider ?? ""}
+          </span>
+          <span className={pillClassName}>
+            {channelLabel}
+          </span>
+          <span className={pillClassName}>
+            {metadata?.isOwner ? labels.owner : labels.visitor}
+          </span>
+          {metadata?.mentioned ? (
+            <span className={pillClassName}>
+              {labels.mentioned}
+            </span>
+          ) : null}
+          {metadata?.batchedCount ? (
+            <span className={pillClassName}>
+              {labels.batchedReply} × {metadata.batchedCount}
+            </span>
+          ) : null}
+        </div>
+        <MarkdownMessage content={content} projectId={projectId} user={isInbound} />
+      </div>
+    );
+  },
+);
+ChannelEventCard.displayName = "ChannelEventCard";
 
 const SubAgentReportCard = memo(
   ({
@@ -1342,6 +1427,14 @@ interface ChatTimelineProps {
   workingIndicatorLabel: string;
   delegationReceiptLabel: string;
   delegationLabel: string;
+  channelInboundLabel: string;
+  channelReplyLabel: string;
+  channelDirectLabel: string;
+  channelGroupLabel: string;
+  channelOwnerLabel: string;
+  channelVisitorLabel: string;
+  channelMentionedLabel: string;
+  channelBatchedReplyLabel: string;
 }
 
 const ThinkingIndicator = memo(({ label }: { label: string }) => (
@@ -1368,6 +1461,14 @@ const ChatTimeline = memo(
     workingIndicatorLabel,
     delegationReceiptLabel,
     delegationLabel,
+    channelInboundLabel,
+    channelReplyLabel,
+    channelDirectLabel,
+    channelGroupLabel,
+    channelOwnerLabel,
+    channelVisitorLabel,
+    channelMentionedLabel,
+    channelBatchedReplyLabel,
   }: ChatTimelineProps) => {
     if (timelineBlocks.length === 0 && !showStreamingPanel) {
       return null;
@@ -1450,6 +1551,7 @@ const ChatTimeline = memo(
             messageMetadata?.kind === "delegation_receipt";
           const isReportCard = messageMetadata?.kind === "sub_agent_report";
           const isThinkingCard = messageMetadata?.kind === "thinking";
+          const isChannelEventCard = messageMetadata?.kind === "channel_event";
           return (
             <div
               key={item.id}
@@ -1463,9 +1565,11 @@ const ChatTimeline = memo(
                       ? "sub-agent-delegation-card w-full px-3 py-3"
                       : isThinkingCard
                         ? "w-full"
-                      : isReportCard
-                        ? "w-full"
-                        : "w-full text-slate-800"
+                        : isChannelEventCard
+                          ? "w-full"
+                        : isReportCard
+                          ? "w-full"
+                          : "w-full text-slate-800"
                 }
               >
                 {isDelegationCard ? (
@@ -1486,6 +1590,23 @@ const ChatTimeline = memo(
                     content={displayContent}
                     projectId={projectId}
                     title={thinkingMessageTitle}
+                  />
+                ) : isChannelEventCard ? (
+                  <ChannelEventCard
+                    content={displayContent}
+                    role={item.role}
+                    metadata={messageMetadata}
+                    projectId={projectId}
+                    labels={{
+                      inbound: channelInboundLabel,
+                      reply: channelReplyLabel,
+                      direct: channelDirectLabel,
+                      group: channelGroupLabel,
+                      owner: channelOwnerLabel,
+                      visitor: channelVisitorLabel,
+                      mentioned: channelMentionedLabel,
+                      batchedReply: channelBatchedReplyLabel,
+                    }}
                   />
                 ) : (
                   <MarkdownMessage
@@ -1538,6 +1659,9 @@ export const ModuleChatPane = ({
   timelineMaxHeight,
   composerVariant = "default",
   sessionBootstrapMode = "default",
+  preserveEmptySessionSelection = false,
+  readOnly = false,
+  readOnlyNotice,
 }: ModuleChatPaneProps) => {
   const { language } = useAppI18n();
   const t = useCallback(
@@ -1572,7 +1696,9 @@ export const ModuleChatPane = ({
   const [internalSessionId, setInternalSessionId] = useState<
     string | undefined
   >(undefined);
-  const currentSessionId = externalSessionId ?? internalSessionId;
+  const currentSessionId = preserveEmptySessionSelection
+    ? externalSessionId
+    : externalSessionId ?? internalSessionId;
   const setCurrentSessionId = useCallback(
     (id: string | undefined) => {
       setInternalSessionId(id);
@@ -1948,7 +2074,7 @@ export const ModuleChatPane = ({
 
   useEffect(() => {
     // When externally controlled, skip auto-bootstrap
-    if (externalSessionId) return;
+    if (externalSessionId || preserveEmptySessionSelection) return;
     if (sessionBootstrapMode === "lazy-new") return;
 
     const bootstrap = async (): Promise<void> => {
@@ -1973,6 +2099,7 @@ export const ModuleChatPane = ({
     effectiveScope,
     externalSessionId,
     module,
+    preserveEmptySessionSelection,
     queryClient,
     sessionBootstrapMode,
     scopeKey,
@@ -2789,6 +2916,7 @@ export const ModuleChatPane = ({
   }, []);
 
   const canSend =
+    !readOnly &&
     (sessionBootstrapMode === "lazy-new" || Boolean(currentSessionId)) &&
     (input.trim().length > 0 || pendingFiles.length > 0) &&
     hasHydratedSelectedModel &&
@@ -2853,6 +2981,10 @@ export const ModuleChatPane = ({
   const composer = (
     <ChatComposer
       variant={composerVariant}
+      mode={readOnly ? "controls-only" : "default"}
+      readOnlyNotice={
+        readOnlyNotice ?? t("这个会话是只读的，当前页面不能直接发送消息。")
+      }
       queuedMessages={queuedComposerMessages}
       queuedMessagesLabel={t("排队中的消息")}
       queuedSourcePrefix={t("来自")}
@@ -2988,6 +3120,8 @@ export const ModuleChatPane = ({
 
   const isEmpty = timelineBlocks.length === 0 && !showStreamingPanel;
   const showEmptyState = emptyStateMode === "default" && isEmpty;
+  const showDigitalAvatarEmptyState =
+    showEmptyState && preserveEmptySessionSelection && readOnly;
   const chatContainerClassName =
     !isAutoLayout && emptyStateMode === "hidden" && isEmpty
       ? `${chatContainerBaseClassName} justify-end`
@@ -3070,7 +3204,7 @@ export const ModuleChatPane = ({
               />
             </svg>
             <span className="text-[13px] text-slate-400/70">
-              有什么可以帮你的吗？
+              {t("有什么可以帮你的吗？")}
             </span>
           </div>
         ) : !isEmpty ? (
@@ -3091,11 +3225,29 @@ export const ModuleChatPane = ({
               workingIndicatorLabel={t("努力工作中")}
               delegationReceiptLabel={t("主 Agent 委派回执")}
               delegationLabel={t("来自主 Agent 的委派")}
+              channelInboundLabel={t("渠道来信")}
+              channelReplyLabel={t("渠道回复")}
+              channelDirectLabel={t("私聊")}
+              channelGroupLabel={t("群聊")}
+              channelOwnerLabel={t("拥有者")}
+              channelVisitorLabel={t("非拥有者")}
+              channelMentionedLabel={t("被提及")}
+              channelBatchedReplyLabel={t("批量回复")}
             />
           </ScrollArea>
         ) : null}
 
-        <div className={isEmpty ? "z-10" : "z-10 mt-2"}>{composer}</div>
+        <div
+          className={
+            isEmpty
+              ? showDigitalAvatarEmptyState
+                ? "z-10 mt-2.5"
+                : "z-10"
+              : "z-10 mt-2"
+          }
+        >
+          {composer}
+        </div>
       </div>
     </div>
   );

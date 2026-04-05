@@ -9,6 +9,7 @@ import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
+import { openUrl } from "@renderer/lib/openUrl";
 import { DEFAULT_APP_LANGUAGE, type AppLanguage } from "@shared/i18n";
 import { DEFAULT_APP_THEME_MODE, type AppThemeMode } from "@shared/theme";
 import { getAboutUpdatePresentation } from "@renderer/modules/settings/updatePresentation";
@@ -21,6 +22,7 @@ import type {
   AgentProviderDTO,
   ClaudeConfigStatus,
   AppUpdateStatusDTO,
+  ChatChannelOwnerCandidateDTO,
   CustomAgentModelConfigDTO,
   KeyboardShortcutDTO,
   ProviderConfigEntry,
@@ -47,7 +49,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 
 const SETTINGS_TABS = [
@@ -161,8 +163,23 @@ const parseDelimitedValues = (raw: string): string[] => {
   return Array.from(new Set(values));
 };
 
-const parseTelegramUserIds = (raw: string): string[] =>
-  parseDelimitedValues(raw);
+const normalizeDelimitedValues = (raw: unknown): string[] => {
+  if (Array.isArray(raw)) {
+    return normalizeTagValues(raw);
+  }
+  return parseDelimitedValues(String(raw ?? ""));
+};
+
+const parseTelegramUserIds = (raw: unknown): string[] =>
+  normalizeDelimitedValues(raw);
+const appendDelimitedValue = (raw: unknown, value: string): string[] => {
+  const nextValues = normalizeDelimitedValues(raw);
+  if (!nextValues.includes(value)) {
+    nextValues.push(value);
+  }
+  return nextValues;
+};
+
 const normalizeTagValues = (raw: unknown): string[] => {
   if (!Array.isArray(raw)) return [];
   return Array.from(
@@ -392,7 +409,7 @@ type ChannelFormValues = {
   appId?: string;
   appSecret?: string;
   accountId?: string;
-  userIdsText?: string;
+  userIdsText?: string[];
   serverIds?: string[];
   channelIds?: string[];
 };
@@ -432,7 +449,7 @@ const SettingsGuideCard = ({
   tone = "blue",
 }: {
   title: string;
-  steps: string[];
+  steps: ReactNode[];
   tone?: SettingsGuideCardTone;
 }) => (
   <div className={`settings-guide-card settings-guide-card--${tone}`}>
@@ -442,12 +459,75 @@ const SettingsGuideCard = ({
       {title}
     </Typography.Text>
     <div className="settings-guide-card__steps">
-      {steps.map((step) => (
-        <div key={step} className="settings-guide-card__step">
+      {steps.map((step, index) => (
+        <div key={index} className="settings-guide-card__step">
           {step}
         </div>
       ))}
     </div>
+  </div>
+);
+
+const OwnerCandidateCard = ({
+  candidates,
+  selectedIds,
+  onAdd,
+  hintAddon,
+  t,
+}: {
+  candidates: ChatChannelOwnerCandidateDTO[];
+  selectedIds: string[];
+  onAdd: (userId: string) => void;
+  hintAddon?: ReactNode;
+  t: (value: string) => string;
+}) => (
+  <div className="owner-candidate-card">
+    <div className="owner-candidate-card__glow" />
+    <Typography.Text strong className="owner-candidate-card__title">
+      {t("最近收到的用户标识")}
+    </Typography.Text>
+    <Typography.Paragraph className="owner-candidate-card__hint">
+      {t("先给 Bot 发一条消息，这里会显示最近收到的标识，可直接加入拥有者。")}
+      {hintAddon ? <> {hintAddon}</> : null}
+    </Typography.Paragraph>
+    {candidates.length > 0 ? (
+      <div className="owner-candidate-card__list">
+        {candidates.map((candidate) => {
+          const isSelected = selectedIds.includes(candidate.userId);
+          const displayName = candidate.displayName?.trim() ?? "";
+          const showDisplayName =
+            displayName.length > 0 && displayName !== candidate.userId;
+
+          return (
+            <div
+              key={candidate.userId}
+              className="owner-candidate-card__item"
+            >
+              <div className="owner-candidate-card__item-body">
+                {showDisplayName ? (
+                  <div className="owner-candidate-card__item-name">
+                    {displayName}
+                  </div>
+                ) : null}
+                <div className="owner-candidate-card__item-id">
+                  {candidate.userId}
+                </div>
+              </div>
+              <Button
+                size="small"
+                type={isSelected ? "default" : "primary"}
+                disabled={isSelected}
+                onClick={() => {
+                  onAdd(candidate.userId);
+                }}
+              >
+                {t(isSelected ? "已在拥有者列表中" : "设置为拥有者")}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    ) : null}
   </div>
 );
 
@@ -753,6 +833,8 @@ export const SettingsPage = () => {
     }
     return "general";
   }, [searchParams]);
+  const channelStatusRefetchInterval =
+    activeSettingsTab === "channels" ? 3_000 : false;
 
   const handleSettingsTabChange = useCallback(
     (nextTab: string) => {
@@ -838,6 +920,10 @@ export const SettingsPage = () => {
     form: discordForm,
     preserve: true,
   });
+  const discordOwnerUserIdsTextValue = Form.useWatch("userIdsText", {
+    form: discordForm,
+    preserve: true,
+  });
   const discordServerIdsValue = Form.useWatch("serverIds", {
     form: discordForm,
     preserve: true,
@@ -854,6 +940,10 @@ export const SettingsPage = () => {
     preserve: true,
   });
   const feishuAppSecretValue = Form.useWatch("appSecret", {
+    form: feishuForm,
+    preserve: true,
+  });
+  const feishuOwnerUserIdsTextValue = Form.useWatch("userIdsText", {
     form: feishuForm,
     preserve: true,
   });
@@ -926,18 +1016,22 @@ export const SettingsPage = () => {
   const telegramStatusQuery = useQuery({
     queryKey: ["settings", "chat-channel", "telegram"],
     queryFn: api.settings.getTelegramChatChannelStatus,
+    refetchInterval: channelStatusRefetchInterval,
   });
   const discordStatusQuery = useQuery({
     queryKey: ["settings", "chat-channel", "discord"],
     queryFn: api.settings.getDiscordChatChannelStatus,
+    refetchInterval: channelStatusRefetchInterval,
   });
   const feishuStatusQuery = useQuery({
     queryKey: ["settings", "chat-channel", "feishu"],
     queryFn: api.settings.getFeishuChatChannelStatus,
+    refetchInterval: channelStatusRefetchInterval,
   });
   const weixinStatusQuery = useQuery({
     queryKey: ["settings", "chat-channel", "weixin"],
     queryFn: api.settings.getWeixinChatChannelStatus,
+    refetchInterval: channelStatusRefetchInterval,
   });
   const broadcastChannelsQuery = useQuery({
     queryKey: ["settings", "broadcast-channels"],
@@ -947,6 +1041,43 @@ export const SettingsPage = () => {
     queryKey: ["update", "status"],
     queryFn: api.update.getStatus,
   });
+
+  const handleAddTelegramOwnerUserId = useCallback(
+    (userId: string) => {
+      telegramForm.setFieldValue(
+        "userIdsText",
+        appendDelimitedValue(
+          telegramForm.getFieldValue("userIdsText"),
+          userId,
+        ),
+      );
+    },
+    [telegramForm],
+  );
+  const handleAddDiscordOwnerUserId = useCallback(
+    (userId: string) => {
+      discordForm.setFieldValue(
+        "userIdsText",
+        appendDelimitedValue(
+          discordForm.getFieldValue("userIdsText"),
+          userId,
+        ),
+      );
+    },
+    [discordForm],
+  );
+  const handleAddFeishuOwnerUserId = useCallback(
+    (userId: string) => {
+      feishuForm.setFieldValue(
+        "userIdsText",
+        appendDelimitedValue(
+          feishuForm.getFieldValue("userIdsText"),
+          userId,
+        ),
+      );
+    },
+    [feishuForm],
+  );
 
   const saveGeneralMutation = useMutation({
     mutationFn: (values: GeneralFormValues) =>
@@ -996,7 +1127,7 @@ export const SettingsPage = () => {
       api.settings.saveTelegramChatChannelConfig({
         enabled: values.enabled,
         botToken: values.botToken,
-        userIds: parseTelegramUserIds(String(values.userIdsText ?? "")),
+        ownerUserIds: parseTelegramUserIds(values.userIdsText),
       }),
   });
 
@@ -1005,6 +1136,7 @@ export const SettingsPage = () => {
       api.settings.saveDiscordChatChannelConfig({
         enabled: values.enabled,
         botToken: values.botToken,
+        ownerUserIds: normalizeDelimitedValues(values.userIdsText),
         serverIds: normalizeTagValues(values.serverIds),
         channelIds: normalizeTagValues(values.channelIds),
       }),
@@ -1016,6 +1148,7 @@ export const SettingsPage = () => {
         enabled: values.enabled,
         appId: values.appId,
         appSecret: values.appSecret,
+        ownerUserIds: normalizeDelimitedValues(values.userIdsText),
       }),
   });
   const saveWeixinMutation = useMutation({
@@ -1343,7 +1476,7 @@ export const SettingsPage = () => {
     telegramForm.setFieldsValue({
       enabled: telegramStatusQuery.data.enabled,
       botToken: telegramStatusQuery.data.botToken,
-      userIdsText: telegramStatusQuery.data.userIds.join("\n"),
+      userIdsText: telegramStatusQuery.data.ownerUserIds,
     });
   }, [telegramForm, telegramStatusQuery.data]);
 
@@ -1352,6 +1485,7 @@ export const SettingsPage = () => {
     discordForm.setFieldsValue({
       enabled: discordStatusQuery.data.enabled,
       botToken: discordStatusQuery.data.botToken,
+      userIdsText: discordStatusQuery.data.ownerUserIds,
       serverIds: discordStatusQuery.data.serverIds,
       channelIds: discordStatusQuery.data.channelIds,
     });
@@ -1363,6 +1497,7 @@ export const SettingsPage = () => {
       enabled: feishuStatusQuery.data.enabled,
       appId: feishuStatusQuery.data.appId,
       appSecret: feishuStatusQuery.data.appSecret,
+      userIdsText: feishuStatusQuery.data.ownerUserIds,
     });
   }, [feishuForm, feishuStatusQuery.data]);
 
@@ -1550,15 +1685,17 @@ export const SettingsPage = () => {
   const hasInputTelegramToken = Boolean(telegramBotTokenText);
   const hasSavedTelegramToken = Boolean(telegramStatusQuery.data?.configured);
   const telegramTokenFilled = hasInputTelegramToken || hasSavedTelegramToken;
-  const telegramUserIds = parseTelegramUserIds(
-    String(telegramUserIdsTextValue ?? ""),
-  );
+  const telegramUserIds = parseTelegramUserIds(telegramUserIdsTextValue);
   const telegramUserIdFilled = telegramUserIds.length > 0;
 
   const discordBotTokenText = String(discordBotTokenValue ?? "").trim();
   const hasInputDiscordToken = Boolean(discordBotTokenText);
   const hasSavedDiscordToken = Boolean(discordStatusQuery.data?.configured);
   const discordTokenFilled = hasInputDiscordToken || hasSavedDiscordToken;
+  const discordOwnerUserIds = normalizeDelimitedValues(
+    discordOwnerUserIdsTextValue,
+  );
+  const discordOwnerUserIdFilled = discordOwnerUserIds.length > 0;
   const discordServerIds = normalizeTagValues(discordServerIdsValue);
   const discordServerIdsFilled = discordServerIds.length > 0;
   const discordChannelIds = normalizeTagValues(discordChannelIdsValue);
@@ -1572,6 +1709,13 @@ export const SettingsPage = () => {
   const feishuAppIdFilled = hasInputFeishuAppId || hasSavedFeishuCredentials;
   const feishuAppSecretFilled =
     hasInputFeishuAppSecret || hasSavedFeishuCredentials;
+  const feishuOwnerUserIds = normalizeDelimitedValues(feishuOwnerUserIdsTextValue);
+  const feishuOwnerUserIdFilled = feishuOwnerUserIds.length > 0;
+  const resolvedFeishuAppId =
+    feishuAppIdText || String(feishuStatusQuery.data?.appId ?? "").trim();
+  const feishuContactPermissionUrl = resolvedFeishuAppId
+    ? `https://open.feishu.cn/app/${encodeURIComponent(resolvedFeishuAppId)}/auth?q=contact:contact.base:readonly,contact:contact:access_as_app,contact:contact:readonly,contact:contact:readonly_as_app&op_from=openapi&token_type=tenant`
+    : "";
 
   const weixinAccountIdText = String(weixinAccountIdValue ?? "").trim();
 
@@ -1581,7 +1725,11 @@ export const SettingsPage = () => {
   );
   const normalizedTelegramUserIds = normalizeIdList(telegramUserIds);
   const savedTelegramUserIds = normalizeIdList(
-    telegramStatusQuery.data?.userIds ?? [],
+    telegramStatusQuery.data?.ownerUserIds ?? [],
+  );
+  const normalizedDiscordOwnerUserIds = normalizeIdList(discordOwnerUserIds);
+  const savedDiscordOwnerUserIds = normalizeIdList(
+    discordStatusQuery.data?.ownerUserIds ?? [],
   );
   const normalizedDiscordServerIds = normalizeIdList(discordServerIds);
   const savedDiscordServerIds = normalizeIdList(
@@ -1652,13 +1800,21 @@ export const SettingsPage = () => {
   const discordDirty = discordStatus
     ? discordEnabled !== discordStatus.enabled ||
       discordBotTokenText !== (discordStatus.botToken ?? "") ||
+      !isSameStringArray(
+        normalizedDiscordOwnerUserIds,
+        savedDiscordOwnerUserIds,
+      ) ||
       !isSameStringArray(normalizedDiscordServerIds, savedDiscordServerIds) ||
       !isSameStringArray(normalizedDiscordChannelIds, savedDiscordChannelIds)
     : false;
   const feishuDirty = feishuStatus
     ? feishuEnabled !== feishuStatus.enabled ||
       feishuAppIdText !== (feishuStatus.appId ?? "") ||
-      feishuAppSecretText !== (feishuStatus.appSecret ?? "")
+      feishuAppSecretText !== (feishuStatus.appSecret ?? "") ||
+      !isSameStringArray(
+        normalizeIdList(feishuOwnerUserIds),
+        normalizeIdList(feishuStatus.ownerUserIds ?? []),
+      )
     : false;
   const weixinDirty = weixinStatus
     ? weixinEnabled !== weixinStatus.enabled ||
@@ -1710,6 +1866,9 @@ export const SettingsPage = () => {
   const weixinAvailableAccounts = weixinStatusQuery.data?.availableAccounts ?? [];
   const activeWeixinAccountId =
     weixinAccountIdText || weixinStatusQuery.data?.activeAccountId || "";
+  const activeWeixinAccount = weixinAvailableAccounts.find(
+    (account) => account.accountId === activeWeixinAccountId,
+  );
 
   const handleAutoSaveChanges = useCallback(async () => {
     if (autoSaveInFlightRef.current) return;
@@ -2897,7 +3056,7 @@ export const SettingsPage = () => {
                               initialValues={{
                                 enabled: false,
                                 botToken: "",
-                                userIdsText: "",
+                                userIdsText: [],
                               }}
                             >
                               <Form.Item name="enabled" valuePropName="checked">
@@ -2946,30 +3105,18 @@ export const SettingsPage = () => {
 
                                   <Form.Item
                                     name="userIdsText"
+                                    className="!mb-4"
                                     label={getFieldLabel(
-                                      "允许用户 user_id",
+                                      t("拥有者白名单（user_id）"),
                                       telegramUserIdFilled,
                                     )}
-                                    extra="多个 user_id 使用换行、空格或逗号分隔。"
+                                    extra={t(
+                                      "输入多个拥有者 user_id，每个 ID 按回车生成标签。",
+                                    )}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
-                                          const tokens = parseTelegramUserIds(
-                                            String(value ?? ""),
-                                          );
-                                          if (
-                                            !telegramEnabled &&
-                                            tokens.length === 0
-                                          )
-                                            return Promise.resolve();
-                                          if (tokens.length === 0)
-                                            return Promise.reject(
-                                              new Error(
-                                                t(
-                                                  "启用 Telegram 前请先填写 user_id",
-                                                ),
-                                              ),
-                                            );
+                                          const tokens = parseTelegramUserIds(value);
                                           if (
                                             tokens.some(
                                               (item) => !/^\d+$/.test(item),
@@ -2984,29 +3131,40 @@ export const SettingsPage = () => {
                                       },
                                     ]}
                                   >
-                                    <Input.TextArea
-                                      placeholder="123456789\n987654321"
-                                      autoSize={{ minRows: 3, maxRows: 8 }}
+                                    <Select
+                                      mode="tags"
+                                      open={false}
+                                      tokenSeparators={[",", " ", "\n"]}
+                                      placeholder="123456789"
                                     />
                                   </Form.Item>
 
-                                  <div className="mt-1">
-                                    <SettingsGuideCard
-                                      tone="blue"
-                                      title={t("Telegram 接入方式指引")}
-                                      steps={[
-                                        t(
-                                          "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。",
-                                        ),
-                                        t(
-                                          "2. 给 Bot 发送消息，获取自己的 user_id（纯数字）。",
-                                        ),
-                                        t(
-                                          "3. 配置允许与 Bot 对话的 user_id 列表。",
-                                        ),
-                                      ]}
+                                  <div className="mb-4">
+                                    <OwnerCandidateCard
+                                      candidates={
+                                        telegramStatusQuery.data?.ownerCandidates ?? []
+                                      }
+                                      selectedIds={telegramUserIds}
+                                      onAdd={handleAddTelegramOwnerUserId}
+                                      t={t}
                                     />
                                   </div>
+
+                                  <SettingsGuideCard
+                                    tone="blue"
+                                    title={t("Telegram 接入方式指引")}
+                                    steps={[
+                                      t(
+                                        "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。",
+                                      ),
+                                      t(
+                                        "2. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id（纯数字）。",
+                                      ),
+                                      t(
+                                        "3. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。",
+                                      ),
+                                    ]}
+                                  />
                                 </>
                               ) : null}
                             </Form>
@@ -3022,6 +3180,7 @@ export const SettingsPage = () => {
                               initialValues={{
                                 enabled: false,
                                 botToken: "",
+                                userIdsText: [],
                                 serverIds: [],
                                 channelIds: [],
                               }}
@@ -3069,6 +3228,49 @@ export const SettingsPage = () => {
                                   >
                                     <Input.Password placeholder="Discord Bot Token" />
                                   </Form.Item>
+
+                                  <Form.Item
+                                    name="userIdsText"
+                                    className="!mb-4"
+                                    label={getFieldLabel(
+                                      t("拥有者白名单（user_id）"),
+                                      discordOwnerUserIdFilled,
+                                    )}
+                                    extra={t(
+                                      "输入多个拥有者 user_id，每个 ID 按回车生成标签。",
+                                    )}
+                                    rules={[
+                                      {
+                                        validator: async (_, value) => {
+                                          const tokens = normalizeDelimitedValues(value);
+                                          if (tokens.some((item) => !/^\d+$/.test(item))) {
+                                            return Promise.reject(
+                                              new Error(t("user_id 必须为纯数字")),
+                                            );
+                                          }
+                                          return Promise.resolve();
+                                        },
+                                      },
+                                    ]}
+                                  >
+                                    <Select
+                                      mode="tags"
+                                      open={false}
+                                      tokenSeparators={[",", " ", "\n"]}
+                                      placeholder="123456789012345678"
+                                    />
+                                  </Form.Item>
+
+                                  <div className="mb-4">
+                                    <OwnerCandidateCard
+                                      candidates={
+                                        discordStatusQuery.data?.ownerCandidates ?? []
+                                      }
+                                      selectedIds={discordOwnerUserIds}
+                                      onAdd={handleAddDiscordOwnerUserId}
+                                      t={t}
+                                    />
+                                  </div>
 
                                   <Form.Item
                                     name="serverIds"
@@ -3178,7 +3380,13 @@ export const SettingsPage = () => {
                                           "2. 将 Bot 邀请进目标服务器并授予可读取/发送消息权限。",
                                         ),
                                         t(
-                                          "3. 配置允许接入的服务器 ID 与频道 ID。",
+                                          "3. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id。",
+                                        ),
+                                        t(
+                                          "4. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。",
+                                        ),
+                                        t(
+                                          "5. 配置允许接入的服务器 ID 与频道 ID。",
                                         ),
                                       ]}
                                     />
@@ -3199,6 +3407,7 @@ export const SettingsPage = () => {
                                 enabled: false,
                                 appId: "",
                                 appSecret: "",
+                                userIdsText: [],
                               }}
                             >
                               <Form.Item name="enabled" valuePropName="checked">
@@ -3268,29 +3477,86 @@ export const SettingsPage = () => {
                                     <Input.Password placeholder="sec_xxx" />
                                   </Form.Item>
 
-                                  <div className="mt-1">
-                                    <SettingsGuideCard
-                                      tone="green"
-                                      title={t("飞书接入方式指引")}
-                                      steps={[
-                                        t(
-                                          "1. 在飞书开发者后台创建应用，获取 app_id 与 app_secret。",
-                                        ),
-                                        t(
-                                          "2. 在配置中分别填写 AppID 与 AppSecret。",
-                                        ),
-                                        t(
-                                          "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。",
-                                        ),
-                                        t(
-                                          "4. 添加 im:message 和 im:resource 权限。",
-                                        ),
-                                        t(
-                                          "5. 成员管理中只添加自己（自己使用确保安全，同时可以免审核发布）。",
-                                        ),
-                                      ]}
+                                  <Form.Item
+                                    name="userIdsText"
+                                    className="!mb-4"
+                                    label={getFieldLabel(
+                                      t(
+                                        "拥有者白名单（open_id / user_id / union_id）",
+                                      ),
+                                      feishuOwnerUserIdFilled,
+                                    )}
+                                    extra={t(
+                                      "输入多个拥有者标识，每个标识按回车生成标签。",
+                                    )}
+                                    rules={[
+                                      {
+                                        validator: async (_, value) => {
+                                          normalizeDelimitedValues(value);
+                                          return Promise.resolve();
+                                        },
+                                      },
+                                    ]}
+                                  >
+                                    <Select
+                                      mode="tags"
+                                      open={false}
+                                      tokenSeparators={[",", " ", "\n"]}
+                                      placeholder="ou_xxx"
+                                    />
+                                  </Form.Item>
+
+                                  <div className="mb-4">
+                                    <OwnerCandidateCard
+                                      candidates={
+                                        feishuStatusQuery.data?.ownerCandidates ?? []
+                                      }
+                                      selectedIds={feishuOwnerUserIds}
+                                      onAdd={handleAddFeishuOwnerUserId}
+                                      hintAddon={
+                                        feishuContactPermissionUrl ? (
+                                          <>
+                                            {t(
+                                              "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。",
+                                            )}
+                                            <Typography.Link
+                                              onClick={() => {
+                                                void openUrl(feishuContactPermissionUrl);
+                                              }}
+                                            >
+                                              {t("开通通讯录权限")}
+                                            </Typography.Link>
+                                          </>
+                                        ) : null
+                                      }
+                                      t={t}
                                     />
                                   </div>
+
+                                  <SettingsGuideCard
+                                    tone="green"
+                                    title={t("飞书接入方式指引")}
+                                    steps={[
+                                      t(
+                                        "1. 在飞书开发者后台创建应用，获取 app_id 与 app_secret。",
+                                      ),
+                                      t(
+                                        "2. 在配置中分别填写 AppID 与 AppSecret。",
+                                      ),
+                                      t(
+                                        "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。",
+                                      ),
+                                      t(
+                                        "4. 添加 im:message 和 im:resource 权限。",
+                                      ),
+                                      t(
+                                        "5. 给应用发送一条消息，设置页会自动发现最近收到的标识。",
+                                      ),
+                                      t(
+                                        "6. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。",
+                                      ),
+                                    ]}
+                                  />
                                 </>
                               ) : null}
                             </Form>
@@ -3323,7 +3589,7 @@ export const SettingsPage = () => {
                                       weixinAvailableAccounts.length > 0,
                                     )}
                                     extra={t(
-                                      "扫码登录后会自动写入；也可以从已保存账号中切换。",
+                                      "扫码登录后会自动写入；也可以从已保存账号中切换，并查看当前账号的 user_id。",
                                     )}
                                   >
                                     <Form.Item name="accountId" hidden>
@@ -3344,12 +3610,15 @@ export const SettingsPage = () => {
                                               }`}
                                             >
                                               <div className="min-w-0">
+                                                <div className="text-xs text-slate-500">
+                                                  {t("账号 ID")}
+                                                </div>
                                                 <div className="break-all text-sm font-medium text-slate-900">
                                                   {account.accountId}
                                                 </div>
                                                 {account.userId ? (
                                                   <div className="mt-1 break-all text-xs text-slate-500">
-                                                    {account.userId}
+                                                    {t("微信 user_id")}：{account.userId}
                                                   </div>
                                                 ) : null}
                                               </div>
@@ -3411,7 +3680,7 @@ export const SettingsPage = () => {
                                     )}
                                   </Form.Item>
 
-                                  <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                                       <Typography.Text className="!text-xs !text-slate-500">
                                         {t("当前轮询账号")}
@@ -3429,6 +3698,15 @@ export const SettingsPage = () => {
                                         {weixinStatusQuery.data?.polling
                                           ? t("运行中")
                                           : t("未启用")}
+                                      </div>
+                                    </div>
+                                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                      <Typography.Text className="!text-xs !text-slate-500">
+                                        {t("微信 user_id")}
+                                      </Typography.Text>
+                                      <div className="mt-1 break-all text-sm text-slate-900">
+                                        {activeWeixinAccount?.userId ||
+                                          t("扫码登录后可查看当前账号的 user_id。")}
                                       </div>
                                     </div>
                                   </div>

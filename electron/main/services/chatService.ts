@@ -14,6 +14,10 @@ import {
 import { agentService } from "./agentService";
 import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
+import {
+  createLlmRequestDebugOnPayload,
+  getLlmRequestDebugCwdForScope,
+} from "./llmRequestDebug";
 import { normalizeMediaMarkdownInText } from "./mediaMarkdown";
 import { repositoryService } from "./repositoryService";
 import { settingsService } from "./settingsService";
@@ -317,7 +321,24 @@ const generateSessionTitle = async (
           },
         ],
       },
-      { apiKey },
+      {
+        apiKey,
+        onPayload: createLlmRequestDebugOnPayload(() => ({
+          kind: "auto_title",
+          requestId: payload.requestId,
+          scope:
+            payload.scope.type === "main"
+              ? "main"
+              : `project:${payload.scope.projectId}`,
+          chatSessionId: payload.sessionId,
+          module: payload.module,
+          provider,
+          modelId,
+          modelSource: resolvedModel.source,
+          api: model.api,
+          cwd: getLlmRequestDebugCwdForScope(payload.scope),
+        })),
+      },
     );
 
     const titleText = result.content

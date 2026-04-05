@@ -49,6 +49,11 @@ describe("settingsService.getAgentSystemPrompt", () => {
       "main-agent prompt",
       "utf8",
     );
+    await fs.writeFile(
+      path.join(tempRoot, "default-avatar-system-prompt.md"),
+      "avatar-agent prompt",
+      "utf8",
+    );
   });
 
   afterEach(async () => {
@@ -68,6 +73,12 @@ describe("settingsService.getAgentSystemPrompt", () => {
     await expect(settingsService.getAgentSystemPrompt("project")).resolves.toBe(
       "sub-agent prompt",
     );
+    await expect(
+      settingsService.getAgentSystemPrompt("main", "digital_avatar"),
+    ).resolves.toBe("avatar-agent prompt");
+    await expect(
+      settingsService.getAgentSystemPrompt("main", "channel_runtime"),
+    ).resolves.toBe("avatar-agent prompt");
   });
 
   it("returns default shortcut config when settings file has no shortcut section", async () => {

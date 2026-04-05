@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
-import { sendFeishuBotDocument, sendFeishuBotMessage } from "../../electron/main/services/chatChannel/feishuTransport";
+import {
+  fetchFeishuUserDisplayName,
+  sendFeishuBotDocument,
+  sendFeishuBotMessage,
+} from "../../electron/main/services/chatChannel/feishuTransport";
 
 const originalFetch = globalThis.fetch;
 
@@ -214,5 +218,119 @@ graph LR
     expect(JSON.parse(sendBody.content)).toEqual({
       file_key: "file_v2_reply",
     });
+  });
+});
+
+describe("fetchFeishuUserDisplayName", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("loads the sender name with open_id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse({
+        code: 0,
+        data: {
+          items: [
+            {
+              member_id: "ou_123",
+              name: "Alice",
+            },
+          ],
+          has_more: false,
+        },
+      }),
+    );
+
+    const displayName = await fetchFeishuUserDisplayName({
+      token: "tenant_access_token_value",
+      userId: "ou_123",
+      chatId: "oc_chat_001",
+      userIdType: "open_id",
+      cache: new Map(),
+    });
+
+    expect(displayName).toBe("Alice");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://open.feishu.cn/open-apis/im/v1/chats/oc_chat_001/members?member_id_type=open_id&page_size=100",
+    );
+    expect(requestInit.headers).toEqual({
+      authorization: "Bearer tenant_access_token_value",
+    });
+  });
+
+  it("falls back to contact user details when the chat member list has no match", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          code: 0,
+          data: {
+            items: [],
+            has_more: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          code: 0,
+          data: {
+            user: {
+              name: "Alice",
+            },
+          },
+        }),
+      );
+
+    const displayName = await fetchFeishuUserDisplayName({
+      token: "tenant_access_token_value",
+      userId: "ou_123",
+      chatId: "oc_chat_001",
+      userIdType: "open_id",
+      cache: new Map(),
+    });
+
+    expect(displayName).toBe("Alice");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "https://open.feishu.cn/open-apis/contact/v3/users/ou_123?user_id_type=open_id",
+    );
+  });
+
+  it("falls back to empty name when the user lookup returns an error code", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          code: 0,
+          data: {
+            items: [],
+            has_more: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          code: 99991663,
+          msg: "user not found",
+        }),
+      );
+
+    const displayName = await fetchFeishuUserDisplayName({
+      token: "tenant_access_token_value",
+      userId: "ou_missing",
+      chatId: "oc_chat_001",
+      userIdType: "open_id",
+      cache: new Map(),
+    });
+
+    expect(displayName).toBe("");
   });
 });

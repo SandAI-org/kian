@@ -323,6 +323,86 @@ describe("repositoryService project management", () => {
     expect(sessions).toHaveLength(1);
   });
 
+  it("keeps digital avatar sessions out of the default main chat session list", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const digitalAvatar = await repositoryService.getOrCreateDigitalAvatarSession(
+      { type: "main" },
+      {
+        metadataJson: JSON.stringify({
+          kind: "digital_avatar_session",
+          provider: "telegram",
+          chatType: "direct",
+          conversationId: "user-1",
+        }),
+        title: "user-1",
+      },
+    );
+    const normal = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "regular",
+    });
+
+    const sessions = await repositoryService.listChatSessions({
+      type: "main",
+    });
+
+    expect(sessions.map((session) => session.id)).toEqual([normal.id]);
+    expect(digitalAvatar.kind).toBe("digital_avatar");
+  });
+
+  it("reuses a digital avatar session for the same conversation key", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const metadataJson = JSON.stringify({
+      kind: "digital_avatar_session",
+      provider: "telegram",
+      chatType: "group",
+      conversationId: "group-1",
+    });
+
+    const first = await repositoryService.getOrCreateDigitalAvatarSession(
+      { type: "main" },
+      {
+        metadataJson,
+        title: "group-1",
+      },
+    );
+    const reused = await repositoryService.getOrCreateDigitalAvatarSession(
+      { type: "main" },
+      {
+        metadataJson,
+        title: "group-1",
+      },
+    );
+    const other = await repositoryService.getOrCreateDigitalAvatarSession(
+      { type: "main" },
+      {
+        metadataJson: JSON.stringify({
+          kind: "digital_avatar_session",
+          provider: "telegram",
+          chatType: "group",
+          conversationId: "group-2",
+        }),
+        title: "group-2",
+      },
+    );
+
+    const sessions = await repositoryService.listChatSessions(
+      { type: "main" },
+      { kinds: ["digital_avatar"] },
+    );
+
+    expect(reused.id).toBe(first.id);
+    expect(other.id).not.toBe(first.id);
+    expect(sessions).toHaveLength(2);
+  });
+
   it("prefers cached chat sessions and messages over later disk mutations", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"

@@ -242,8 +242,26 @@ const EN_US_EXACT: Record<string, string> = {
   "企业微信": "WeCom",
   "飞书": "Feishu",
   "允许用户 user_id": "Allowed user_id",
+  "拥有者白名单（user_id）": "Owner whitelist (user_id)",
+  "拥有者白名单（open_id / user_id / union_id）":
+    "Owner whitelist (open_id / user_id / union_id)",
+  "Owner 用户白名单（user_id）": "Owner whitelist (user_id)",
+  "Owner 用户白名单（open_id / user_id / union_id）":
+    "Owner whitelist (open_id / user_id / union_id)",
   "多个 user_id 使用换行、空格或逗号分隔。":
     "Separate multiple user_id values with new lines, spaces, or commas.",
+  "多个拥有者 user_id 使用换行、空格或逗号分隔。":
+    "Separate multiple owner user_id values with new lines, spaces, or commas.",
+  "多个拥有者标识使用换行、空格或逗号分隔。":
+    "Separate multiple owner identifiers with new lines, spaces, or commas.",
+  "输入多个拥有者 user_id，每个 ID 按回车生成标签。":
+    "Enter multiple owner user_id values and press Enter to create each tag.",
+  "输入多个拥有者标识，每个标识按回车生成标签。":
+    "Enter multiple owner identifiers and press Enter to create each tag.",
+  "多个 Owner user_id 使用换行、空格或逗号分隔。":
+    "Separate multiple Owner user_id values with new lines, spaces, or commas.",
+  "多个 Owner 标识使用换行、空格或逗号分隔。":
+    "Separate multiple Owner identifiers with new lines, spaces, or commas.",
   "允许服务器 ID": "Allowed Server IDs",
   "允许频道 ID": "Allowed Channel IDs",
   "服务器 ID 必须为纯数字": "Server IDs must be numeric",
@@ -252,8 +270,16 @@ const EN_US_EXACT: Record<string, string> = {
     "Enter a Bot Token before enabling Telegram",
   "启用 Telegram 前请先填写 user_id":
     "Enter at least one user_id before enabling Telegram",
+  "启用 Telegram 前请先填写至少一个拥有者 user_id":
+    "Enter at least one owner user_id before enabling Telegram",
+  "启用 Telegram 前请先填写至少一个 Owner user_id":
+    "Enter at least one Owner user_id before enabling Telegram",
   "启用 Discord 前请先输入 Bot Token":
     "Enter a Bot Token before enabling Discord",
+  "启用 Discord 前请先填写至少一个拥有者 user_id":
+    "Enter at least one owner user_id before enabling Discord",
+  "启用 Discord 前请先填写至少一个 Owner user_id":
+    "Enter at least one Owner user_id before enabling Discord",
   "启用 Discord 前请先填写允许服务器 ID":
     "Enter at least one server ID before enabling Discord",
   "启用 Discord 前请先填写允许频道 ID":
@@ -264,8 +290,56 @@ const EN_US_EXACT: Record<string, string> = {
     "Enter an App ID before enabling Feishu",
   "启用飞书前请先输入 AppSecret":
     "Enter an App Secret before enabling Feishu",
+  "启用飞书前请先填写至少一个拥有者标识":
+    "Enter at least one owner identifier before enabling Feishu",
+  "启用飞书前请先填写至少一个 Owner 标识":
+    "Enter at least one Owner identifier before enabling Feishu",
+  "3. 配置具备完整 Agent 权限的拥有者 user_id 白名单。":
+    "3. Configure the owner user_id whitelist with full Agent access.",
+  "4. 配置具备完整 Agent 权限的拥有者 user_id 白名单。":
+    "4. Configure the owner user_id whitelist with full Agent access.",
+  "3. 配置具备完整 Agent 权限的 Owner user_id 白名单。":
+    "3. Configure the Owner user_id whitelist with full Agent access.",
+  "4. 配置允许接入的服务器 ID 与频道 ID。":
+    "4. Configure the allowed server IDs and channel IDs.",
+  "5. 配置允许接入的服务器 ID 与频道 ID。":
+    "5. Configure the allowed server IDs and channel IDs.",
+  "6. 配置具备完整 Agent 权限的拥有者标识白名单。":
+    "6. Configure the owner identifier whitelist with full Agent access.",
+  "5. 配置具备完整 Agent 权限的 Owner 标识白名单。":
+    "5. Configure the Owner identifier whitelist with full Agent access.",
+  "最近收到的用户标识": "Recently received user IDs",
+  "先给 Bot 发一条消息，这里会显示最近收到的标识，可直接加入拥有者。":
+    "Send a message to the bot first. Recent IDs will appear here and can be added as owners directly.",
+  "3. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+    "3. If you want a user to have full Agent access, add them to the owner allowlist.",
+  "4. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+    "4. If you want a user to have full Agent access, add them to the owner allowlist.",
+  "6. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+    "6. If you want a user to have full Agent access, add them to the owner allowlist.",
+  "已在拥有者列表中": "Already added",
+  "设置为拥有者": "Set as owner",
+  "账号 ID": "Account ID",
+  "微信 user_id": "WeChat user_id",
+  "扫码登录后会自动写入；也可以从已保存账号中切换，并查看当前账号的 user_id。":
+    "After signing in by QR code, the account is saved automatically. You can also switch from saved accounts and view the current account's user_id.",
+  "扫码登录后可查看当前账号的 user_id。":
+    "Sign in by QR code to view the current account's user_id.",
   "渠道名称": "Channel Name",
   "聊天": "Chat",
+  "数字分身": "Digital Avatar",
+  "这个会话是只读的，当前页面不能直接发送消息。":
+    "This session is read-only. You cannot send messages from this page.",
+  "渠道来信": "Channel Message",
+  "渠道回复": "Channel Reply",
+  "私聊": "Direct",
+  "群聊": "Group",
+  "拥有者": "Owner",
+  "非拥有者": "Non-owner",
+  "Owner": "Owner",
+  "非 Owner": "Non-owner",
+  "被提及": "Mentioned",
+  "批量回复": "Batched Reply",
   "刚刚": "Just now",
 };
 
@@ -426,6 +500,17 @@ const KO_KR_EXACT: Record<string, string> = {
   "飞书": "Feishu",
   "企业微信": "WeCom",
   "聊天": "채팅",
+  "数字分身": "디지털 아바타",
+  "这个会话是只读的，当前页面不能直接发送消息。":
+    "이 세션은 읽기 전용입니다. 현재 페이지에서는 메시지를 직접 보낼 수 없습니다.",
+  "渠道来信": "채널 메시지",
+  "渠道回复": "채널 답변",
+  "私聊": "개인 대화",
+  "群聊": "그룹 대화",
+  "Owner": "Owner",
+  "非 Owner": "비 Owner",
+  "被提及": "멘션됨",
+  "批量回复": "일괄 답변",
   "刚刚": "방금",
 };
 
@@ -587,6 +672,17 @@ const JA_JP_EXACT: Record<string, string> = {
   "飞书": "Feishu",
   "企业微信": "WeCom",
   "聊天": "チャット",
+  "数字分身": "デジタルアバター",
+  "这个会话是只读的，当前页面不能直接发送消息。":
+    "この会話は読み取り専用です。現在のページから直接メッセージを送信できません。",
+  "渠道来信": "チャネル受信",
+  "渠道回复": "チャネル返信",
+  "私聊": "ダイレクト",
+  "群聊": "グループ",
+  "Owner": "Owner",
+  "非 Owner": "Owner以外",
+  "被提及": "メンションあり",
+  "批量回复": "一括返信",
   "刚刚": "たった今",
 };
 
@@ -748,6 +844,18 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "视频场景": "Video Scenes",
     "查看详情": "View details",
     "有什么可以帮你的吗？": "How can I help?",
+    "新消息会显示在这里":
+      "New messages will appear here",
+    "开始使用数字分身": "Get started with Digital Avatar",
+    "完成下面几步后，安全地将你的机器人开放给其他人。":
+      "Complete these steps to safely share your bot with others.",
+    "启用渠道": "Enable channels",
+    "进入渠道页面": "Open Channels",
+    "设置拥有者白名单": "Set the owner allowlist",
+    "不在白名单的用户只能跟你的机器人进行聊天，不能使用工具。":
+      "Users not on the allowlist can chat with your bot, but cannot use tools.",
+    "放心地将机器人开放给其他人":
+      "Share your bot with others with confidence",
     "暂无内容": "No content",
     "暂无定时任务": "No scheduled tasks",
     "等待应用构建": "Waiting for build",
@@ -920,6 +1028,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "Telegram 接入方式指引": "Telegram Setup Guide",
     "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。":
       "1. In Telegram, create a bot with BotFather and get the Bot Token.",
+    "2. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id（纯数字）。":
+      "2. Send a message to the bot first, and the settings page will automatically discover the most recent user_id values (digits only).",
     "2. 给 Bot 发送消息，获取自己的 user_id（纯数字）。":
       "2. Send a message to the bot to get your user_id (digits only).",
     "3. 配置允许与 Bot 对话的 user_id 列表。":
@@ -929,6 +1039,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "1. Create an app in the Discord Developer Portal, add a bot, and copy the Bot Token.",
     "2. 将 Bot 邀请进目标服务器并授予可读取/发送消息权限。":
       "2. Invite the bot into the target server and grant read/send message permissions.",
+    "3. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id。":
+      "3. Send a message to the bot first, and the settings page will automatically discover the most recent user_id values.",
     "3. 配置允许接入的服务器 ID 与频道 ID。":
       "3. Configure the allowed server IDs and channel IDs.",
     "飞书接入方式指引": "Feishu Setup Guide",
@@ -940,6 +1052,13 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "3. Use long connections for events and callbacks, and add the im.message.receive_v1 event.",
     "4. 添加 im:message 和 im:resource 权限。":
       "4. Add the im:message and im:resource permissions.",
+    "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。":
+      "To display users' Feishu names, grant the bot contact permissions.",
+    "开通通讯录权限": "Grant contact permissions",
+    "5. 给应用发送一条消息，设置页会自动发现最近收到的标识。":
+      "5. Send a message to the app, and the settings page will automatically discover the most recent identifiers.",
+    "6. 配置具备完整 Agent 权限的拥有者标识白名单。":
+      "6. Configure the owner identifier whitelist with full Agent access.",
     "5. 成员管理中只添加自己（自己使用确保安全，同时可以免审核发布）。":
       "5. In member management, add only yourself for safer personal use and review-free publishing.",
     "新增渠道": "Add Channel",
@@ -1162,6 +1281,12 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "실행 중인 작업을 중지하지 못해 종료를 취소했습니다.",
     "允许服务器 ID": "허용된 서버 ID",
     "允许用户 user_id": "허용된 user_id",
+    "拥有者白名单（user_id）": "소유자 화이트리스트 (user_id)",
+    "拥有者白名单（open_id / user_id / union_id）":
+      "소유자 화이트리스트 (open_id / user_id / union_id)",
+    "Owner 用户白名单（user_id）": "Owner 화이트리스트 (user_id)",
+    "Owner 用户白名单（open_id / user_id / union_id）":
+      "Owner 화이트리스트 (open_id / user_id / union_id)",
     "允许频道 ID": "허용된 채널 ID",
     "凭证长度至少 10 位": "자격 증명은 10자 이상이어야 합니다",
     "切换状态失败": "상태 전환 실패",
@@ -1189,12 +1314,16 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "Discord를 활성화하기 전에 허용된 서버 ID를 입력하세요",
     "启用 Discord 前请先填写允许频道 ID":
       "Discord를 활성화하기 전에 허용된 채널 ID를 입력하세요",
+    "启用 Discord 前请先填写至少一个 Owner user_id":
+      "Discord를 활성화하기 전에 최소 한 개의 Owner user_id를 입력하세요",
     "启用 Discord 前请先输入 Bot Token":
       "Discord를 활성화하기 전에 Bot Token을 입력하세요",
     "启用 Provider 时必须设置 API Key":
       "Provider를 활성화하려면 API Key를 설정해야 합니다",
     "启用 Telegram 前请先填写 user_id":
       "Telegram을 활성화하기 전에 user_id를 입력하세요",
+    "启用 Telegram 前请先填写至少一个 Owner user_id":
+      "Telegram을 활성화하기 전에 최소 한 개의 Owner user_id를 입력하세요",
     "启用 Telegram 前请先输入 Bot Token":
       "Telegram을 활성화하기 전에 Bot Token을 입력하세요",
     "启用模型": "활성화된 모델",
@@ -1202,12 +1331,63 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "Feishu를 활성화하기 전에 AppID를 입력하세요",
     "启用飞书前请先输入 AppSecret":
       "Feishu를 활성화하기 전에 AppSecret을 입력하세요",
+    "启用飞书前请先填写至少一个 Owner 标识":
+      "Feishu를 활성화하기 전에 최소 한 개의 Owner 식별자를 입력하세요",
     "图片": "이미지",
     "在聊天里触发命令执行后，任务会自动出现在这里":
       "채팅에서 명령 실행이 시작되면 작업이 여기에 자동으로 표시됩니다",
     "复制文件失败": "파일 복제 실패",
     "多个 user_id 使用换行、空格或逗号分隔。":
       "여러 user_id는 줄바꿈, 공백 또는 쉼표로 구분하세요.",
+    "多个拥有者 user_id 使用换行、空格或逗号分隔。":
+      "여러 소유자 user_id는 줄바꿈, 공백 또는 쉼표로 구분하세요.",
+    "多个拥有者标识使用换行、空格或逗号分隔。":
+      "여러 소유자 식별자는 줄바꿈, 공백 또는 쉼표로 구분하세요.",
+    "输入多个拥有者 user_id，每个 ID 按回车生成标签。":
+      "여러 소유자 user_id를 입력하고 각 ID마다 Enter를 눌러 태그를 만드세요.",
+    "输入多个拥有者标识，每个标识按回车生成标签。":
+      "여러 소유자 식별자를 입력하고 각 식별자마다 Enter를 눌러 태그를 만드세요.",
+    "多个 Owner user_id 使用换行、空格或逗号分隔。":
+      "여러 Owner user_id는 줄바꿈, 공백 또는 쉼표로 구분하세요.",
+    "多个 Owner 标识使用换行、空格或逗号分隔。":
+      "여러 Owner 식별자는 줄바꿈, 공백 또는 쉼표로 구분하세요.",
+    "启用 Telegram 前请先填写至少一个拥有者 user_id":
+      "Telegram을 활성화하기 전에 최소 한 개의 소유자 user_id를 입력하세요",
+    "启用 Discord 前请先填写至少一个拥有者 user_id":
+      "Discord를 활성화하기 전에 최소 한 개의 소유자 user_id를 입력하세요",
+    "启用飞书前请先填写至少一个拥有者标识":
+      "Feishu를 활성화하기 전에 최소 한 개의 소유자 식별자를 입력하세요",
+    "3. 配置具备完整 Agent 权限的拥有者 user_id 白名单。":
+      "3. 전체 Agent 권한을 가진 소유자 user_id 화이트리스트를 설정하세요.",
+    "4. 配置具备完整 Agent 权限的拥有者 user_id 白名单。":
+      "4. 전체 Agent 권한을 가진 소유자 user_id 화이트리스트를 설정하세요.",
+    "5. 配置允许接入的服务器 ID 与频道 ID。":
+      "5. 허용할 서버 ID와 채널 ID를 설정하세요.",
+    "6. 配置具备完整 Agent 权限的拥有者标识白名单。":
+      "6. 전체 Agent 권한을 가진 소유자 식별자 화이트리스트를 설정하세요.",
+    "3. 配置具备完整 Agent 权限的 Owner user_id 白名单。":
+      "3. 전체 Agent 권한을 가진 Owner user_id 화이트리스트를 설정하세요.",
+    "4. 配置允许接入的服务器 ID 与频道 ID。":
+      "4. 허용할 서버 ID와 채널 ID를 설정하세요.",
+    "5. 配置具备完整 Agent 权限的 Owner 标识白名单。":
+      "5. 전체 Agent 권한을 가진 Owner 식별자 화이트리스트를 설정하세요.",
+    "最近收到的用户标识": "최근 수신한 사용자 식별자",
+    "先给 Bot 发一条消息，这里会显示最近收到的标识，可直接加入拥有者。":
+      "먼저 Bot에 메시지를 보내면 최근 수신한 식별자가 여기에 표시되고 바로 소유자로 추가할 수 있습니다.",
+    "3. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+      "3. 특정 사용자에게 전체 Agent 권한을 주려면 소유자 허용 목록에 추가하세요.",
+    "4. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+      "4. 특정 사용자에게 전체 Agent 권한을 주려면 소유자 허용 목록에 추가하세요.",
+    "6. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+      "6. 특정 사용자에게 전체 Agent 권한을 주려면 소유자 허용 목록에 추가하세요.",
+    "已在拥有者列表中": "이미 추가됨",
+    "设置为拥有者": "소유자로 설정",
+    "账号 ID": "계정 ID",
+    "微信 user_id": "WeChat user_id",
+    "扫码登录后会自动写入；也可以从已保存账号中切换，并查看当前账号的 user_id。":
+      "QR 로그인 후 계정이 자동으로 저장됩니다. 저장된 계정으로 전환할 수도 있고 현재 계정의 user_id도 확인할 수 있습니다.",
+    "扫码登录后可查看当前账号的 user_id。":
+      "QR 로그인 후 현재 계정의 user_id를 확인할 수 있습니다.",
     "失败": "실패",
     "委派编号：": "위임 번호:",
     "对话": "대화",
@@ -1215,6 +1395,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "展开对话列表": "대화 목록 펼치기",
     "展开文件列表": "파일 목록 펼치기",
     "工具输出": "도구 출력",
+    "拥有者": "소유자",
+    "非拥有者": "소유자 아님",
     "已向 Kian 发送自动配置请求":
       "Kian에 자동 설정 요청을 보냈습니다",
     "已完成": "완료됨",
@@ -1321,6 +1503,18 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "视频场景": "비디오 장면",
     "查看详情": "자세히 보기",
     "有什么可以帮你的吗？": "무엇을 도와드릴까요?",
+    "新消息会显示在这里":
+      "새 메시지가 여기에 표시됩니다",
+    "开始使用数字分身": "디지털 아바타 시작하기",
+    "完成下面几步后，安全地将你的机器人开放给其他人。":
+      "아래 단계를 완료하면 봇을 다른 사람에게 안전하게 공개할 수 있습니다.",
+    "启用渠道": "채널 활성화",
+    "进入渠道页面": "채널 페이지로 이동",
+    "设置拥有者白名单": "소유자 허용 목록 설정",
+    "不在白名单的用户只能跟你的机器人进行聊天，不能使用工具。":
+      "허용 목록에 없는 사용자는 봇과 채팅만 할 수 있고 도구는 사용할 수 없습니다.",
+    "放心地将机器人开放给其他人":
+      "안심하고 다른 사람에게 봇을 공개하세요",
     "暂无内容": "내용이 없습니다",
     "暂无定时任务": "예약 작업이 없습니다",
     "等待应用构建": "앱 빌드를 기다리는 중",
@@ -1530,6 +1724,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "Telegram 接入方式指引": "Telegram 연동 가이드",
     "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。":
       "1. Telegram에서 BotFather로 봇을 만들고 Bot Token을 받으세요.",
+    "2. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id（纯数字）。":
+      "2. 먼저 Bot에 메시지를 보내면 설정 페이지가 최근 수신한 user_id(숫자만)를 자동으로 찾아줍니다.",
     "2. 给 Bot 发送消息，获取自己的 user_id（纯数字）。":
       "2. 봇에게 메시지를 보내 자신의 user_id(숫자만)를 확인하세요.",
     "3. 配置允许与 Bot 对话的 user_id 列表。":
@@ -1539,6 +1735,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "1. Discord Developer Portal에서 앱을 만들고 봇을 추가한 뒤 Bot Token을 복사하세요.",
     "2. 将 Bot 邀请进目标服务器并授予可读取/发送消息权限。":
       "2. 봇을 대상 서버에 초대하고 메시지 읽기/전송 권한을 부여하세요.",
+    "3. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id。":
+      "3. 먼저 Bot에 메시지를 보내면 설정 페이지가 최근 수신한 user_id를 자동으로 찾아줍니다.",
     "3. 配置允许接入的服务器 ID 与频道 ID。":
       "3. 허용할 서버 ID와 채널 ID를 설정하세요.",
     "飞书接入方式指引": "Feishu 연동 가이드",
@@ -1550,6 +1748,11 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "3. 이벤트 및 콜백은 장기 연결로 수신하고 im.message.receive_v1 이벤트를 추가하세요.",
     "4. 添加 im:message 和 im:resource 权限。":
       "4. im:message와 im:resource 권한을 추가하세요.",
+    "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。":
+      "사용자의 Feishu 이름을 표시하려면 봇에 연락처 권한을 부여하세요.",
+    "开通通讯录权限": "연락처 권한 열기",
+    "5. 给应用发送一条消息，设置页会自动发现最近收到的标识。":
+      "5. 앱에 메시지를 보내면 설정 페이지가 최근 수신한 식별자를 자동으로 찾아줍니다.",
     "5. 成员管理中只添加自己（自己使用确保安全，同时可以免审核发布）。":
       "5. 멤버 관리에는 본인만 추가하세요. 개인 사용 시 더 안전하고 심사 없이 배포할 수 있습니다.",
     "新增渠道": "채널 추가",
@@ -1768,6 +1971,12 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "実行中のタスクを停止できなかったため、終了を取り消しました。",
     "允许服务器 ID": "許可するサーバー ID",
     "允许用户 user_id": "許可する user_id",
+    "拥有者白名单（user_id）": "オーナー ホワイトリスト (user_id)",
+    "拥有者白名单（open_id / user_id / union_id）":
+      "オーナー ホワイトリスト (open_id / user_id / union_id)",
+    "Owner 用户白名单（user_id）": "Owner ホワイトリスト (user_id)",
+    "Owner 用户白名单（open_id / user_id / union_id）":
+      "Owner ホワイトリスト (open_id / user_id / union_id)",
     "允许频道 ID": "許可するチャンネル ID",
     "凭证长度至少 10 位": "資格情報は 10 文字以上必要です",
     "切换状态失败": "状態の切り替えに失敗しました",
@@ -1795,12 +2004,16 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "Discord を有効にする前に許可するサーバー ID を入力してください",
     "启用 Discord 前请先填写允许频道 ID":
       "Discord を有効にする前に許可するチャンネル ID を入力してください",
+    "启用 Discord 前请先填写至少一个 Owner user_id":
+      "Discord を有効にする前に少なくとも 1 つの Owner user_id を入力してください",
     "启用 Discord 前请先输入 Bot Token":
       "Discord を有効にする前に Bot Token を入力してください",
     "启用 Provider 时必须设置 API Key":
       "Provider を有効にする場合は API Key が必要です",
     "启用 Telegram 前请先填写 user_id":
       "Telegram を有効にする前に user_id を入力してください",
+    "启用 Telegram 前请先填写至少一个 Owner user_id":
+      "Telegram を有効にする前に少なくとも 1 つの Owner user_id を入力してください",
     "启用 Telegram 前请先输入 Bot Token":
       "Telegram を有効にする前に Bot Token を入力してください",
     "启用模型": "有効なモデル",
@@ -1808,12 +2021,63 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "Feishu を有効にする前に AppID を入力してください",
     "启用飞书前请先输入 AppSecret":
       "Feishu を有効にする前に AppSecret を入力してください",
+    "启用飞书前请先填写至少一个 Owner 标识":
+      "Feishu を有効にする前に少なくとも 1 つの Owner 識別子を入力してください",
     "图片": "画像",
     "在聊天里触发命令执行后，任务会自动出现在这里":
       "チャットでコマンド実行が開始されると、タスクがここに自動表示されます",
     "复制文件失败": "ファイルの複製に失敗しました",
     "多个 user_id 使用换行、空格或逗号分隔。":
       "複数の user_id は改行、空白、またはカンマで区切ってください。",
+    "多个拥有者 user_id 使用换行、空格或逗号分隔。":
+      "複数のオーナー user_id は改行、空白、またはカンマで区切ってください。",
+    "多个拥有者标识使用换行、空格或逗号分隔。":
+      "複数のオーナー識別子は改行、空白、またはカンマで区切ってください。",
+    "输入多个拥有者 user_id，每个 ID 按回车生成标签。":
+      "複数のオーナー user_id を入力し、各 ID ごとに Enter でタグを作成します。",
+    "输入多个拥有者标识，每个标识按回车生成标签。":
+      "複数のオーナー識別子を入力し、各識別子ごとに Enter でタグを作成します。",
+    "多个 Owner user_id 使用换行、空格或逗号分隔。":
+      "複数の Owner user_id は改行、空白、またはカンマで区切ってください。",
+    "多个 Owner 标识使用换行、空格或逗号分隔。":
+      "複数の Owner 識別子は改行、空白、またはカンマで区切ってください。",
+    "启用 Telegram 前请先填写至少一个拥有者 user_id":
+      "Telegram を有効にする前に少なくとも 1 つのオーナー user_id を入力してください",
+    "启用 Discord 前请先填写至少一个拥有者 user_id":
+      "Discord を有効にする前に少なくとも 1 つのオーナー user_id を入力してください",
+    "启用飞书前请先填写至少一个拥有者标识":
+      "Feishu を有効にする前に少なくとも 1 つのオーナー識別子を入力してください",
+    "3. 配置具备完整 Agent 权限的拥有者 user_id 白名单。":
+      "3. 完全な Agent 権限を持つオーナー user_id ホワイトリストを設定します。",
+    "4. 配置具备完整 Agent 权限的拥有者 user_id 白名单。":
+      "4. 完全な Agent 権限を持つオーナー user_id ホワイトリストを設定します。",
+    "5. 配置允许接入的服务器 ID 与频道 ID。":
+      "5. 許可するサーバー ID とチャンネル ID を設定します。",
+    "6. 配置具备完整 Agent 权限的拥有者标识白名单。":
+      "6. 完全な Agent 権限を持つオーナー識別子ホワイトリストを設定します。",
+    "3. 配置具备完整 Agent 权限的 Owner user_id 白名单。":
+      "3. 完全な Agent 権限を持つ Owner user_id ホワイトリストを設定します。",
+    "4. 配置允许接入的服务器 ID 与频道 ID。":
+      "4. 許可するサーバー ID とチャンネル ID を設定します。",
+    "5. 配置具备完整 Agent 权限的 Owner 标识白名单。":
+      "5. 完全な Agent 権限を持つ Owner 識別子ホワイトリストを設定します。",
+    "最近收到的用户标识": "最近受信したユーザー識別子",
+    "先给 Bot 发一条消息，这里会显示最近收到的标识，可直接加入拥有者。":
+      "まず Bot にメッセージを送ると、最近受信した識別子がここに表示され、そのままオーナーに追加できます。",
+    "3. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+      "3. 特定のユーザーに完全な Agent 権限を与えたい場合だけ、オーナー許可リストに追加してください。",
+    "4. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+      "4. 特定のユーザーに完全な Agent 権限を与えたい場合だけ、オーナー許可リストに追加してください。",
+    "6. 如需让某个用户拥有完整 Agent 权限，再把它加入拥有者白名单。":
+      "6. 特定のユーザーに完全な Agent 権限を与えたい場合だけ、オーナー許可リストに追加してください。",
+    "已在拥有者列表中": "追加済み",
+    "设置为拥有者": "オーナーに設定",
+    "账号 ID": "アカウント ID",
+    "微信 user_id": "WeChat user_id",
+    "扫码登录后会自动写入；也可以从已保存账号中切换，并查看当前账号的 user_id。":
+      "QR ログイン後にアカウントは自動保存されます。保存済みアカウントへ切り替えたり、現在のアカウントの user_id を確認したりできます。",
+    "扫码登录后可查看当前账号的 user_id。":
+      "QR ログイン後に現在のアカウントの user_id を確認できます。",
     "失败": "失敗",
     "委派编号：": "委譲番号:",
     "对话": "会話",
@@ -1821,6 +2085,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "展开对话列表": "会話一覧を展開",
     "展开文件列表": "ファイル一覧を展開",
     "工具输出": "ツール出力",
+    "拥有者": "オーナー",
+    "非拥有者": "オーナー以外",
     "已向 Kian 发送自动配置请求":
       "Kian に自動設定リクエストを送信しました",
     "已完成": "完了",
@@ -1930,6 +2196,18 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "视频场景": "動画シーン",
     "查看详情": "詳細を見る",
     "有什么可以帮你的吗？": "何をお手伝いできますか？",
+    "新消息会显示在这里":
+      "新しいメッセージがここに表示されます",
+    "开始使用数字分身": "デジタルアバターを使い始める",
+    "完成下面几步后，安全地将你的机器人开放给其他人。":
+      "以下の手順を完了すると、ボットを他の人に安全に公開できます。",
+    "启用渠道": "チャネルを有効化",
+    "进入渠道页面": "チャネルページを開く",
+    "设置拥有者白名单": "オーナー許可リストを設定",
+    "不在白名单的用户只能跟你的机器人进行聊天，不能使用工具。":
+      "許可リストにいないユーザーはボットと会話できますが、ツールは使えません。",
+    "放心地将机器人开放给其他人":
+      "安心して他の人にボットを公開できます",
     "暂无内容": "内容はありません",
     "暂无定时任务": "定期タスクはありません",
     "等待应用构建": "アプリのビルド待ち",
@@ -2134,6 +2412,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "Telegram 接入方式指引": "Telegram 連携ガイド",
     "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。":
       "1. Telegram で BotFather を使って Bot を作成し、Bot Token を取得します。",
+    "2. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id（纯数字）。":
+      "2. まず Bot にメッセージを送ると、設定ページが最近受信した user_id（数字のみ）を自動で見つけます。",
     "2. 给 Bot 发送消息，获取自己的 user_id（纯数字）。":
       "2. Bot にメッセージを送って、自分の user_id（数字のみ）を確認します。",
     "3. 配置允许与 Bot 对话的 user_id 列表。":
@@ -2143,6 +2423,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "1. Discord Developer Portal でアプリを作成して Bot を追加し、Bot Token をコピーします。",
     "2. 将 Bot 邀请进目标服务器并授予可读取/发送消息权限。":
       "2. Bot を対象サーバーに招待し、メッセージの読み取り/送信権限を付与します。",
+    "3. 先给 Bot 发送一条消息，设置页会自动发现最近收到的 user_id。":
+      "3. まず Bot にメッセージを送ると、設定ページが最近受信した user_id を自動で見つけます。",
     "3. 配置允许接入的服务器 ID 与频道 ID。":
       "3. 接続を許可するサーバー ID とチャンネル ID を設定します。",
     "飞书接入方式指引": "Feishu 連携ガイド",
@@ -2154,6 +2436,11 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "3. イベントとコールバックは長接続で受信し、im.message.receive_v1 イベントを追加します。",
     "4. 添加 im:message 和 im:resource 权限。":
       "4. im:message と im:resource の権限を追加します。",
+    "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。":
+      "ユーザーの Feishu 名を表示するには、Bot に連絡先権限を付与してください。",
+    "开通通讯录权限": "連絡先権限を付与",
+    "5. 给应用发送一条消息，设置页会自动发现最近收到的标识。":
+      "5. アプリにメッセージを送ると、設定ページが最近受信した識別子を自動で見つけます。",
     "5. 成员管理中只添加自己（自己使用确保安全，同时可以免审核发布）。":
       "5. メンバー管理には自分だけを追加してください。個人利用では安全で、審査なしで公開できます。",
     "新增渠道": "チャネルを追加",
