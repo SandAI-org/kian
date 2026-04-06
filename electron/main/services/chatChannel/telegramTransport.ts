@@ -76,6 +76,10 @@ interface TelegramRemoteFile {
   file_path?: string;
 }
 
+interface TelegramSentMessage {
+  message_id?: number;
+}
+
 interface TelegramInboundAttachmentCandidate {
   fileId: string;
   fileName?: string;
@@ -127,7 +131,8 @@ export const sendTelegramMessage = async (
   chatId: string,
   text: string,
   replyToMessageId?: number,
-): Promise<void> => {
+): Promise<number | undefined> => {
+  let lastMessageId: number | undefined;
   for (const chunk of splitTelegramMessage(text)) {
     const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/sendMessage`, {
       method: "POST",
@@ -141,8 +146,33 @@ export const sendTelegramMessage = async (
         allow_sending_without_reply: true,
       }),
     });
-    await parseTelegramResponse<unknown>(response);
+    const result = await parseTelegramResponse<TelegramSentMessage>(response);
+    const messageId = Number(result.message_id);
+    if (Number.isInteger(messageId) && messageId > 0) {
+      lastMessageId = messageId;
+    }
   }
+  return lastMessageId;
+};
+
+export const editTelegramMessage = async (
+  token: string,
+  chatId: string,
+  messageId: number,
+  text: string,
+): Promise<void> => {
+  const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/editMessageText`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+    }),
+  });
+  await parseTelegramResponse<unknown>(response);
 };
 
 export const sendTelegramTyping = async (

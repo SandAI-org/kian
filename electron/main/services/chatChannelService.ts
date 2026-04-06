@@ -10,6 +10,7 @@ import type {
 } from "@shared/types";
 import { randomUUID } from "node:crypto";
 import {
+  editDiscordBotMessage as editDiscordBotMessageImpl,
   fetchDiscordBotProfile as fetchDiscordBotProfileImpl,
   fetchDiscordChannelDisplayName as fetchDiscordChannelDisplayNameImpl,
   fetchDiscordMessages as fetchDiscordMessagesImpl,
@@ -20,6 +21,7 @@ import {
   setDiscordMessageReaction as setDiscordMessageReactionImpl,
 } from "./chatChannel/discordTransport";
 import {
+  buildFeishuMarkdownCard,
   clearFeishuTenantTokenCache,
   fetchFeishuChatDisplayName as fetchFeishuChatDisplayNameImpl,
   fetchFeishuChatIds as fetchFeishuChatIdsImpl,
@@ -27,10 +29,17 @@ import {
   fetchFeishuUserDisplayName as fetchFeishuUserDisplayNameImpl,
   parseFeishuBotToken as parseFeishuBotTokenImpl,
   resolveFeishuAccessToken as resolveFeishuAccessTokenImpl,
+  sendFeishuBotCard as sendFeishuBotCardImpl,
+  sendFeishuBotCardByCardId as sendFeishuBotCardByCardIdImpl,
   sendFeishuBotDocument as sendFeishuBotDocumentImpl,
   sendFeishuBotMessage as sendFeishuBotMessageImpl,
   setFeishuMessageReaction as setFeishuMessageReactionImpl,
+  updateFeishuBotCard as updateFeishuBotCardImpl,
+  createFeishuStreamingCard as createFeishuStreamingCardImpl,
+  updateFeishuStreamingCardText as updateFeishuStreamingCardTextImpl,
+  stopFeishuCardStreaming as stopFeishuCardStreamingImpl,
 } from "./chatChannel/feishuTransport";
+import { createEditableChannelReplyStreamer } from "./chatChannel/channelLiveMessageStreamer";
 import {
   createFeishuWsHeartbeatState,
   getFeishuWsHealthStatus,
@@ -46,12 +55,11 @@ import {
   extractTelegramFileAttachments as extractTelegramFileAttachmentsImpl,
   formatTelegramAssistantBody as formatTelegramAssistantBodyImpl,
   formatTelegramToolCallMessage as formatTelegramToolCallMessageImpl,
-  formatTelegramToolDoneMessage as formatTelegramToolDoneMessageImpl,
-  formatTelegramToolRunningMessage as formatTelegramToolRunningMessageImpl,
   normalizeTelegramToolCalls as normalizeTelegramToolCallsImpl,
   stripTelegramFileMarkdown as stripTelegramFileMarkdownImpl,
 } from "./chatChannel/telegramMirror";
 import {
+  editTelegramMessage as editTelegramMessageImpl,
   fetchTelegramBotProfile as fetchTelegramBotProfileImpl,
   fetchTelegramUpdates as fetchTelegramUpdatesImpl,
   loadTelegramInboundAttachments as loadTelegramInboundAttachmentsImpl,
@@ -308,6 +316,12 @@ interface ChannelBatchState {
   digitalAvatarSessionId: string;
   chatId: string;
   replyText: (text: string) => Promise<void>;
+  sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
+  updateLiveMessage?: (
+    messageId: string | number,
+    text: string,
+  ) => Promise<void>;
+  onStreamingDone?: () => Promise<void>;
   replyDocument?: (filePath: string) => Promise<void>;
   sendAttachmentsFirst?: boolean;
   flushTimer: NodeJS.Timeout | null;
@@ -1165,8 +1179,17 @@ const sendTelegramMessage = async (
   chatId: string,
   text: string,
   replyToMessageId?: number,
+): Promise<number | undefined> => {
+  return await sendTelegramMessageImpl(token, chatId, text, replyToMessageId);
+};
+
+const editTelegramMessage = async (
+  token: string,
+  chatId: string,
+  messageId: number,
+  text: string,
 ): Promise<void> => {
-  await sendTelegramMessageImpl(token, chatId, text, replyToMessageId);
+  await editTelegramMessageImpl(token, chatId, messageId, text);
 };
 
 const sendTelegramTyping = async (
@@ -1199,8 +1222,17 @@ const sendDiscordBotMessage = async (
   chatId: string,
   text: string,
   replyToMessageId?: string,
+): Promise<string | undefined> => {
+  return await sendDiscordBotMessageImpl(token, chatId, text, replyToMessageId);
+};
+
+const editDiscordBotMessage = async (
+  token: string,
+  chatId: string,
+  messageId: string,
+  text: string,
 ): Promise<void> => {
-  await sendDiscordBotMessageImpl(token, chatId, text, replyToMessageId);
+  await editDiscordBotMessageImpl(token, chatId, messageId, text);
 };
 
 const sendDiscordBotDocument = async (
@@ -1284,14 +1316,66 @@ const sendFeishuBotMessage = async (
   text: string,
   receiveIdType: "chat_id" | "user_id" = "chat_id",
   replyToMessageId?: string,
-): Promise<void> => {
-  await sendFeishuBotMessageImpl(
+): Promise<string | undefined> => {
+  return await sendFeishuBotMessageImpl(
     token,
     receiveId,
     text,
     receiveIdType,
     replyToMessageId,
   );
+};
+
+const sendFeishuBotCard = async (input: {
+  token: string;
+  receiveId: string;
+  card: Record<string, unknown>;
+  receiveIdType?: "chat_id" | "user_id";
+  replyToMessageId?: string;
+}): Promise<string | undefined> => {
+  return await sendFeishuBotCardImpl(input);
+};
+
+const updateFeishuBotCard = async (
+  token: string,
+  messageId: string,
+  card: Record<string, unknown>,
+): Promise<void> => {
+  await updateFeishuBotCardImpl(token, messageId, card);
+};
+
+const createFeishuStreamingCard = async (
+  token: string,
+  initialContent?: string,
+): Promise<string> => {
+  return await createFeishuStreamingCardImpl(token, initialContent);
+};
+
+const sendFeishuBotCardByCardId = async (input: {
+  token: string;
+  receiveId: string;
+  cardId: string;
+  receiveIdType?: "chat_id" | "user_id";
+  replyToMessageId?: string;
+}): Promise<string | undefined> => {
+  return await sendFeishuBotCardByCardIdImpl(input);
+};
+
+const updateFeishuStreamingCardText = async (
+  token: string,
+  cardId: string,
+  content: string,
+  sequence: number,
+): Promise<void> => {
+  await updateFeishuStreamingCardTextImpl(token, cardId, content, sequence);
+};
+
+const stopFeishuCardStreaming = async (
+  token: string,
+  cardId: string,
+  sequence: number,
+): Promise<void> => {
+  await stopFeishuCardStreamingImpl(token, cardId, sequence);
 };
 
 const sendFeishuBotDocument = async (
@@ -1440,18 +1524,6 @@ const buildTelegramAssistantTimelineFromStreamEvents = (input: {
   return buildTelegramAssistantTimelineFromStreamEventsImpl(input);
 };
 
-const formatTelegramToolRunningMessage = (
-  toolCall: TelegramToolCallSummary,
-): string => {
-  return formatTelegramToolRunningMessageImpl(toolCall);
-};
-
-const formatTelegramToolDoneMessage = (
-  toolCall: TelegramToolCallSummary,
-): string => {
-  return formatTelegramToolDoneMessageImpl(toolCall);
-};
-
 const createTelegramAssistantProgressiveStreamer = (input: {
   sendToolRunningMessage?: (tool: TelegramToolCallSummary) => Promise<void>;
   sendToolDoneMessage?: (tool: TelegramToolCallSummary) => Promise<void>;
@@ -1588,23 +1660,36 @@ const flushChannelBatchState = async (batchKey: string): Promise<void> => {
       projectId: MAIN_AGENT_SCOPE_ID,
       chatId: state.chatId,
       sendText: state.replyText,
+      sendLiveMessage: state.sendLiveMessage,
+      updateLiveMessage: state.updateLiveMessage,
+      onStreamingDone: state.onStreamingDone,
       sendDocument: state.replyDocument,
       sendAttachmentsFirst: state.sendAttachmentsFirst,
     });
     const requestId = randomUUID();
-    const result = await chatService.send(
-      {
-        scope: state.runtimeScope,
-        module: "main",
-        sessionId: state.runtimeSessionId,
-        requestId,
-        message: prompt,
-        capabilityMode: "chat_only",
-      },
-      (streamEvent) => {
-        progressiveStreamer.pushEvent(streamEvent);
-      },
-    );
+    let result: { assistantMessage: string; toolActions?: string[] };
+    try {
+      result = await chatService.send(
+        {
+          scope: state.runtimeScope,
+          module: "main",
+          sessionId: state.runtimeSessionId,
+          requestId,
+          message: prompt,
+          capabilityMode: "chat_only",
+        },
+        (streamEvent) => {
+          progressiveStreamer.pushEvent(streamEvent);
+        },
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await progressiveStreamer.finalize({
+        fallbackAssistantMessage: `处理失败：${errorMessage}`,
+        isError: true,
+      });
+      throw error;
+    }
     await progressiveStreamer.finalize({
       fallbackAssistantMessage: result.assistantMessage,
       toolActions: result.toolActions,
@@ -1659,6 +1744,12 @@ const sendChannelRuntimeTurn = async (input: {
   attachments?: ChatAttachmentDTO[];
   capabilityMode: ChatCapabilityMode;
   replyText: (text: string) => Promise<void>;
+  sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
+  updateLiveMessage?: (
+    messageId: string | number,
+    text: string,
+  ) => Promise<void>;
+  onStreamingDone?: () => Promise<void>;
   replyDocument?: (filePath: string) => Promise<void>;
   sendAttachmentsFirst?: boolean;
   digitalAvatarSessionId?: string;
@@ -1680,24 +1771,37 @@ const sendChannelRuntimeTurn = async (input: {
     projectId: MAIN_AGENT_SCOPE_ID,
     chatId: input.chatId,
     sendText: input.replyText,
+    sendLiveMessage: input.sendLiveMessage,
+    updateLiveMessage: input.updateLiveMessage,
+    onStreamingDone: input.onStreamingDone,
     sendDocument: input.replyDocument,
     sendAttachmentsFirst: input.sendAttachmentsFirst,
   });
   const requestId = randomUUID();
-  const result = await chatService.send(
-    {
-      scope: MAIN_CHAT_SCOPE,
-      module: "main",
-      sessionId: input.runtimeSessionId,
-      requestId,
-      message: input.text,
-      attachments: input.attachments?.length ? input.attachments : undefined,
-      capabilityMode: input.capabilityMode,
-    },
-    (streamEvent) => {
-      progressiveStreamer.pushEvent(streamEvent);
-    },
-  );
+  let result: { assistantMessage: string; toolActions?: string[] };
+  try {
+    result = await chatService.send(
+      {
+        scope: MAIN_CHAT_SCOPE,
+        module: "main",
+        sessionId: input.runtimeSessionId,
+        requestId,
+        message: input.text,
+        attachments: input.attachments?.length ? input.attachments : undefined,
+        capabilityMode: input.capabilityMode,
+      },
+      (streamEvent) => {
+        progressiveStreamer.pushEvent(streamEvent);
+      },
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await progressiveStreamer.finalize({
+      fallbackAssistantMessage: `处理失败：${errorMessage}`,
+      isError: true,
+    });
+    throw error;
+  }
   await progressiveStreamer.finalize({
     fallbackAssistantMessage: result.assistantMessage,
     toolActions: result.toolActions,
@@ -1726,18 +1830,38 @@ const createDirectChannelReplyStreamer = (input: {
   projectId: string;
   chatId: string;
   sendText: (text: string) => Promise<void>;
+  sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
+  updateLiveMessage?: (
+    messageId: string | number,
+    text: string,
+  ) => Promise<void>;
+  onStreamingDone?: () => Promise<void>;
   sendDocument?: (filePath: string) => Promise<void>;
   sendAttachmentsFirst?: boolean;
 }): TelegramAssistantProgressiveStreamer => {
   const sendAttachmentsFirst = input.sendAttachmentsFirst ?? false;
 
+  if (input.sendLiveMessage && input.updateLiveMessage) {
+    return createEditableChannelReplyStreamer({
+      projectId: input.projectId,
+      sendLiveMessage: input.sendLiveMessage,
+      updateLiveMessage: input.updateLiveMessage,
+      sendText: input.sendText,
+      sendDocument: input.sendDocument,
+      sendAttachmentsFirst,
+      onStreamingDone: input.onStreamingDone,
+      liveMessageMaxLength:
+        input.provider === "discord"
+          ? 1_900
+          : input.provider === "telegram"
+            ? 3_500
+            : 20_000,
+    });
+  }
+
   return createTelegramAssistantProgressiveStreamer({
-    sendToolRunningMessage: async (tool) => {
-      await input.sendText(formatTelegramToolRunningMessage(tool));
-    },
-    sendToolDoneMessage: async (tool) => {
-      await input.sendText(formatTelegramToolDoneMessage(tool));
-    },
+    sendToolRunningMessage: undefined,
+    sendToolDoneMessage: undefined,
     sendAssistantMessage: async (message, isError) => {
       const fileAttachments = extractTelegramFileAttachments(
         message,
@@ -2424,6 +2548,21 @@ const processTelegramUpdate = async (
     await sendTelegramMessage(state.token, chatId, text, replyToMessageId);
   };
 
+  const sendLiveMessage = async (
+    text: string,
+  ): Promise<string | number | undefined> => {
+    await ensureReaction();
+    return await sendTelegramMessage(state.token, chatId, text, replyToMessageId);
+  };
+
+  const updateLiveMessage = async (
+    messageId: string | number,
+    text: string,
+  ): Promise<void> => {
+    if (typeof messageId !== "number") return;
+    await editTelegramMessage(state.token, chatId, messageId, text);
+  };
+
   const replyDocument = async (filePath: string): Promise<void> => {
     await ensureReaction();
     await sendTelegramDocument(state.token, chatId, filePath, replyToMessageId);
@@ -2525,6 +2664,8 @@ const processTelegramUpdate = async (
           attachments,
           capabilityMode,
           replyText,
+          sendLiveMessage,
+          updateLiveMessage,
           replyDocument,
           chatType,
         });
@@ -2552,6 +2693,8 @@ const processTelegramUpdate = async (
             digitalAvatarSessionId,
             chatId,
             replyText,
+            sendLiveMessage,
+            updateLiveMessage,
             replyDocument,
             flushTimer: null,
             items: [],
@@ -2559,6 +2702,8 @@ const processTelegramUpdate = async (
         batchState.runtimeSessionId = runtimeSessionId;
         batchState.digitalAvatarSessionId = digitalAvatarSessionId;
         batchState.replyText = replyText;
+        batchState.sendLiveMessage = sendLiveMessage;
+        batchState.updateLiveMessage = updateLiveMessage;
         batchState.replyDocument = replyDocument;
         batchState.items.push({
           text: text || "（仅上传了附件）",
@@ -2591,6 +2736,8 @@ const processTelegramUpdate = async (
         attachments,
         capabilityMode,
         replyText,
+        sendLiveMessage,
+        updateLiveMessage,
         replyDocument,
         digitalAvatarSessionId,
         chatType,
@@ -2920,6 +3067,12 @@ const processBotIncomingMessage = async (input: {
   attachments?: ChatAttachmentDTO[];
   sendAttachmentsFirst?: boolean;
   replyText: (text: string) => Promise<void>;
+  sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
+  updateLiveMessage?: (
+    messageId: string | number,
+    text: string,
+  ) => Promise<void>;
+  onStreamingDone?: () => Promise<void>;
   replyDocument?: (filePath: string) => Promise<void>;
 }): Promise<void> => {
   const sendAttachmentsFirst = input.sendAttachmentsFirst ?? false;
@@ -3005,6 +3158,9 @@ const processBotIncomingMessage = async (input: {
         attachments,
         capabilityMode,
         replyText: input.replyText,
+        sendLiveMessage: input.sendLiveMessage,
+        updateLiveMessage: input.updateLiveMessage,
+        onStreamingDone: input.onStreamingDone,
         replyDocument: input.replyDocument,
         sendAttachmentsFirst,
         chatType: input.chatType,
@@ -3033,6 +3189,9 @@ const processBotIncomingMessage = async (input: {
           digitalAvatarSessionId,
           chatId: input.chatId,
           replyText: input.replyText,
+          sendLiveMessage: input.sendLiveMessage,
+          updateLiveMessage: input.updateLiveMessage,
+          onStreamingDone: input.onStreamingDone,
           replyDocument: input.replyDocument,
           sendAttachmentsFirst,
           flushTimer: null,
@@ -3041,6 +3200,9 @@ const processBotIncomingMessage = async (input: {
       state.runtimeSessionId = runtimeSessionId;
       state.digitalAvatarSessionId = digitalAvatarSessionId;
       state.replyText = input.replyText;
+      state.sendLiveMessage = input.sendLiveMessage;
+      state.updateLiveMessage = input.updateLiveMessage;
+      state.onStreamingDone = input.onStreamingDone;
       state.replyDocument = input.replyDocument;
       state.sendAttachmentsFirst = sendAttachmentsFirst;
       state.items.push({
@@ -3075,6 +3237,9 @@ const processBotIncomingMessage = async (input: {
       attachments,
       capabilityMode,
       replyText: input.replyText,
+      sendLiveMessage: input.sendLiveMessage,
+      updateLiveMessage: input.updateLiveMessage,
+      onStreamingDone: input.onStreamingDone,
       replyDocument: input.replyDocument,
       sendAttachmentsFirst,
       digitalAvatarSessionId,
@@ -3291,6 +3456,19 @@ const processDiscordMessage = async (
         messageId || undefined,
       );
     },
+    sendLiveMessage: async (text) => {
+      await ensureReaction();
+      return await sendDiscordBotMessage(
+        state.token,
+        chatId,
+        text,
+        messageId || undefined,
+      );
+    },
+    updateLiveMessage: async (liveMessageId, text) => {
+      if (typeof liveMessageId !== "string" || !liveMessageId.trim()) return;
+      await editDiscordBotMessage(state.token, chatId, liveMessageId, text);
+    },
     replyDocument: async (filePath) => {
       await ensureReaction();
       await sendDiscordBotDocument(
@@ -3412,6 +3590,62 @@ const processFeishuMessage = async (
         replyToMessageId || undefined,
       );
     },
+    ...(() => {
+      let streamCardId: string | undefined;
+      let streamSequence = 1;
+      let useFallback = false;
+
+      const closeCurrentStream = async (): Promise<void> => {
+        if (!useFallback && streamCardId) {
+          await stopFeishuCardStreaming(state.token, streamCardId, streamSequence++).catch(() => {});
+        }
+      };
+
+      return {
+        sendLiveMessage: async (text: string): Promise<string | undefined> => {
+          // Close previous streaming card if starting a new one
+          await closeCurrentStream();
+          streamSequence = 1;
+          streamCardId = undefined;
+
+          await ensureReaction();
+          // Try CardKit streaming first, fall back to regular card on failure
+          try {
+            streamCardId = await createFeishuStreamingCard(state.token, text);
+            return await sendFeishuBotCardByCardId({
+              token: state.token,
+              receiveId: chatId,
+              cardId: streamCardId,
+              receiveIdType: "chat_id",
+              replyToMessageId: replyToMessageId || undefined,
+            });
+          } catch (error) {
+            logger.warn("CardKit streaming card creation failed, falling back to regular card", { error });
+            useFallback = true;
+            streamCardId = undefined;
+            return await sendFeishuBotCard({
+              token: state.token,
+              receiveId: chatId,
+              card: buildFeishuMarkdownCard(text),
+              receiveIdType: "chat_id",
+              replyToMessageId: replyToMessageId || undefined,
+            });
+          }
+        },
+        updateLiveMessage: async (messageId: string | number, text: string): Promise<void> => {
+          if (useFallback) {
+            if (typeof messageId !== "string" || !messageId.trim()) return;
+            await updateFeishuBotCard(state.token, messageId, buildFeishuMarkdownCard(text));
+            return;
+          }
+          if (!streamCardId) return;
+          await updateFeishuStreamingCardText(state.token, streamCardId, text, streamSequence++);
+        },
+        onStreamingDone: async (): Promise<void> => {
+          await closeCurrentStream();
+        },
+      };
+    })(),
     replyDocument: async (filePath) => {
       await ensureReaction();
       await sendFeishuBotDocument(
@@ -3659,6 +3893,22 @@ export const chatChannelService = {
         sendText: async (text) => {
           await sendTelegramMessage(telegramState.token, replyContext.chatId, text);
         },
+        sendLiveMessage: async (text) => {
+          return await sendTelegramMessage(
+            telegramState.token,
+            replyContext.chatId,
+            text,
+          );
+        },
+        updateLiveMessage: async (messageId, text) => {
+          if (typeof messageId !== "number") return;
+          await editTelegramMessage(
+            telegramState.token,
+            replyContext.chatId,
+            messageId,
+            text,
+          );
+        },
         sendDocument: async (filePath) => {
           await sendTelegramDocument(
             telegramState.token,
@@ -3678,6 +3928,22 @@ export const chatChannelService = {
         chatId: replyContext.chatId,
         sendText: async (text) => {
           await sendDiscordBotMessage(state.token, replyContext.chatId, text);
+        },
+        sendLiveMessage: async (text) => {
+          return await sendDiscordBotMessage(
+            state.token,
+            replyContext.chatId,
+            text,
+          );
+        },
+        updateLiveMessage: async (messageId, text) => {
+          if (typeof messageId !== "string" || !messageId.trim()) return;
+          await editDiscordBotMessage(
+            state.token,
+            replyContext.chatId,
+            messageId,
+            text,
+          );
         },
         sendDocument: async (filePath) => {
           await sendDiscordBotDocument(state.token, replyContext.chatId, filePath);
@@ -3720,6 +3986,57 @@ export const chatChannelService = {
 
     const state = feishuRuntime;
     if (!state) return null;
+    const feishuStreaming = (() => {
+      let streamCardId: string | undefined;
+      let streamSequence = 1;
+      let useFallback = false;
+
+      const closeCurrentStream = async (): Promise<void> => {
+        if (!useFallback && streamCardId) {
+          await stopFeishuCardStreaming(state.token, streamCardId, streamSequence++).catch(() => {});
+        }
+      };
+
+      return {
+        sendLiveMessage: async (text: string): Promise<string | undefined> => {
+          await closeCurrentStream();
+          streamSequence = 1;
+          streamCardId = undefined;
+
+          try {
+            streamCardId = await createFeishuStreamingCard(state.token, text);
+            return await sendFeishuBotCardByCardId({
+              token: state.token,
+              receiveId: replyContext.chatId,
+              cardId: streamCardId,
+              receiveIdType: "chat_id",
+            });
+          } catch (error) {
+            logger.warn("CardKit streaming card creation failed, falling back to regular card", { error });
+            useFallback = true;
+            streamCardId = undefined;
+            return await sendFeishuBotCard({
+              token: state.token,
+              receiveId: replyContext.chatId,
+              card: buildFeishuMarkdownCard(text),
+              receiveIdType: "chat_id",
+            });
+          }
+        },
+        updateLiveMessage: async (messageId: string | number, text: string): Promise<void> => {
+          if (useFallback) {
+            if (typeof messageId !== "string" || !messageId.trim()) return;
+            await updateFeishuBotCard(state.token, messageId, buildFeishuMarkdownCard(text));
+            return;
+          }
+          if (!streamCardId) return;
+          await updateFeishuStreamingCardText(state.token, streamCardId, text, streamSequence++);
+        },
+        onStreamingDone: async (): Promise<void> => {
+          await closeCurrentStream();
+        },
+      };
+    })();
     return createDirectChannelReplyStreamer({
       provider: "feishu",
       projectId: input.projectId,
@@ -3728,6 +4045,7 @@ export const chatChannelService = {
       sendText: async (text) => {
         await sendFeishuBotMessage(state.token, replyContext.chatId, text, "chat_id");
       },
+      ...feishuStreaming,
       sendDocument: async (filePath) => {
         await sendFeishuBotDocument(
           state.token,

@@ -42,6 +42,10 @@ interface DiscordBotProfile {
   id?: string;
 }
 
+interface DiscordSentMessage {
+  id?: string;
+}
+
 interface DiscordChannelInfo {
   name?: string;
   recipients?: Array<{
@@ -72,7 +76,8 @@ export const sendDiscordBotMessage = async (
   chatId: string,
   text: string,
   replyToMessageId?: string,
-): Promise<void> => {
+): Promise<string | undefined> => {
+  let lastMessageId: string | undefined;
   for (const chunk of splitMessage(text, DISCORD_MESSAGE_MAX_LENGTH)) {
     const payload: {
       content: string;
@@ -109,7 +114,37 @@ export const sendDiscordBotMessage = async (
       },
     );
     await assertHttpOk(response, "Discord", "Bot 消息发送");
+    const responseBody = (await response.json().catch(
+      () => ({}),
+    )) as DiscordSentMessage;
+    const messageId = responseBody.id?.trim();
+    if (messageId) {
+      lastMessageId = messageId;
+    }
   }
+  return lastMessageId;
+};
+
+export const editDiscordBotMessage = async (
+  token: string,
+  chatId: string,
+  messageId: string,
+  text: string,
+): Promise<void> => {
+  const response = await fetch(
+    `${DISCORD_API_BASE}/channels/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        authorization: `Bot ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        content: text,
+      }),
+    },
+  );
+  await assertHttpOk(response, "Discord", "Bot 消息更新");
 };
 
 export const sendDiscordBotDocument = async (

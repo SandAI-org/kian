@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import {
   fetchFeishuUserDisplayName,
+  sendFeishuBotCard,
   sendFeishuBotDocument,
   sendFeishuBotMessage,
+  updateFeishuBotCard,
 } from "../../electron/main/services/chatChannel/feishuTransport";
 
 const originalFetch = globalThis.fetch;
@@ -57,6 +59,9 @@ describe("sendFeishuBotMessage", () => {
     expect(body.receive_id).toBe("oc_chat_001");
     expect(JSON.parse(body.content)).toEqual({
       schema: "2.0",
+      config: {
+        update_multi: true,
+      },
       body: {
         elements: [
           {
@@ -92,6 +97,9 @@ describe("sendFeishuBotMessage", () => {
     expect(body.receive_id).toBeUndefined();
     expect(JSON.parse(body.content)).toEqual({
       schema: "2.0",
+      config: {
+        update_multi: true,
+      },
       body: {
         elements: [
           {
@@ -131,6 +139,77 @@ graph LR
     expect(card.body.elements[0]?.content).not.toContain("```mermaid");
     expect(card.body.elements[0]?.content).toContain("A");
     expect(card.body.elements[0]?.content).toContain("B");
+  });
+
+  it("returns the sent message id for interactive cards", async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse({
+        code: 0,
+        data: {
+          message_id: "om_card_001",
+        },
+      }),
+    );
+
+    const messageId = await sendFeishuBotCard({
+      token: "tenant_access_token_value",
+      receiveId: "oc_chat_001",
+      card: {
+        schema: "2.0",
+        config: {
+          update_multi: true,
+        },
+        body: {
+          elements: [
+            {
+              tag: "markdown",
+              content: "stream body",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(messageId).toBe("om_card_001");
+  });
+
+  it("patches an existing interactive card by message id", async () => {
+    await updateFeishuBotCard("tenant_access_token_value", "om_card_001", {
+      schema: "2.0",
+      config: {
+        update_multi: true,
+      },
+      body: {
+        elements: [
+          {
+            tag: "markdown",
+            content: "updated body",
+          },
+        ],
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://open.feishu.cn/open-apis/im/v1/messages/om_card_001");
+    expect(requestInit.method).toBe("PATCH");
+    const body = JSON.parse(String(requestInit.body)) as {
+      content: string;
+    };
+    expect(JSON.parse(body.content)).toEqual({
+      schema: "2.0",
+      config: {
+        update_multi: true,
+      },
+      body: {
+        elements: [
+          {
+            tag: "markdown",
+            content: "updated body",
+          },
+        ],
+      },
+    });
   });
 
   it("uploads attachment and sends file message before text content", async () => {

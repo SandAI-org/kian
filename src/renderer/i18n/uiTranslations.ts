@@ -1050,8 +1050,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "2. Fill in the AppID and AppSecret in the configuration.",
     "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。":
       "3. Use long connections for events and callbacks, and add the im.message.receive_v1 event.",
-    "4. 添加 im:message 和 im:resource 权限。":
-      "4. Add the im:message and im:resource permissions.",
+    "4. 添加 im:message、im:resource 和 cardkit:card:write 权限（cardkit:card:write 用于流式输出）。":
+      "4. Add the im:message, im:resource, and cardkit:card:write permissions (cardkit:card:write enables streaming output).",
     "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。":
       "To display users' Feishu names, grant the bot contact permissions.",
     "开通通讯录权限": "Grant contact permissions",
@@ -1746,8 +1746,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "2. 설정에서 AppID와 AppSecret을 각각 입력하세요.",
     "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。":
       "3. 이벤트 및 콜백은 장기 연결로 수신하고 im.message.receive_v1 이벤트를 추가하세요.",
-    "4. 添加 im:message 和 im:resource 权限。":
-      "4. im:message와 im:resource 권한을 추가하세요.",
+    "4. 添加 im:message、im:resource 和 cardkit:card:write 权限（cardkit:card:write 用于流式输出）。":
+      "4. im:message, im:resource, cardkit:card:write 권한을 추가하세요 (cardkit:card:write는 스트리밍 출력용).",
     "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。":
       "사용자의 Feishu 이름을 표시하려면 봇에 연락처 권한을 부여하세요.",
     "开通通讯录权限": "연락처 권한 열기",
@@ -2434,8 +2434,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "2. 設定で AppID と AppSecret をそれぞれ入力します。",
     "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。":
       "3. イベントとコールバックは長接続で受信し、im.message.receive_v1 イベントを追加します。",
-    "4. 添加 im:message 和 im:resource 权限。":
-      "4. im:message と im:resource の権限を追加します。",
+    "4. 添加 im:message、im:resource 和 cardkit:card:write 权限（cardkit:card:write 用于流式输出）。":
+      "4. im:message、im:resource、cardkit:card:write の権限を追加します（cardkit:card:write はストリーミング出力用）。",
     "如果希望显示用户在飞书里的名字，需要为机器人开通通讯录权限。":
       "ユーザーの Feishu 名を表示するには、Bot に連絡先権限を付与してください。",
     "开通通讯录权限": "連絡先権限を付与",

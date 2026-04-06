@@ -3547,7 +3547,7 @@ export const SettingsPage = () => {
                                         "3. 事件与回调使用长链接接受事件，添加 im.message.receive_v1 事件。",
                                       ),
                                       t(
-                                        "4. 添加 im:message 和 im:resource 权限。",
+                                        "4. 添加 im:message、im:resource 和 cardkit:card:write 权限（cardkit:card:write 用于流式输出）。",
                                       ),
                                       t(
                                         "5. 给应用发送一条消息，设置页会自动发现最近收到的标识。",

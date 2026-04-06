@@ -101,6 +101,14 @@ interface FeishuFileUploadResponse {
   };
 }
 
+interface FeishuMessageSendResponse {
+  code?: number;
+  msg?: string;
+  data?: {
+    message_id?: string;
+  };
+}
+
 export interface FeishuMessageItem {
   message_id?: string;
   chat_id?: string;
@@ -327,7 +335,7 @@ const sendFeishuStructuredMessage = async (input: {
   msgType: string;
   content: string;
   actionName: string;
-}): Promise<void> => {
+}): Promise<string | undefined> => {
   const normalizedReplyToMessageId = input.replyToMessageId?.trim() ?? "";
   const response = await fetch(
     normalizedReplyToMessageId
@@ -356,13 +364,13 @@ const sendFeishuStructuredMessage = async (input: {
     },
   );
   await assertHttpOk(response, "飞书", input.actionName);
-  const payload = (await response.json().catch(() => ({}))) as {
-    code?: number;
-    msg?: string;
-  };
+  const payload = (await response.json().catch(
+    () => ({}),
+  )) as FeishuMessageSendResponse;
   if (typeof payload.code === "number" && payload.code !== 0) {
     throw new Error(payload.msg || `飞书 ${input.actionName}失败`);
   }
+  return payload.data?.message_id?.trim() || undefined;
 };
 
 const collectFeishuMarkdownImageTokens = (
@@ -409,6 +417,9 @@ export const buildFeishuMarkdownCard = (markdown: string): Record<string, unknow
   const content = markdown.trim() || FEISHU_CARD_FALLBACK_TEXT;
   return {
     schema: "2.0",
+    config: {
+      update_multi: true,
+    },
     body: {
       elements: [
         {
@@ -532,14 +543,15 @@ export const sendFeishuBotMessage = async (
   text: string,
   receiveIdType: "chat_id" | "user_id" = "chat_id",
   replyToMessageId?: string,
-): Promise<void> => {
+): Promise<string | undefined> => {
   const accessToken = await resolveFeishuAccessToken(token);
   const markdownContent = await normalizeFeishuMarkdownContent(text, {
     accessToken,
   });
+  let lastMessageId: string | undefined;
   for (const chunk of splitMessage(markdownContent, FEISHU_MESSAGE_MAX_LENGTH)) {
     const card = buildFeishuMarkdownCard(chunk);
-    await sendFeishuStructuredMessage({
+    lastMessageId = await sendFeishuStructuredMessage({
       accessToken,
       receiveId,
       receiveIdType,
@@ -548,6 +560,209 @@ export const sendFeishuBotMessage = async (
       content: JSON.stringify(card),
       actionName: "Bot 消息发送",
     });
+  }
+  return lastMessageId;
+};
+
+export const sendFeishuBotCard = async (input: {
+  token: string;
+  receiveId: string;
+  card: Record<string, unknown>;
+  receiveIdType?: "chat_id" | "user_id";
+  replyToMessageId?: string;
+}): Promise<string | undefined> => {
+  const accessToken = await resolveFeishuAccessToken(input.token);
+  return await sendFeishuStructuredMessage({
+    accessToken,
+    receiveId: input.receiveId,
+    receiveIdType: input.receiveIdType ?? "chat_id",
+    replyToMessageId: input.replyToMessageId,
+    msgType: "interactive",
+    content: JSON.stringify(input.card),
+    actionName: "Bot 消息发送",
+  });
+};
+
+export const updateFeishuBotCard = async (
+  token: string,
+  messageId: string,
+  card: Record<string, unknown>,
+): Promise<void> => {
+  const normalizedMessageId = messageId.trim();
+  if (!normalizedMessageId) {
+    throw new Error("飞书 消息 ID 不能为空");
+  }
+
+  const accessToken = await resolveFeishuAccessToken(token);
+  const response = await fetch(
+    `${FEISHU_API_BASE}/im/v1/messages/${encodeURIComponent(normalizedMessageId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        content: JSON.stringify(card),
+      }),
+    },
+  );
+  await assertHttpOk(response, "飞书", "Bot 卡片更新");
+  const payload = (await response.json().catch(
+    () => ({}),
+  )) as FeishuMessageSendResponse;
+  if (typeof payload.code === "number" && payload.code !== 0) {
+    throw new Error(payload.msg || "飞书 Bot 卡片更新失败");
+  }
+};
+
+// ── CardKit Streaming API ──────────────────────────────────────────
+
+const FEISHU_STREAMING_ELEMENT_ID = "streaming_md";
+
+interface FeishuCardKitResponse {
+  code?: number;
+  msg?: string;
+  data?: {
+    card_id?: string;
+  };
+}
+
+export const buildFeishuStreamingCard = (
+  initialContent?: string,
+): Record<string, unknown> => ({
+  schema: "2.0",
+  config: {
+    update_multi: true,
+    streaming_mode: true,
+    streaming_config: {
+      print_frequency_ms: { default: 50 },
+      print_step: { default: 2 },
+      print_strategy: "fast",
+    },
+  },
+  body: {
+    elements: [
+      {
+        tag: "markdown",
+        element_id: FEISHU_STREAMING_ELEMENT_ID,
+        content: initialContent?.trim() || FEISHU_CARD_FALLBACK_TEXT,
+      },
+    ],
+  },
+});
+
+export const createFeishuStreamingCard = async (
+  token: string,
+  initialContent?: string,
+): Promise<string> => {
+  const accessToken = await resolveFeishuAccessToken(token);
+  const card = buildFeishuStreamingCard(initialContent);
+  const response = await fetch(`${FEISHU_API_BASE}/cardkit/v1/cards`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({
+      type: "card_json",
+      data: JSON.stringify(card),
+    }),
+  });
+  await assertHttpOk(response, "飞书", "CardKit 创建卡片");
+  const payload = (await response.json()) as FeishuCardKitResponse;
+  if (payload.code !== 0 || !payload.data?.card_id) {
+    throw new Error(payload.msg || "飞书 CardKit 创建卡片失败");
+  }
+  return payload.data.card_id;
+};
+
+export const sendFeishuBotCardByCardId = async (input: {
+  token: string;
+  receiveId: string;
+  cardId: string;
+  receiveIdType?: "chat_id" | "user_id";
+  replyToMessageId?: string;
+}): Promise<string | undefined> => {
+  const accessToken = await resolveFeishuAccessToken(input.token);
+  return await sendFeishuStructuredMessage({
+    accessToken,
+    receiveId: input.receiveId,
+    receiveIdType: input.receiveIdType ?? "chat_id",
+    replyToMessageId: input.replyToMessageId,
+    msgType: "interactive",
+    content: JSON.stringify({
+      type: "card_id",
+      data: { card_id: input.cardId },
+    }),
+    actionName: "Bot 卡片消息发送",
+  });
+};
+
+export const updateFeishuStreamingCardText = async (
+  token: string,
+  cardId: string,
+  content: string,
+  sequence: number,
+): Promise<void> => {
+  const accessToken = await resolveFeishuAccessToken(token);
+  const response = await fetch(
+    `${FEISHU_API_BASE}/cardkit/v1/cards/${encodeURIComponent(cardId)}/elements/${FEISHU_STREAMING_ELEMENT_ID}`,
+    {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        element: JSON.stringify({
+          tag: "markdown",
+          content: content.trim() || FEISHU_CARD_FALLBACK_TEXT,
+        }),
+        sequence,
+        uuid: `stream-${cardId}-${sequence}`,
+      }),
+    },
+  );
+  await assertHttpOk(response, "飞书", "CardKit 流式更新文本");
+  const payload = (await response.json().catch(() => ({}))) as {
+    code?: number;
+    msg?: string;
+  };
+  if (typeof payload.code === "number" && payload.code !== 0) {
+    throw new Error(payload.msg || "飞书 CardKit 流式更新文本失败");
+  }
+};
+
+export const stopFeishuCardStreaming = async (
+  token: string,
+  cardId: string,
+  sequence: number,
+): Promise<void> => {
+  const accessToken = await resolveFeishuAccessToken(token);
+  const response = await fetch(
+    `${FEISHU_API_BASE}/cardkit/v1/cards/${encodeURIComponent(cardId)}/settings`,
+    {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        settings: JSON.stringify({
+          config: { streaming_mode: false },
+        }),
+        sequence,
+      }),
+    },
+  );
+  await assertHttpOk(response, "飞书", "CardKit 停止流式");
+  const payload = (await response.json().catch(() => ({}))) as {
+    code?: number;
+    msg?: string;
+  };
+  if (typeof payload.code === "number" && payload.code !== 0) {
+    throw new Error(payload.msg || "飞书 CardKit 停止流式失败");
   }
 };
 
