@@ -3365,7 +3365,8 @@ const isDiscordMessageAllowedByScope = (input: {
   if (!input.runtime.allowedChannelIds.has(input.chatId)) {
     return false;
   }
-  if (!input.guildId) return false;
+  // DM channels have no guildId — allow if the channel ID is explicitly allowed
+  if (!input.guildId) return true;
   return input.runtime.allowedServerIds.has(input.guildId);
 };
 
@@ -4317,7 +4318,8 @@ export const chatChannelService = {
             discordToken,
             channelId,
           );
-          if (!guildId || !allowedServerIdSet.has(guildId)) {
+          // guildId is null for DM channels — allow them if explicitly configured
+          if (guildId && !allowedServerIdSet.has(guildId)) {
             logger.warn(
               "Discord channel is outside configured server whitelist",
               {

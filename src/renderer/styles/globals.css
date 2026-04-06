@@ -40,6 +40,15 @@
   --empty-illustration-warm: #f7c948;
 }
 
+/* Global placeholder styling — lighter than body text */
+input::placeholder,
+textarea::placeholder,
+.ant-input::placeholder,
+.ant-select-selection-placeholder {
+  color: var(--muted-2) !important;
+  opacity: 1;
+}
+
 :root.theme-dark {
   color-scheme: dark;
   --app-bg: #0a1220;
@@ -3111,7 +3120,6 @@ a:focus-visible,
 :root.theme-dark .ant-form-item-label > label,
 :root.theme-dark .ant-empty-description,
 :root.theme-dark .ant-select-selection-item,
-:root.theme-dark .ant-select-selection-placeholder,
 :root.theme-dark .ant-input,
 :root.theme-dark .ant-input-outlined,
 :root.theme-dark .ant-input-affix-wrapper,
