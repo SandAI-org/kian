@@ -57,6 +57,27 @@ const formatRelativeTime = (
   return translateUiText(language, `${Math.floor(diffMonth / 12)}年前`);
 };
 
+const SOURCE_LABEL_MAP: Record<string, Record<string, string>> = {
+  discord: { group: "Discord Server", direct: "Discord 用户" },
+  feishu: { group: "飞书群", direct: "飞书用户" },
+  telegram: { group: "Telegram 频道", direct: "Telegram 用户" },
+  weixin: { group: "微信群", direct: "微信用户" },
+};
+
+const getSessionSourceLabel = (session: ChatSessionDTO): string | null => {
+  if (!session.metadataJson) return null;
+  try {
+    const meta = JSON.parse(session.metadataJson);
+    if (meta.kind !== "digital_avatar_session") return null;
+    const providerMap = SOURCE_LABEL_MAP[meta.provider];
+    if (!providerMap) return null;
+    const label = providerMap[meta.chatType];
+    return label ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export const ChatSessionList = ({
   scope,
   module,
@@ -302,6 +323,7 @@ export const ChatSessionList = ({
         {sessions.map((session) => {
           const isActive = session.id === currentSessionId;
           const isEditing = session.id === editingSessionId;
+          const sourceLabel = getSessionSourceLabel(session);
           return (
             <div
               key={session.id}
@@ -340,13 +362,20 @@ export const ChatSessionList = ({
                   </div>
                 ) : (
                   <div
-                    className={`i18n-no-translate h-5 truncate text-sm font-medium leading-5 ${
+                    className={`flex h-5 items-center gap-1.5 ${
                       isActive ? "text-[#1f4fcc]" : "text-slate-800 group-hover:text-[#1f4fcc]"
                     }`}
                     onDoubleClick={(event) => beginTitleEditing(event, session)}
                     title={t("双击修改对话名称")}
                   >
-                    {session.title || t("新对话")}
+                    {sourceLabel ? (
+                      <span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-1 text-[10px] leading-4 text-blue-500">
+                        {sourceLabel}
+                      </span>
+                    ) : null}
+                    <span className="i18n-no-translate truncate text-sm font-medium leading-5">
+                      {session.title || t("新对话")}
+                    </span>
                   </div>
                 )}
                 <div className="truncate text-xs text-slate-400">

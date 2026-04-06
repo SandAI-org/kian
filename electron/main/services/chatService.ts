@@ -452,6 +452,18 @@ const processQueuedMessage = async (
 
   void generateSessionTitle(payload).catch(() => {});
 
+  if (!payload.skipChannelReply) {
+    void import("./chatChannelService")
+      .then(({ chatChannelService }) =>
+        chatChannelService.sendAssistantReplyToChannel({
+          scope: payload.scope,
+          sessionId: payload.sessionId,
+          text: result.assistantMessage,
+        }),
+      )
+      .catch(() => {});
+  }
+
   return result;
 };
 

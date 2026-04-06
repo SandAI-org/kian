@@ -2751,7 +2751,9 @@ export const ModuleChatPane = ({
       }
 
       try {
-        const latestSessions = await api.chat.getSessions(effectiveScope);
+        const latestSessions = await api.chat.getSessions(effectiveScope, {
+          kinds: ["normal", "digital_avatar"],
+        });
         const matchedSession = latestSessions.find(
           (session) => session.id === sessionId,
         );
@@ -3238,13 +3240,7 @@ export const ModuleChatPane = ({
         ) : null}
 
         <div
-          className={
-            isEmpty
-              ? showDigitalAvatarEmptyState
-                ? "z-10 mt-2.5"
-                : "z-10"
-              : "z-10 mt-2"
-          }
+          className="z-10 mt-2"
         >
           {composer}
         </div>

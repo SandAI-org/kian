@@ -3138,6 +3138,8 @@ export const repositoryService = {
       sessionTitle: next.title,
       sessionUpdatedAt: timestamp,
       sessionModule: input.module,
+      sessionKind: next.kind,
+      sessionMetadataJson: next.metadataJson,
     });
 
     return next;
@@ -3189,15 +3191,21 @@ export const repositoryService = {
   ): Promise<ChatSessionDTO> {
     const sessions = await loadCachedChatSessions(scope);
     const expectedMetadataJson = options?.metadataJson?.trim() || null;
-    const existing = sessions.find(
-      (session) =>
+    let existing: ChatSessionDTO | undefined;
+    for (let i = sessions.length - 1; i >= 0; i--) {
+      const session = sessions[i];
+      if (
         session.kind === "digital_avatar" &&
         session.hidden === false &&
         session.module === "main" &&
         (expectedMetadataJson
           ? session.metadataJson === expectedMetadataJson
-          : session.metadataJson == null),
-    );
+          : session.metadataJson == null)
+      ) {
+        existing = session;
+        break;
+      }
+    }
     if (existing) {
       const nextTitle = options?.title?.trim() ?? "";
       if (!existing.title.trim() && nextTitle) {
@@ -3248,6 +3256,26 @@ export const repositoryService = {
       title: input.title ?? "",
       metadataJson: input.metadataJson,
     });
+  },
+
+  async findChannelRuntimeSessionIds(
+    scope: ChatScope,
+    filter: { provider: string; chatId: string },
+  ): Promise<string[]> {
+    const sessions = await loadCachedChatSessions(scope);
+    const ids: string[] = [];
+    for (const session of sessions) {
+      if (session.kind !== "channel_runtime" || !session.metadataJson) continue;
+      try {
+        const meta = JSON.parse(session.metadataJson);
+        if (meta.provider === filter.provider && meta.chatId === filter.chatId) {
+          ids.push(session.id);
+        }
+      } catch {
+        // skip malformed metadata
+      }
+    }
+    return ids;
   },
 
   async setChatSessionSdkSessionId(input: {
@@ -3316,6 +3344,8 @@ export const repositoryService = {
       sessionTitle: title,
       sessionUpdatedAt: updatedAt,
       sessionModule: session.module,
+      sessionKind: session.kind,
+      sessionMetadataJson: session.metadataJson,
     });
   },
 
@@ -3337,8 +3367,8 @@ export const repositoryService = {
   }): Promise<ChatMessageDTO> {
     await ensureChatScopeStructure(input.scope);
     const sessions = await loadCachedChatSessions(input.scope);
-    const sessionExists = sessions.some((item) => item.id === input.sessionId);
-    if (!sessionExists) {
+    const matchedSession = sessions.find((item) => item.id === input.sessionId);
+    if (!matchedSession) {
       throw new Error("会话不存在");
     }
     const createdAt = input.createdAt?.trim() || nowISO();
@@ -3376,6 +3406,8 @@ export const repositoryService = {
         role: next.role,
         createdAt: next.createdAt,
         sessionUpdatedAt,
+        sessionKind: matchedSession.kind,
+        sessionMetadataJson: matchedSession.metadataJson,
         message: cachedMessages.find((item) => item.id === next.id) ?? next,
       });
 

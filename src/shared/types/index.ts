@@ -268,6 +268,7 @@ export interface ChatSendPayload {
   capabilityMode?: ChatCapabilityMode;
   delegationContext?: DelegationContext;
   skipUserMessagePersistence?: boolean;
+  skipChannelReply?: boolean;
 }
 
 export type ChatQueueDeliveryMode = 'steer' | 'followUp';
@@ -362,6 +363,8 @@ export interface ChatHistoryUpdatedEvent {
   sessionTitle?: string;
   sessionUpdatedAt?: string;
   sessionModule?: ChatModuleType;
+  sessionKind?: ChatSessionKind;
+  sessionMetadataJson?: string | null;
   message?: ChatMessageDTO;
 }
 

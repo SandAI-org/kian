@@ -190,8 +190,6 @@ const buildAgentModelConfigSignature = (input: {
 const buildTextSignature = (value: string): string =>
   createHash("sha256").update(value).digest("hex");
 
-const usesAvatarPrompt = (sessionKind: ChatSessionKind): boolean =>
-  sessionKind === "digital_avatar" || sessionKind === "channel_runtime";
 
 const resolveEffectiveAgentModelSelection = (
   status: ClaudeConfigStatus,
@@ -733,10 +731,42 @@ const buildNewSessionTool = (input: {
       const module =
         currentSession?.module ??
         (input.scope.type === "main" ? "main" : "docs");
+
+      const isChannelSession =
+        currentSession?.kind === "digital_avatar" &&
+        currentSession.metadataJson;
+
+      if (isChannelSession) {
+        const { chatChannelService } = await import("./chatChannelService");
+        const runtimeSessionIds =
+          await chatChannelService.findChannelRuntimeSessionIds({
+            scope: input.scope,
+            digitalAvatarMetadataJson: currentSession.metadataJson!,
+          });
+        for (const runtimeSessionId of runtimeSessionIds) {
+          clearSessionInternal(input.scope, runtimeSessionId, {
+            startFreshOnNextPrompt: true,
+          });
+        }
+        logger.info("NewSession tool: cleared channel runtime sessions", {
+          chatSessionId: input.chatSessionId,
+          clearedRuntimeSessionIds: runtimeSessionIds,
+        });
+        return {
+          text: `已清空对话上下文（清理了 ${runtimeSessionIds.length} 个运行时会话）`,
+        };
+      }
+
       const created = await repositoryService.createChatSession({
         scope: input.scope,
         module,
         title: "",
+      });
+
+      logger.info("NewSession tool: created new session", {
+        oldSessionId: input.chatSessionId,
+        newSessionId: created.id,
+        kind: created.kind,
       });
 
       appOperationEvents.emit({
@@ -1294,11 +1324,7 @@ const createOrResumeSession = async (
     chatSessionId,
   );
   const sessionKind: ChatSessionKind = currentChatSession?.kind ?? "normal";
-  const effectiveCapabilityMode: ChatCapabilityMode = usesAvatarPrompt(
-    sessionKind,
-  )
-    ? "chat_only"
-    : capabilityMode;
+  const effectiveCapabilityMode: ChatCapabilityMode = capabilityMode;
   const status = await settingsService.getClaudeStatus(scope);
   const effectiveThinkingLevel = thinkingLevel ?? DEFAULT_CHAT_THINKING_LEVEL;
 
@@ -1333,9 +1359,11 @@ const createOrResumeSession = async (
   const refreshRequested = refreshSessionOnNextPrompt.has(storeKey);
   const mcpServers = await settingsService.getMcpServers();
   const mcpSignature = buildMcpServerSignature(mcpServers);
+  const promptSessionKind: ChatSessionKind =
+    effectiveCapabilityMode === "chat_only" ? sessionKind : "normal";
   const fallbackSystemPrompt = await settingsService.getAgentSystemPrompt(
     scope.type,
-    sessionKind,
+    promptSessionKind,
   );
   const systemPromptSignature = buildTextSignature(fallbackSystemPrompt);
 
@@ -1350,6 +1378,13 @@ const createOrResumeSession = async (
   };
 
   const existing = agentSessionStore.get(storeKey);
+  logger.info("createOrResumeSession: store lookup", {
+    storeKey,
+    chatSessionId,
+    sessionKind,
+    hasExisting: Boolean(existing),
+    allStoreKeys: [...agentSessionStore.keys()],
+  });
   if (existing) {
     if (
       existing.modelId !== compositeModelKey ||
@@ -1506,8 +1541,16 @@ const createOrResumeSession = async (
   const resumedSessionManager = startFreshRequested
     ? undefined
     : SessionManager.continueRecent(projectCwd, sessionDir);
-  const previousContextModel =
-    resumedSessionManager?.buildSessionContext().model;
+  const resumedContext = resumedSessionManager?.buildSessionContext();
+  logger.info("createOrResumeSession: SessionManager state", {
+    storeKey,
+    chatSessionId,
+    sessionDir,
+    startFreshRequested,
+    hasResumedSessionManager: Boolean(resumedSessionManager),
+    resumedMessageCount: resumedContext?.messages?.length ?? 0,
+  });
+  const previousContextModel = resumedContext?.model;
   const modelChangedFromPersistedContext = Boolean(
     previousContextModel &&
     (previousContextModel.provider !== effectiveProvider ||
@@ -1535,7 +1578,7 @@ const createOrResumeSession = async (
         scope.type === "main" ? WORKSPACE_ROOT : undefined,
       ),
       loadAppDeveloperMetadata(),
-      usesAvatarPrompt(sessionKind)
+      effectiveCapabilityMode === "chat_only"
         ? Promise.resolve([])
         : skillService.listActiveSkillsForScope({
             scope: scope.type,

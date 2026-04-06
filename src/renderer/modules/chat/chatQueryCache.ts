@@ -64,11 +64,11 @@ const buildSessionFromHistoryEvent = (
     scopeType: event.scope.type,
     projectId: event.scope.type === "project" ? event.scope.projectId : undefined,
     module: event.sessionModule,
-    kind: "normal",
+    kind: event.sessionKind ?? "normal",
     hidden: false,
     title: event.sessionTitle?.trim() ?? "",
     sdkSessionId: null,
-    metadataJson: null,
+    metadataJson: event.sessionMetadataJson ?? null,
     createdAt: event.createdAt,
     updatedAt: event.sessionUpdatedAt ?? event.createdAt,
   };

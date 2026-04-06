@@ -6,6 +6,7 @@ import type {
   ChatMessageMetadata,
   ChatModuleType,
   ChatScope,
+  ChatSessionKind,
   ChatStreamEvent,
 } from "@shared/types";
 import { randomUUID } from "node:crypto";
@@ -362,6 +363,7 @@ interface SessionReplyContext {
   provider: "telegram" | "discord" | "feishu" | "weixin";
   chatId: string;
   accountId?: string;
+  sessionKind?: ChatSessionKind;
 }
 
 let runtime: TelegramRuntime | null = null;
@@ -1064,6 +1066,7 @@ const getOrCreateDigitalAvatarSessionForConversation = async (input: {
   senderId: string;
   senderName: string;
   chatName?: string;
+  accountId?: string;
 }): Promise<string> => {
   const nextTitle = resolveDigitalAvatarSessionTitle(input);
   const session = await repositoryService.getOrCreateDigitalAvatarSession(
@@ -1088,6 +1091,14 @@ const getOrCreateDigitalAvatarSessionForConversation = async (input: {
       title: nextTitle,
     });
   }
+  rememberSessionReplyContext({
+    scope: MAIN_CHAT_SCOPE,
+    sessionId: session.id,
+    provider: input.provider,
+    chatId: input.chatId,
+    accountId: input.accountId,
+    sessionKind: "digital_avatar",
+  });
   return session.id;
 };
 
@@ -1538,6 +1549,7 @@ const rememberSessionReplyContext = (input: {
   provider: SessionReplyContext["provider"];
   chatId: string;
   accountId?: string;
+  sessionKind?: ChatSessionKind;
 }): void => {
   sessionReplyContextByKey.set(
     getSessionReplyContextKey(input.scope, input.sessionId),
@@ -1545,6 +1557,7 @@ const rememberSessionReplyContext = (input: {
       provider: input.provider,
       chatId: input.chatId,
       accountId: input.accountId,
+      sessionKind: input.sessionKind,
     },
   );
 };
@@ -1734,6 +1747,78 @@ const scheduleChannelBatchFlush = (batchKey: string, state: ChannelBatchState): 
   state.flushTimer = setTimeout(() => {
     void flushChannelBatchState(batchKey);
   }, DIGITAL_AVATAR_IDLE_FLUSH_MS);
+};
+
+const sendOwnerDigitalAvatarTurn = async (input: {
+  provider: SessionReplyContext["provider"];
+  digitalAvatarSessionId: string;
+  chatId: string;
+  text: string;
+  attachments?: ChatAttachmentDTO[];
+  replyText: (text: string) => Promise<void>;
+  sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
+  updateLiveMessage?: (
+    messageId: string | number,
+    text: string,
+  ) => Promise<void>;
+  onStreamingDone?: () => Promise<void>;
+  replyDocument?: (filePath: string) => Promise<void>;
+  sendAttachmentsFirst?: boolean;
+  chatType: ChannelChatType;
+}): Promise<void> => {
+  logger.info("Owner digital avatar turn started", {
+    provider: input.provider,
+    chatId: input.chatId,
+    sessionId: input.digitalAvatarSessionId,
+    chatType: input.chatType,
+    textLength: input.text.trim().length,
+  });
+  const progressiveStreamer = createDirectChannelReplyStreamer({
+    provider: input.provider,
+    projectId: MAIN_AGENT_SCOPE_ID,
+    chatId: input.chatId,
+    sendText: input.replyText,
+    sendLiveMessage: input.sendLiveMessage,
+    updateLiveMessage: input.updateLiveMessage,
+    onStreamingDone: input.onStreamingDone,
+    sendDocument: input.replyDocument,
+    sendAttachmentsFirst: input.sendAttachmentsFirst,
+  });
+  const requestId = randomUUID();
+  let result: { assistantMessage: string; toolActions?: string[] };
+  try {
+    result = await chatService.send(
+      {
+        scope: MAIN_CHAT_SCOPE,
+        module: "main",
+        sessionId: input.digitalAvatarSessionId,
+        requestId,
+        message: input.text,
+        attachments: input.attachments?.length ? input.attachments : undefined,
+        skipChannelReply: true,
+      },
+      (streamEvent) => {
+        progressiveStreamer.pushEvent(streamEvent);
+      },
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await progressiveStreamer.finalize({
+      fallbackAssistantMessage: `处理失败：${errorMessage}`,
+      isError: true,
+    });
+    throw error;
+  }
+  await progressiveStreamer.finalize({
+    fallbackAssistantMessage: result.assistantMessage,
+    toolActions: result.toolActions,
+  });
+  logger.info("Owner digital avatar turn completed", {
+    provider: input.provider,
+    chatId: input.chatId,
+    sessionId: input.digitalAvatarSessionId,
+    assistantMessageLength: result.assistantMessage.length,
+  });
 };
 
 const sendChannelRuntimeTurn = async (input: {
@@ -2616,7 +2701,7 @@ const processTelegramUpdate = async (
   }
 
   let digitalAvatarSessionId: string | undefined;
-  if (!isOwner) {
+  if (chatType === "group" || !isOwner) {
     digitalAvatarSessionId = await getOrCreateDigitalAvatarSessionForConversation({
       provider: "telegram",
       chatType,
@@ -2625,17 +2710,19 @@ const processTelegramUpdate = async (
       senderName,
       chatName,
     });
-    await mirrorChannelInboundMessage({
-      sessionId: digitalAvatarSessionId,
-      text: text || "（仅上传了附件）",
-      provider: "telegram",
-      chatType,
-      senderId: fromUserId,
-      senderName,
-      isOwner: false,
-      mentioned,
-      capabilityMode,
-    });
+    if (!isOwner) {
+      await mirrorChannelInboundMessage({
+        sessionId: digitalAvatarSessionId,
+        text: text || "（仅上传了附件）",
+        provider: "telegram",
+        chatType,
+        senderId: fromUserId,
+        senderName,
+        isOwner,
+        mentioned,
+        capabilityMode,
+      });
+    }
   }
 
   if ((text === "/start" || text === "/help") && attachments.length === 0) {
@@ -2646,12 +2733,12 @@ const processTelegramUpdate = async (
   try {
     const stopTyping = createTypingIndicator(state.token, chatId);
     try {
-      if (isOwner) {
+      if (isOwner && chatType === "direct") {
         const mainSessionId = await resolveMainAgentLatestSessionId({
           provider: "telegram",
           chatId,
         });
-        logger.info("Telegram owner message routed to main session", {
+        logger.info("Telegram owner direct message routed to main session", {
           chatId,
           fromUserId,
           sessionId: mainSessionId,
@@ -2663,6 +2750,22 @@ const processTelegramUpdate = async (
           text,
           attachments,
           capabilityMode,
+          replyText,
+          sendLiveMessage,
+          updateLiveMessage,
+          replyDocument,
+          chatType,
+        });
+        return;
+      }
+
+      if (isOwner && digitalAvatarSessionId) {
+        await sendOwnerDigitalAvatarTurn({
+          provider: "telegram",
+          digitalAvatarSessionId,
+          chatId,
+          text,
+          attachments,
           replyText,
           sendLiveMessage,
           updateLiveMessage,
@@ -3111,7 +3214,7 @@ const processBotIncomingMessage = async (input: {
   }
 
   let digitalAvatarSessionId: string | undefined;
-  if (!isOwner) {
+  if (input.chatType === "group" || !isOwner) {
     digitalAvatarSessionId = await getOrCreateDigitalAvatarSessionForConversation({
       provider,
       chatType: input.chatType,
@@ -3120,17 +3223,19 @@ const processBotIncomingMessage = async (input: {
       senderName: input.senderName,
       chatName: input.chatName,
     });
-    await mirrorChannelInboundMessage({
-      sessionId: digitalAvatarSessionId,
-      text: text || "（仅上传了附件）",
-      provider,
-      chatType: input.chatType,
-      senderId: input.fromUserId,
-      senderName: input.senderName,
-      isOwner: false,
-      mentioned: input.mentioned,
-      capabilityMode,
-    });
+    if (!isOwner) {
+      await mirrorChannelInboundMessage({
+        sessionId: digitalAvatarSessionId,
+        text: text || "（仅上传了附件）",
+        provider,
+        chatType: input.chatType,
+        senderId: input.fromUserId,
+        senderName: input.senderName,
+        isOwner,
+        mentioned: input.mentioned,
+        capabilityMode,
+      });
+    }
   }
 
   if ((text === "/start" || text === "/help") && attachments.length === 0) {
@@ -3139,12 +3244,12 @@ const processBotIncomingMessage = async (input: {
   }
 
   try {
-    if (isOwner) {
+    if (isOwner && input.chatType === "direct") {
       const mainSessionId = await resolveMainAgentLatestSessionId({
         provider,
         chatId: input.chatId,
       });
-      logger.info("Owner channel message routed to main session", {
+      logger.info("Owner direct channel message routed to main session", {
         provider,
         chatId: input.chatId,
         fromUserId: input.fromUserId,
@@ -3157,6 +3262,24 @@ const processBotIncomingMessage = async (input: {
         text,
         attachments,
         capabilityMode,
+        replyText: input.replyText,
+        sendLiveMessage: input.sendLiveMessage,
+        updateLiveMessage: input.updateLiveMessage,
+        onStreamingDone: input.onStreamingDone,
+        replyDocument: input.replyDocument,
+        sendAttachmentsFirst,
+        chatType: input.chatType,
+      });
+      return;
+    }
+
+    if (isOwner && digitalAvatarSessionId) {
+      await sendOwnerDigitalAvatarTurn({
+        provider,
+        digitalAvatarSessionId,
+        chatId: input.chatId,
+        text,
+        attachments,
         replyText: input.replyText,
         sendLiveMessage: input.sendLiveMessage,
         updateLiveMessage: input.updateLiveMessage,
@@ -4564,6 +4687,84 @@ export const chatChannelService = {
           error,
         });
       }
+    }
+  },
+
+  transferSessionReplyContext(input: {
+    scope: ChatScope;
+    fromSessionId: string;
+    toSessionId: string;
+  }): void {
+    const fromKey = getSessionReplyContextKey(input.scope, input.fromSessionId);
+    const ctx = sessionReplyContextByKey.get(fromKey);
+    if (!ctx) return;
+    const toKey = getSessionReplyContextKey(input.scope, input.toSessionId);
+    sessionReplyContextByKey.set(toKey, { ...ctx });
+  },
+
+  async findChannelRuntimeSessionIds(input: {
+    scope: ChatScope;
+    digitalAvatarMetadataJson: string;
+  }): Promise<string[]> {
+    try {
+      const meta = JSON.parse(input.digitalAvatarMetadataJson);
+      if (meta.kind !== "digital_avatar_session" || !meta.provider || !meta.conversationId) {
+        return [];
+      }
+      return await repositoryService.findChannelRuntimeSessionIds(input.scope, {
+        provider: meta.provider,
+        chatId: meta.conversationId,
+      });
+    } catch {
+      return [];
+    }
+  },
+
+  async sendAssistantReplyToChannel(input: {
+    scope: ChatScope;
+    sessionId: string;
+    text: string;
+  }): Promise<void> {
+    const replyContext = sessionReplyContextByKey.get(
+      getSessionReplyContextKey(input.scope, input.sessionId),
+    );
+    if (!replyContext || replyContext.sessionKind !== "digital_avatar") return;
+
+    const text = input.text.trim();
+    if (!text) return;
+
+    try {
+      if (replyContext.provider === "telegram") {
+        const telegramState = running && runtime ? runtime : null;
+        if (telegramState) {
+          await sendTelegramMessage(telegramState.token, replyContext.chatId, text);
+        }
+      } else if (replyContext.provider === "discord") {
+        const state = discordRuntime;
+        if (state) {
+          await sendDiscordBotMessage(state.token, replyContext.chatId, text);
+        }
+      } else if (replyContext.provider === "weixin") {
+        if (replyContext.accountId) {
+          await weixinChannelService.sendText({
+            accountId: replyContext.accountId,
+            toUserId: replyContext.chatId,
+            text,
+          });
+        }
+      } else {
+        const state = feishuRuntime;
+        if (state) {
+          await sendFeishuBotMessage(state.token, replyContext.chatId, text, "chat_id");
+        }
+      }
+    } catch (error) {
+      logger.warn("Failed to send assistant reply to channel", {
+        sessionId: input.sessionId,
+        provider: replyContext.provider,
+        chatId: replyContext.chatId,
+        error,
+      });
     }
   },
 };
