@@ -128,6 +128,7 @@ describe("skillService active visibility", () => {
       ["app-creator", { mainAgentVisible: false, projectAgentVisible: true }],
       ["video-creator", { mainAgentVisible: false, projectAgentVisible: true }],
       ["self-management", { mainAgentVisible: true, projectAgentVisible: false }],
+      ["skill-management", { mainAgentVisible: true, projectAgentVisible: true }],
       ["task-manager", { mainAgentVisible: true, projectAgentVisible: true }],
       ["programer", { mainAgentVisible: true, projectAgentVisible: true }],
       ["cronjob-scheduler", { mainAgentVisible: true, projectAgentVisible: true }],
@@ -281,6 +282,12 @@ describe("skillService active visibility", () => {
     expect(
       projectSkills.some((skill) => skill.title === "self-management"),
     ).toBe(false);
+    expect(
+      mainSkills.some((skill) => skill.title === "skill-management"),
+    ).toBe(true);
+    expect(
+      projectSkills.some((skill) => skill.title === "skill-management"),
+    ).toBe(true);
     expect(
       mainSkills.every((skill) => skill.skillFilePath.includes(path.join(".kian", "skills", "installed"))),
     ).toBe(true);
