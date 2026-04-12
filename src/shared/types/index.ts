@@ -219,6 +219,18 @@ export interface ChatMessageMetadata {
   capabilityMode?: ChatCapabilityMode;
 }
 
+export interface ChatMessageSourceInfo {
+  kind: 'channel_event';
+  provider?: ChatChannelProvider;
+  chatType?: 'direct' | 'group';
+  senderId?: string;
+  senderName?: string;
+  isOwner?: boolean;
+  mentioned?: boolean;
+  batchedCount?: number;
+  capabilityMode?: ChatCapabilityMode;
+}
+
 export interface ChatMessageDTO {
   id: string;
   sessionId: string;
@@ -261,6 +273,7 @@ export interface ChatSendPayload {
   requestId?: string;
   message: string;
   queuedSourceName?: string;
+  messageSourceInfo?: ChatMessageSourceInfo;
   model?: string;
   thinkingLevel?: ChatThinkingLevel;
   attachments?: ChatAttachmentDTO[];
@@ -279,6 +292,7 @@ export interface ChatQueuePayload {
   sessionId: string;
   requestId: string;
   message: string;
+  messageSourceInfo?: ChatMessageSourceInfo;
   model?: string;
   thinkingLevel?: ChatThinkingLevel;
   attachments?: ChatAttachmentDTO[];

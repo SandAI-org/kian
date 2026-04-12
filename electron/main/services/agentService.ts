@@ -13,6 +13,7 @@ import type {
   ChatCapabilityMode,
   ChatInterruptPayload,
   ChatMessageMetadata,
+  ChatMessageSourceInfo,
   ChatModuleType,
   ChatQueueDeliveryMode,
   ChatQueuedMessageDTO,
@@ -368,6 +369,61 @@ type PromptContentBuildResult = {
   promptContent: string | StructuredPromptContent;
 };
 
+const formatChannelProviderLabel = (
+  provider: ChatMessageSourceInfo["provider"],
+): string => {
+  if (provider === "feishu") return "飞书";
+  if (provider === "discord") return "Discord";
+  if (provider === "telegram") return "Telegram";
+  if (provider === "weixin") return "微信";
+  if (provider === "broadcast") return "广播";
+  return "未知渠道";
+};
+
+const buildPromptMessageText = (input: {
+  message: string;
+  messageSourceInfo?: ChatMessageSourceInfo;
+}): string => {
+  const messageText = input.message.trim() || "（仅上传了附件）";
+  const sourceInfo = input.messageSourceInfo;
+  if (!sourceInfo || sourceInfo.kind !== "channel_event") {
+    return messageText;
+  }
+
+  const senderName = sourceInfo.senderName?.trim() || "";
+  const senderId = sourceInfo.senderId?.trim() || "";
+  const lines = [
+    "[渠道消息上下文]",
+    `渠道：${formatChannelProviderLabel(sourceInfo.provider)}`,
+    `会话类型：${sourceInfo.chatType === "group" ? "群聊" : "私聊"}`,
+    `发送者：${senderName || senderId || "未知"}`,
+  ];
+
+  if (senderId && senderId !== senderName) {
+    lines.push(`发送者 ID：${senderId}`);
+  }
+  if (typeof sourceInfo.isOwner === "boolean") {
+    lines.push(`发送者身份：${sourceInfo.isOwner ? "拥有者" : "非拥有者"}`);
+  }
+  if (typeof sourceInfo.mentioned === "boolean") {
+    lines.push(`提及状态：${sourceInfo.mentioned ? "被提及" : "未提及"}`);
+  }
+  if (sourceInfo.capabilityMode) {
+    lines.push(
+      `渠道能力：${sourceInfo.capabilityMode === "full" ? "完整 Agent" : "仅聊天"}`,
+    );
+  }
+  if (
+    typeof sourceInfo.batchedCount === "number" &&
+    sourceInfo.batchedCount > 1
+  ) {
+    lines.push(`批量消息数：${sourceInfo.batchedCount}`);
+  }
+
+  lines.push("消息正文：", messageText);
+  return lines.join("\n");
+};
+
 const buildAttachmentContent = async (
   scope: ChatScope,
   attachments: ChatSendPayload["attachments"],
@@ -426,9 +482,13 @@ const buildAttachmentContent = async (
 
 const buildPromptContent = (input: {
   message: string;
+  messageSourceInfo?: ChatMessageSourceInfo;
   attachmentContent: AttachmentBuildResult;
 }): PromptContentBuildResult => {
-  const messageText = input.message.trim();
+  const messageText = buildPromptMessageText({
+    message: input.message,
+    messageSourceInfo: input.messageSourceInfo,
+  });
   const fullPromptText = input.attachmentContent.promptText
     ? `${messageText}\n\n${input.attachmentContent.promptText}`
     : messageText;
@@ -2285,6 +2345,7 @@ export const agentService = {
 
       const { fullPromptText, promptContent } = buildPromptContent({
         message: payload.message,
+        messageSourceInfo: payload.messageSourceInfo,
         attachmentContent,
       });
 
@@ -2611,6 +2672,7 @@ export const agentService = {
     );
     const { fullPromptText, promptContent } = buildPromptContent({
       message: payload.message,
+      messageSourceInfo: payload.messageSourceInfo,
       attachmentContent,
     });
 

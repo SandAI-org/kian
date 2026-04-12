@@ -4,6 +4,7 @@ import type {
   ChatAttachmentDTO,
   ChatCapabilityMode,
   ChatMessageMetadata,
+  ChatMessageSourceInfo,
   ChatModuleType,
   ChatScope,
   ChatSessionKind,
@@ -1124,15 +1125,66 @@ const buildChannelEventMetadataJson = (input: {
     capabilityMode: input.capabilityMode,
   } satisfies ChatMessageMetadata);
 
-const buildChannelBatchPrompt = (items: ChannelBatchItem[]): string => {
-  const lines = [
-    "For the newly received list of messages, please reply collectively in accordance with your identity settings.",
-  ];
-  for (const item of items) {
-    lines.push(`[${item.senderName || item.senderId}] ${item.text || "（仅上传了附件）"}`);
+const formatChannelProviderLabel = (
+  provider: SessionReplyContext["provider"],
+): string => {
+  if (provider === "feishu") return "飞书";
+  if (provider === "discord") return "Discord";
+  if (provider === "telegram") return "Telegram";
+  if (provider === "weixin") return "微信";
+  if (provider === "broadcast") return "广播";
+  return "未知渠道";
+};
+
+const buildChannelBatchPrompt = (input: {
+  provider: SessionReplyContext["provider"];
+  items: ChannelBatchItem[];
+}): string => {
+  const lines = ["以下是新收到的一批渠道消息，请结合你的身份设定统一回复。"];
+  for (const [index, item] of input.items.entries()) {
+    const senderName = item.senderName?.trim() || "";
+    const senderId = item.senderId?.trim() || "";
+    lines.push(
+      `## 消息 ${index + 1}`,
+      `渠道：${formatChannelProviderLabel(input.provider)}`,
+      "会话类型：群聊",
+      `发送者：${senderName || senderId || "未知"}`,
+    );
+    if (senderId && senderId !== senderName) {
+      lines.push(`发送者 ID：${senderId}`);
+    }
+    lines.push(
+      "发送者身份：非拥有者",
+      `提及状态：${item.mentioned ? "被提及" : "未提及"}`,
+      "渠道能力：仅聊天",
+      "消息正文：",
+      item.text || "（仅上传了附件）",
+      "",
+    );
   }
   return lines.join("\n");
 };
+
+const buildChannelMessageSourceInfo = (input: {
+  provider: SessionReplyContext["provider"];
+  chatType: ChannelChatType;
+  senderId: string;
+  senderName: string;
+  isOwner: boolean;
+  mentioned?: boolean;
+  batchedCount?: number;
+  capabilityMode: ChatCapabilityMode;
+}): ChatMessageSourceInfo => ({
+  kind: "channel_event",
+  provider: input.provider,
+  chatType: input.chatType,
+  senderId: input.senderId,
+  senderName: input.senderName,
+  isOwner: input.isOwner,
+  mentioned: input.mentioned,
+  batchedCount: input.batchedCount,
+  capabilityMode: input.capabilityMode,
+});
 
 const mirrorChannelInboundMessage = async (input: {
   sessionId: string;
@@ -1659,7 +1711,10 @@ const flushChannelBatchState = async (batchKey: string): Promise<void> => {
   const items = state.items.splice(0, state.items.length);
   channelBatchStateByKey.delete(batchKey);
   const batchedCount = items.length;
-  const prompt = buildChannelBatchPrompt(items);
+  const prompt = buildChannelBatchPrompt({
+    provider: state.provider,
+    items,
+  });
   logger.info("Channel batch flush started", {
     batchKey,
     provider: state.provider,
@@ -1755,6 +1810,10 @@ const sendOwnerDigitalAvatarTurn = async (input: {
   chatId: string;
   text: string;
   attachments?: ChatAttachmentDTO[];
+  senderId: string;
+  senderName: string;
+  isOwner: boolean;
+  mentioned?: boolean;
   replyText: (text: string) => Promise<void>;
   sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
   updateLiveMessage?: (
@@ -1794,6 +1853,15 @@ const sendOwnerDigitalAvatarTurn = async (input: {
         sessionId: input.digitalAvatarSessionId,
         requestId,
         message: input.text,
+        messageSourceInfo: buildChannelMessageSourceInfo({
+          provider: input.provider,
+          chatType: input.chatType,
+          senderId: input.senderId,
+          senderName: input.senderName,
+          isOwner: input.isOwner,
+          mentioned: input.mentioned,
+          capabilityMode: "full",
+        }),
         attachments: input.attachments?.length ? input.attachments : undefined,
         skipChannelReply: true,
       },
@@ -1827,6 +1895,10 @@ const sendChannelRuntimeTurn = async (input: {
   chatId: string;
   text: string;
   attachments?: ChatAttachmentDTO[];
+  senderId: string;
+  senderName: string;
+  isOwner: boolean;
+  mentioned?: boolean;
   capabilityMode: ChatCapabilityMode;
   replyText: (text: string) => Promise<void>;
   sendLiveMessage?: (text: string) => Promise<string | number | undefined>;
@@ -1872,6 +1944,16 @@ const sendChannelRuntimeTurn = async (input: {
         sessionId: input.runtimeSessionId,
         requestId,
         message: input.text,
+        messageSourceInfo: buildChannelMessageSourceInfo({
+          provider: input.provider,
+          chatType: input.chatType,
+          senderId: input.senderId,
+          senderName: input.senderName,
+          isOwner: input.isOwner,
+          mentioned: input.mentioned,
+          batchedCount: input.batchedCount,
+          capabilityMode: input.capabilityMode,
+        }),
         attachments: input.attachments?.length ? input.attachments : undefined,
         capabilityMode: input.capabilityMode,
       },
@@ -2749,6 +2831,10 @@ const processTelegramUpdate = async (
           chatId,
           text,
           attachments,
+          senderId: fromUserId,
+          senderName,
+          isOwner,
+          mentioned,
           capabilityMode,
           replyText,
           sendLiveMessage,
@@ -2766,6 +2852,10 @@ const processTelegramUpdate = async (
           chatId,
           text,
           attachments,
+          senderId: fromUserId,
+          senderName,
+          isOwner,
+          mentioned,
           replyText,
           sendLiveMessage,
           updateLiveMessage,
@@ -2837,6 +2927,10 @@ const processTelegramUpdate = async (
         chatId,
         text,
         attachments,
+        senderId: fromUserId,
+        senderName,
+        isOwner,
+        mentioned,
         capabilityMode,
         replyText,
         sendLiveMessage,
@@ -3261,6 +3355,10 @@ const processBotIncomingMessage = async (input: {
         chatId: input.chatId,
         text,
         attachments,
+        senderId: input.fromUserId,
+        senderName: input.senderName,
+        isOwner,
+        mentioned: input.mentioned,
         capabilityMode,
         replyText: input.replyText,
         sendLiveMessage: input.sendLiveMessage,
@@ -3280,6 +3378,10 @@ const processBotIncomingMessage = async (input: {
         chatId: input.chatId,
         text,
         attachments,
+        senderId: input.fromUserId,
+        senderName: input.senderName,
+        isOwner,
+        mentioned: input.mentioned,
         replyText: input.replyText,
         sendLiveMessage: input.sendLiveMessage,
         updateLiveMessage: input.updateLiveMessage,
@@ -3358,6 +3460,10 @@ const processBotIncomingMessage = async (input: {
       chatId: input.chatId,
       text,
       attachments,
+      senderId: input.fromUserId,
+      senderName: input.senderName,
+      isOwner,
+      mentioned: input.mentioned,
       capabilityMode,
       replyText: input.replyText,
       sendLiveMessage: input.sendLiveMessage,

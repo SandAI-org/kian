@@ -516,6 +516,50 @@ describe("agentService queued delivery", () => {
     await sendPromise;
   });
 
+  it("injects channel source info into LLM prompts for channel-originated turns", async () => {
+    state.getChatSession.mockResolvedValue({
+      id: "session-channel-runtime",
+      module: "main",
+      kind: "channel_runtime",
+      hidden: true,
+    });
+
+    const { agentService } = await import("../../electron/main/services/agentService");
+
+    const sendPromise = agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-channel-runtime",
+      requestId: "req-channel-source",
+      message: "请帮我回复一下",
+      capabilityMode: "chat_only",
+      messageSourceInfo: {
+        kind: "channel_event",
+        provider: "telegram",
+        chatType: "group",
+        senderId: "user_123",
+        senderName: "Alice",
+        isOwner: false,
+        mentioned: true,
+        capabilityMode: "chat_only",
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(state.prompt).toHaveBeenCalled();
+    });
+
+    const promptText = state.prompt.mock.calls[0]?.[0];
+    expect(promptText).toContain("[渠道消息上下文]");
+    expect(promptText).toContain("发送者：Alice");
+    expect(promptText).toContain("发送者 ID：user_123");
+    expect(promptText).toContain("发送者身份：非拥有者");
+    expect(promptText).toContain("消息正文：\n请帮我回复一下");
+
+    state.sessionListener?.({ type: "agent_end" });
+    await sendPromise;
+  });
+
   it("finalizes an active queued turn when the root prompt is aborted", async () => {
     const { agentService } = await import("../../electron/main/services/agentService");
     const streamEvents: Array<{
