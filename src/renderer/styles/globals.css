@@ -2062,7 +2062,16 @@ a:focus-visible,
 }
 
 .chat-markdown--user.markdown-body a {
-  color: #dbeafe;
+  color: #ffffff !important;
+  font-weight: 700;
+  text-decoration-style: solid;
+  text-decoration-color: rgba(255, 255, 255, 0.88);
+  text-decoration-thickness: 2px;
+}
+
+.chat-markdown--user.markdown-body a:hover {
+  color: #ffffff !important;
+  text-decoration-color: rgba(255, 255, 255, 1);
 }
 
 .chat-markdown--user.markdown-body blockquote {
