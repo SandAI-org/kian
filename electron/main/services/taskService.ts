@@ -310,11 +310,23 @@ const getTaskRuntime = (taskId: string): TaskRuntime | undefined =>
   runtimeByTaskId.get(normalizeTaskId(taskId));
 
 const listTaskIds = async (): Promise<string[]> => {
-  await ensureDir(tasksRootDir);
-  const entries = await fs.readdir(tasksRootDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isDirectory() && TASK_ID_PATTERN.test(entry.name))
-    .map((entry) => entry.name);
+  try {
+    await ensureDir(tasksRootDir);
+    const entries = await fs.readdir(tasksRootDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && TASK_ID_PATTERN.test(entry.name))
+      .map((entry) => entry.name);
+  } catch (error) {
+    const errno = error as NodeJS.ErrnoException;
+    if (errno.code === 'ENOENT' || errno.code === 'ENOTDIR') {
+      logger.warn('Task directory is unavailable, skipping task scan', {
+        tasksRootDir,
+        error: errno.message
+      });
+      return [];
+    }
+    throw error;
+  }
 };
 
 const readLogTail = async (
