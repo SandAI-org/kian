@@ -199,7 +199,11 @@ export const api = {
       projectId?: string,
       documentPath?: string,
     ): Promise<boolean> =>
-      unwrap(await window.api.file.open(filePath, projectId, documentPath))
+      unwrap(await window.api.file.open(filePath, projectId, documentPath)),
+    savePng: async (payload: {
+      defaultFileName: string;
+      dataUrl: string;
+    }): Promise<string | null> => unwrap(await window.api.file.savePng(payload))
   },
   clipboard: {
     writeText: async (text: string): Promise<boolean> => window.api.clipboard.writeText(text)

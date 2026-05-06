@@ -48,6 +48,7 @@
     "github-markdown-css": "^5.9.0",
     "highlight.js": "^11.11.1",
     "jmespath": "^0.16.0",
+    "modern-screenshot": "^4.7.0",
     "monaco-editor": "^0.55.1",
     "protobufjs": "^7.5.4",
     "react": "^19.1.1",

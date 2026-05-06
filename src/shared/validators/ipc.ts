@@ -170,6 +170,11 @@ export const fileOpenSchema = z.object({
   documentPath: z.string().min(1).max(240).optional()
 });
 
+export const fileSavePngSchema = z.object({
+  defaultFileName: z.string().trim().min(1).max(255),
+  dataUrl: z.string().startsWith('data:image/png;base64,')
+});
+
 export const filePickForUploadSchema = z.object({}).optional();
 
 export const windowOpenAppPreviewSchema = z.object({

@@ -22,6 +22,7 @@ import {
   docUpdateSchema,
   fileOpenSchema,
   filePickForUploadSchema,
+  fileSavePngSchema,
   fileShowInFinderSchema,
   getAvailableModelsSchema,
   projectCreateSchema,
@@ -88,6 +89,9 @@ const translateDialogText = (
     case 'en-US':
       return ({
         '选择要发送的文件': 'Choose Files to Send',
+        '保存消息图片': 'Save Message Image',
+        '保存': 'Save',
+        'PNG 图片': 'PNG Image',
         '添加': 'Add',
         '支持的文件': 'Supported Files',
         '所有文件': 'All Files',
@@ -95,6 +99,9 @@ const translateDialogText = (
     case 'ko-KR':
       return ({
         '选择要发送的文件': '보낼 파일 선택',
+        '保存消息图片': '메시지 이미지 저장',
+        '保存': '저장',
+        'PNG 图片': 'PNG 이미지',
         '添加': '추가',
         '支持的文件': '지원되는 파일',
         '所有文件': '모든 파일',
@@ -102,6 +109,9 @@ const translateDialogText = (
     case 'ja-JP':
       return ({
         '选择要发送的文件': '送信するファイルを選択',
+        '保存消息图片': 'メッセージ画像を保存',
+        '保存': '保存',
+        'PNG 图片': 'PNG 画像',
         '添加': '追加',
         '支持的文件': '対応ファイル',
         '所有文件': 'すべてのファイル',
@@ -364,6 +374,27 @@ export const registerHandlers = (): void => {
       throw new Error(`系统预览打开失败: ${result}`);
     }
     return true;
+  });
+  handle('file:savePng', fileSavePngSchema, async (input) => {
+    const language = (await settingsService.getGeneralConfig()).language;
+    const result = await dialog.showSaveDialog({
+      title: translateDialogText(language, '保存消息图片'),
+      buttonLabel: translateDialogText(language, '保存'),
+      defaultPath: input.defaultFileName,
+      filters: [
+        {
+          name: translateDialogText(language, 'PNG 图片'),
+          extensions: ['png'],
+        },
+      ],
+    });
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    const base64 = input.dataUrl.replace(/^data:image\/png;base64,/, '');
+    await fs.writeFile(result.filePath, Buffer.from(base64, 'base64'));
+    return result.filePath;
   });
   handle('window:openAppPreview', windowOpenAppPreviewSchema, async (input) =>
     appPreviewWindowService.open(input)

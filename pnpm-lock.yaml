@@ -59,6 +59,9 @@ importers:
       jmespath:
         specifier: ^0.16.0
         version: 0.16.0
+      modern-screenshot:
+        specifier: ^4.7.0
+        version: 4.7.0
       monaco-editor:
         specifier: ^0.55.1
         version: 0.55.1
@@ -3211,6 +3214,9 @@ packages:
   mkdirp@0.5.6:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
     hasBin: true
+
+  modern-screenshot@4.7.0:
+    resolution: {integrity: sha512-9YxN+ddPSMMlhylOv25VHzXrl9u67QRxoh7+SEewGtgUw7t6hHTrjptSDJUSne9oG4Xk/h2cwG15nIt4Hc9ujg==}
 
   monaco-editor@0.55.1:
     resolution: {integrity: sha512-jz4x+TJNFHwHtwuV9vA9rMujcZRb0CEilTEwG2rRSpe/A7Jdkuj8xPKttCgOh+v/lkHy7HsZ64oj+q3xoAFl9A==}
@@ -8374,6 +8380,8 @@ snapshots:
   mkdirp@0.5.6:
     dependencies:
       minimist: 1.2.8
+
+  modern-screenshot@4.7.0: {}
 
   monaco-editor@0.55.1:
     dependencies:

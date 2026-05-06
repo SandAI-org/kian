@@ -1,10 +1,12 @@
 import {
   CaretDownFilled,
   CheckCircleOutlined,
+  CopyOutlined,
   FileOutlined,
   FolderOpenOutlined,
   LoadingOutlined,
   PushpinOutlined,
+  SaveOutlined,
 } from "@ant-design/icons";
 import {
   CHAT_THINKING_LEVEL_VALUES,
@@ -38,6 +40,7 @@ import type {
   ChatScope,
   ChatThinkingLevel,
 } from "@shared/types";
+import type { AppResolvedTheme } from "@shared/theme";
 import {
   buildUserRequestMetadataJson,
   extractUserRequestIdFromMetadataJson,
@@ -56,7 +59,9 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Tag, message } from "antd";
+import { domToPng } from "modern-screenshot";
 import {
+  MouseEvent,
   ChangeEvent,
   isValidElement,
   memo,
@@ -71,6 +76,7 @@ import {
   type RefObject,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import { createPortal } from "react-dom";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import {
@@ -281,6 +287,7 @@ const TEXT_PREVIEW_MAX_CHARS = 6_000;
 const TEXT_PREVIEW_MAX_LINES = 80;
 const LEGACY_CHAT_INPUT_SHORTCUT_TIP_DISMISSED_STORAGE_KEY =
   "kian.chat.input-shortcut-tip.dismissed";
+const MESSAGE_IMAGE_EXPORT_WIDTH = 920;
 type ExtendedMarkdownKind = MarkdownMediaKind | "file" | "attachment";
 
 const isChatThinkingLevel = (value: string): value is ChatThinkingLevel =>
@@ -678,6 +685,41 @@ const readTextPreviewFromUrl = async (
     : preview.text;
 };
 
+const createMessageImageDataUrl = async (
+  sourceElement: HTMLElement,
+  theme: AppResolvedTheme,
+): Promise<string> => {
+  const markdownElement =
+    sourceElement.querySelector<HTMLElement>(".chat-markdown") ?? sourceElement;
+  const clonedMarkdown = markdownElement.cloneNode(true) as HTMLElement;
+  clonedMarkdown.classList.add("message-image-export__markdown");
+
+  const root = document.createElement("div");
+  root.className = `message-image-export message-image-export--${theme}`;
+  root.style.width = `${MESSAGE_IMAGE_EXPORT_WIDTH}px`;
+
+  const card = document.createElement("div");
+  card.className = "message-image-export__card";
+
+  const tag = document.createElement("div");
+  tag.className = "message-image-export__tag";
+  tag.textContent = "https://heykian.com";
+
+  card.append(tag, clonedMarkdown);
+  root.append(card);
+  document.body.append(root);
+
+  try {
+    await document.fonts?.ready;
+    return await domToPng(root, {
+      scale: Math.max(2, window.devicePixelRatio || 1),
+      backgroundColor: theme === "dark" ? "#020817" : "#f8fafc",
+    });
+  } finally {
+    root.remove();
+  }
+};
+
 const FileReferenceCard = ({
   sourcePath,
   projectId,
@@ -948,6 +990,128 @@ const MarkdownMessage = memo(
   },
 );
 MarkdownMessage.displayName = "MarkdownMessage";
+
+const AssistantMessageContextMenu = memo(
+  ({
+    content,
+    projectId,
+    className,
+    resolvedTheme,
+    saveAsImageLabel,
+    saveSuccessLabel,
+    saveFailedLabel,
+    copyMarkdownLabel,
+    copyMarkdownSuccessLabel,
+    copyMarkdownFailedLabel,
+  }: {
+    content: string;
+    projectId?: string;
+    className?: string;
+    resolvedTheme: AppResolvedTheme;
+    saveAsImageLabel: string;
+    saveSuccessLabel: string;
+    saveFailedLabel: string;
+    copyMarkdownLabel: string;
+    copyMarkdownSuccessLabel: string;
+    copyMarkdownFailedLabel: string;
+  }) => {
+    const messageContentRef = useRef<HTMLDivElement | null>(null);
+    const [menuPosition, setMenuPosition] = useState<{
+      x: number;
+      y: number;
+    } | null>(null);
+
+    useEffect(() => {
+      if (!menuPosition) return;
+      const closeMenu = (): void => setMenuPosition(null);
+      window.addEventListener("click", closeMenu);
+      window.addEventListener("blur", closeMenu);
+      window.addEventListener("keydown", closeMenu);
+      return () => {
+        window.removeEventListener("click", closeMenu);
+        window.removeEventListener("blur", closeMenu);
+        window.removeEventListener("keydown", closeMenu);
+      };
+    }, [menuPosition]);
+
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
+      event.preventDefault();
+      setMenuPosition({ x: event.clientX, y: event.clientY });
+    };
+
+    const handleSaveAsImage = async (): Promise<void> => {
+      setMenuPosition(null);
+      const sourceElement = messageContentRef.current;
+      if (!sourceElement) {
+        message.error(saveFailedLabel);
+        return;
+      }
+      try {
+        const dataUrl = await createMessageImageDataUrl(
+          sourceElement,
+          resolvedTheme,
+        );
+        const stamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19);
+        const savedPath = await api.file.savePng({
+          defaultFileName: `kian-message-${stamp}.png`,
+          dataUrl,
+        });
+        if (savedPath) {
+          message.success(saveSuccessLabel);
+        }
+      } catch {
+        message.error(saveFailedLabel);
+      }
+    };
+
+    const handleCopyMarkdown = async (): Promise<void> => {
+      setMenuPosition(null);
+      try {
+        await api.clipboard.writeText(content);
+        message.success(copyMarkdownSuccessLabel);
+      } catch {
+        message.error(copyMarkdownFailedLabel);
+      }
+    };
+
+    return (
+      <div
+        ref={messageContentRef}
+        className={className}
+        onContextMenu={handleContextMenu}
+      >
+        <MarkdownMessage
+          content={content}
+          projectId={projectId}
+          user={false}
+        />
+        {menuPosition
+          ? createPortal(
+              <div
+                className="chat-message-context-menu"
+                style={{ left: menuPosition.x, top: menuPosition.y }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button type="button" onClick={() => void handleCopyMarkdown()}>
+                  <CopyOutlined />
+                  {copyMarkdownLabel}
+                </button>
+                <button type="button" onClick={() => void handleSaveAsImage()}>
+                  <SaveOutlined />
+                  {saveAsImageLabel}
+                </button>
+              </div>,
+              document.body,
+            )
+          : null}
+      </div>
+    );
+  },
+);
+AssistantMessageContextMenu.displayName = "AssistantMessageContextMenu";
 
 /** Renders a single tool call step during streaming. */
 const ToolCallStep = memo(({ info }: { info: ToolCallInfo }) => {
@@ -1435,6 +1599,13 @@ interface ChatTimelineProps {
   channelVisitorLabel: string;
   channelMentionedLabel: string;
   channelBatchedReplyLabel: string;
+  resolvedTheme: AppResolvedTheme;
+  saveAsImageLabel: string;
+  saveImageSuccessLabel: string;
+  saveImageFailedLabel: string;
+  copyMarkdownLabel: string;
+  copyMarkdownSuccessLabel: string;
+  copyMarkdownFailedLabel: string;
 }
 
 const ThinkingIndicator = memo(({ label }: { label: string }) => (
@@ -1469,6 +1640,13 @@ const ChatTimeline = memo(
     channelVisitorLabel,
     channelMentionedLabel,
     channelBatchedReplyLabel,
+    resolvedTheme,
+    saveAsImageLabel,
+    saveImageSuccessLabel,
+    saveImageFailedLabel,
+    copyMarkdownLabel,
+    copyMarkdownSuccessLabel,
+    copyMarkdownFailedLabel,
   }: ChatTimelineProps) => {
     if (timelineBlocks.length === 0 && !showStreamingPanel) {
       return null;
@@ -1528,13 +1706,18 @@ const ChatTimeline = memo(
             }
             return (
               <div key={block.key} className="w-full">
-                <div className="w-full text-slate-800">
-                  <MarkdownMessage
-                    content={block.content}
-                    projectId={projectId}
-                    user={false}
-                  />
-                </div>
+                <AssistantMessageContextMenu
+                  className="w-full text-slate-800"
+                  content={block.content}
+                  projectId={projectId}
+                  resolvedTheme={resolvedTheme}
+                  saveAsImageLabel={saveAsImageLabel}
+                  saveSuccessLabel={saveImageSuccessLabel}
+                  saveFailedLabel={saveImageFailedLabel}
+                  copyMarkdownLabel={copyMarkdownLabel}
+                  copyMarkdownSuccessLabel={copyMarkdownSuccessLabel}
+                  copyMarkdownFailedLabel={copyMarkdownFailedLabel}
+                />
               </div>
             );
           }
@@ -1609,11 +1792,25 @@ const ChatTimeline = memo(
                     }}
                   />
                 ) : (
-                  <MarkdownMessage
-                    content={displayContent}
-                    projectId={projectId}
-                    user={isUser}
-                  />
+                  isUser ? (
+                    <MarkdownMessage
+                      content={displayContent}
+                      projectId={projectId}
+                      user={true}
+                    />
+                  ) : (
+                    <AssistantMessageContextMenu
+                      content={displayContent}
+                      projectId={projectId}
+                      resolvedTheme={resolvedTheme}
+                      saveAsImageLabel={saveAsImageLabel}
+                      saveSuccessLabel={saveImageSuccessLabel}
+                      saveFailedLabel={saveImageFailedLabel}
+                      copyMarkdownLabel={copyMarkdownLabel}
+                      copyMarkdownSuccessLabel={copyMarkdownSuccessLabel}
+                      copyMarkdownFailedLabel={copyMarkdownFailedLabel}
+                    />
+                  )
                 )}
               </div>
             </div>
@@ -1663,7 +1860,7 @@ export const ModuleChatPane = ({
   readOnly = false,
   readOnlyNotice,
 }: ModuleChatPaneProps) => {
-  const { language } = useAppI18n();
+  const { language, resolvedTheme } = useAppI18n();
   const t = useCallback(
     (value: string) => translateUiText(language, value),
     [language],
@@ -3235,6 +3432,13 @@ export const ModuleChatPane = ({
               channelVisitorLabel={t("非拥有者")}
               channelMentionedLabel={t("被提及")}
               channelBatchedReplyLabel={t("批量回复")}
+              resolvedTheme={resolvedTheme}
+              saveAsImageLabel={t("保存为图片")}
+              saveImageSuccessLabel={t("图片已保存")}
+              saveImageFailedLabel={t("保存图片失败")}
+              copyMarkdownLabel={t("复制 Markdown")}
+              copyMarkdownSuccessLabel={t("Markdown 已复制")}
+              copyMarkdownFailedLabel={t("复制 Markdown 失败")}
             />
           </ScrollArea>
         ) : null}

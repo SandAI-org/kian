@@ -291,6 +291,8 @@ const api = {
       projectId?: string,
       documentPath?: string,
     ) => invoke<boolean>("file:open", { filePath, projectId, documentPath }),
+    savePng: (payload: { defaultFileName: string; dataUrl: string }) =>
+      invoke<string | null>("file:savePng", payload),
   },
   clipboard: {
     writeText: (text: string) => {
