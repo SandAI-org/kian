@@ -143,8 +143,8 @@ export const attachAgentLlmRequestDebug = (
   ) =>
     streamSimple(model, context, {
       ...options,
-      onPayload: (payload) => {
-        options?.onPayload?.(payload);
+      onPayload: (payload, model) => {
+        options?.onPayload?.(payload, model);
         debugOnPayload(payload);
       },
     });

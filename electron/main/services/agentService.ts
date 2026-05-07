@@ -1678,7 +1678,7 @@ const createOrResumeSession = async (
     noSkills: true,
     additionalSkillPaths: explicitSkillPaths,
     systemPrompt: fallbackSystemPrompt,
-    appendSystemPrompt: "",
+    appendSystemPrompt: [],
     systemPromptOverride: () => {
       const basePrompt = buildSessionSystemPrompt(fallbackSystemPrompt, {
         contextFiles,
@@ -1734,7 +1734,7 @@ const createOrResumeSession = async (
       agentDir: agentRuntimeDir,
       model,
       authStorage,
-      tools,
+      tools: toolNames,
       customTools,
       thinkingLevel: effectiveThinkingLevel,
       sessionManager,
