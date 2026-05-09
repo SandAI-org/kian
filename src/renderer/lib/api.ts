@@ -206,7 +206,8 @@ export const api = {
     }): Promise<string | null> => unwrap(await window.api.file.savePng(payload))
   },
   clipboard: {
-    writeText: async (text: string): Promise<boolean> => window.api.clipboard.writeText(text)
+    writeText: async (text: string): Promise<boolean> => window.api.clipboard.writeText(text),
+    writePng: async (dataUrl: string): Promise<boolean> => window.api.clipboard.writePng(dataUrl)
   },
   settings: {
     get: async (scope: ChatScope) => unwrap(await window.api.settings.get(scope)),

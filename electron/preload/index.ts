@@ -49,7 +49,7 @@ import type {
   WeixinChatChannelStatus,
   WeixinQrLoginResultDTO,
 } from "@shared/types";
-import { clipboard, contextBridge, ipcRenderer, webUtils } from "electron";
+import { clipboard, contextBridge, ipcRenderer, nativeImage, webUtils } from "electron";
 
 const invoke = <T>(channel: string, payload?: unknown): Promise<Result<T>> =>
   ipcRenderer.invoke(channel, payload ?? {});
@@ -297,6 +297,11 @@ const api = {
   clipboard: {
     writeText: (text: string) => {
       clipboard.writeText(text);
+      return true;
+    },
+    writePng: (dataUrl: string) => {
+      const image = nativeImage.createFromDataURL(dataUrl);
+      clipboard.writeImage(image);
       return true;
     },
   },

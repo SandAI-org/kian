@@ -1000,6 +1000,9 @@ const AssistantMessageContextMenu = memo(
     saveAsImageLabel,
     saveSuccessLabel,
     saveFailedLabel,
+    saveImageToClipboardLabel,
+    saveImageToClipboardSuccessLabel,
+    saveImageToClipboardFailedLabel,
     copyMarkdownLabel,
     copyMarkdownSuccessLabel,
     copyMarkdownFailedLabel,
@@ -1011,6 +1014,9 @@ const AssistantMessageContextMenu = memo(
     saveAsImageLabel: string;
     saveSuccessLabel: string;
     saveFailedLabel: string;
+    saveImageToClipboardLabel: string;
+    saveImageToClipboardSuccessLabel: string;
+    saveImageToClipboardFailedLabel: string;
     copyMarkdownLabel: string;
     copyMarkdownSuccessLabel: string;
     copyMarkdownFailedLabel: string;
@@ -1077,6 +1083,25 @@ const AssistantMessageContextMenu = memo(
       }
     };
 
+    const handleSaveImageToClipboard = async (): Promise<void> => {
+      setMenuPosition(null);
+      const sourceElement = messageContentRef.current;
+      if (!sourceElement) {
+        message.error(saveImageToClipboardFailedLabel);
+        return;
+      }
+      try {
+        const dataUrl = await createMessageImageDataUrl(
+          sourceElement,
+          resolvedTheme,
+        );
+        await api.clipboard.writePng(dataUrl);
+        message.success(saveImageToClipboardSuccessLabel);
+      } catch {
+        message.error(saveImageToClipboardFailedLabel);
+      }
+    };
+
     return (
       <div
         ref={messageContentRef}
@@ -1102,6 +1127,13 @@ const AssistantMessageContextMenu = memo(
                 <button type="button" onClick={() => void handleSaveAsImage()}>
                   <SaveOutlined />
                   {saveAsImageLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveImageToClipboard()}
+                >
+                  <CopyOutlined />
+                  {saveImageToClipboardLabel}
                 </button>
               </div>,
               document.body,
@@ -1603,6 +1635,9 @@ interface ChatTimelineProps {
   saveAsImageLabel: string;
   saveImageSuccessLabel: string;
   saveImageFailedLabel: string;
+  saveImageToClipboardLabel: string;
+  saveImageToClipboardSuccessLabel: string;
+  saveImageToClipboardFailedLabel: string;
   copyMarkdownLabel: string;
   copyMarkdownSuccessLabel: string;
   copyMarkdownFailedLabel: string;
@@ -1644,6 +1679,9 @@ const ChatTimeline = memo(
     saveAsImageLabel,
     saveImageSuccessLabel,
     saveImageFailedLabel,
+    saveImageToClipboardLabel,
+    saveImageToClipboardSuccessLabel,
+    saveImageToClipboardFailedLabel,
     copyMarkdownLabel,
     copyMarkdownSuccessLabel,
     copyMarkdownFailedLabel,
@@ -1714,6 +1752,9 @@ const ChatTimeline = memo(
                   saveAsImageLabel={saveAsImageLabel}
                   saveSuccessLabel={saveImageSuccessLabel}
                   saveFailedLabel={saveImageFailedLabel}
+                  saveImageToClipboardLabel={saveImageToClipboardLabel}
+                  saveImageToClipboardSuccessLabel={saveImageToClipboardSuccessLabel}
+                  saveImageToClipboardFailedLabel={saveImageToClipboardFailedLabel}
                   copyMarkdownLabel={copyMarkdownLabel}
                   copyMarkdownSuccessLabel={copyMarkdownSuccessLabel}
                   copyMarkdownFailedLabel={copyMarkdownFailedLabel}
@@ -1806,6 +1847,9 @@ const ChatTimeline = memo(
                       saveAsImageLabel={saveAsImageLabel}
                       saveSuccessLabel={saveImageSuccessLabel}
                       saveFailedLabel={saveImageFailedLabel}
+                      saveImageToClipboardLabel={saveImageToClipboardLabel}
+                      saveImageToClipboardSuccessLabel={saveImageToClipboardSuccessLabel}
+                      saveImageToClipboardFailedLabel={saveImageToClipboardFailedLabel}
                       copyMarkdownLabel={copyMarkdownLabel}
                       copyMarkdownSuccessLabel={copyMarkdownSuccessLabel}
                       copyMarkdownFailedLabel={copyMarkdownFailedLabel}
@@ -3436,6 +3480,9 @@ export const ModuleChatPane = ({
               saveAsImageLabel={t("保存为图片")}
               saveImageSuccessLabel={t("图片已保存")}
               saveImageFailedLabel={t("保存图片失败")}
+              saveImageToClipboardLabel={t("保存图片到剪贴板")}
+              saveImageToClipboardSuccessLabel={t("图片已保存到剪贴板")}
+              saveImageToClipboardFailedLabel={t("保存图片到剪贴板失败")}
               copyMarkdownLabel={t("复制 Markdown")}
               copyMarkdownSuccessLabel={t("Markdown 已复制")}
               copyMarkdownFailedLabel={t("复制 Markdown 失败")}
