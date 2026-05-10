@@ -30,6 +30,11 @@ type AgentLike = {
     | undefined;
 };
 
+const originalAgentStreamFns = new WeakMap<
+  AgentLike,
+  NonNullable<AgentLike["streamFn"]>
+>();
+
 const DATA_URL_PREFIX = /^data:[^;]+;base64,/i;
 const BASE64_BODY = /^[A-Za-z0-9+/=\s]+$/;
 const MIN_BINARY_STRING_LENGTH = 2_048;
@@ -136,16 +141,20 @@ export const attachAgentLlmRequestDebug = (
   }
 
   const debugOnPayload = createLlmRequestDebugOnPayload(getMetadata);
+  const originalStreamFn =
+    originalAgentStreamFns.get(agent) ?? agent.streamFn ?? streamSimple;
+  originalAgentStreamFns.set(agent, originalStreamFn);
   const wrappedStreamFn = (
     model: Parameters<typeof streamSimple>[0],
     context: Parameters<typeof streamSimple>[1],
     options?: Parameters<typeof streamSimple>[2],
   ) =>
-    streamSimple(model, context, {
+    originalStreamFn(model, context, {
       ...options,
-      onPayload: (payload, model) => {
-        options?.onPayload?.(payload, model);
-        debugOnPayload(payload);
+      onPayload: async (payload, model) => {
+        const nextPayload = await options?.onPayload?.(payload, model);
+        debugOnPayload(nextPayload ?? payload);
+        return nextPayload;
       },
     });
 
