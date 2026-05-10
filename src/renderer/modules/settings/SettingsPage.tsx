@@ -50,7 +50,9 @@ import {
   message,
 } from "antd";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { useOutletContext, useSearchParams } from "react-router-dom";
+import remarkGfm from "remark-gfm";
 
 const SETTINGS_TABS = [
   "general",
@@ -60,6 +62,7 @@ const SETTINGS_TABS = [
   "channels",
   "broadcast",
   "about",
+  "debug",
 ] as const;
 
 const CUSTOM_API_PROVIDER = "custom-api";
@@ -826,13 +829,23 @@ export const SettingsPage = () => {
   const { setHeaderActions } = useOutletContext<MainLayoutOutletContext>();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const availableSettingsTabs = useMemo(
+    () =>
+      (import.meta.env.DEV
+        ? SETTINGS_TABS
+        : SETTINGS_TABS.filter((tab) => tab !== "debug")) as readonly string[],
+    [],
+  );
   const activeSettingsTab = useMemo(() => {
     const tab = searchParams.get("tab");
-    if (tab && SETTINGS_TABS.includes(tab as (typeof SETTINGS_TABS)[number])) {
+    if (
+      tab &&
+      availableSettingsTabs.includes(tab)
+    ) {
       return tab;
     }
     return "general";
-  }, [searchParams]);
+  }, [availableSettingsTabs, searchParams]);
   const channelStatusRefetchInterval =
     activeSettingsTab === "channels" ? 3_000 : false;
 
@@ -969,6 +982,8 @@ export const SettingsPage = () => {
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatusDTO | null>(
     null,
   );
+  const [updateDebugVersion, setUpdateDebugVersion] = useState("9.9.9");
+  const [updateDebugReleaseNotes, setUpdateDebugReleaseNotes] = useState("");
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const autoSaveInFlightRef = useRef(false);
   const aboutAutoCheckTriggeredRef = useRef(false);
@@ -1188,6 +1203,15 @@ export const SettingsPage = () => {
   });
   const installUpdateMutation = useMutation({
     mutationFn: () => api.update.quitAndInstall(),
+  });
+  const debugUpdateMutation = useMutation({
+    mutationFn: (payload: {
+      stage: AppUpdateStatusDTO["stage"];
+      latestVersion?: string;
+      releaseNotes?: string;
+      progressPercent?: number;
+      message?: string;
+    }) => api.update.debugSetStatus(payload),
   });
 
   const sortedProviders = useMemo(() => {
@@ -2232,6 +2256,45 @@ export const SettingsPage = () => {
       message.error(error instanceof Error ? error.message : t("安装更新失败"));
     }
   }, [installUpdateMutation, t]);
+  const updateReleaseNotes =
+    resolvedUpdateStatus?.releaseNotes?.trim() || t("暂无更新说明");
+
+  const handleDebugUpdateStatus = useCallback(
+    async (
+      stage: AppUpdateStatusDTO["stage"],
+      options?: { progressPercent?: number; message?: string },
+    ) => {
+      const releaseNotes =
+        updateDebugReleaseNotes.trim() ||
+        t("## 更新内容\n\n- 这是一个用于本地调试的更新日志。");
+      try {
+        const status = await debugUpdateMutation.mutateAsync({
+          stage,
+          latestVersion: updateDebugVersion.trim() || "9.9.9",
+          releaseNotes:
+            stage === "available" ||
+            stage === "downloading" ||
+            stage === "downloaded"
+              ? releaseNotes
+              : undefined,
+          progressPercent: options?.progressPercent,
+          message: options?.message,
+        });
+        setUpdateStatus(status);
+        message.success(t("升级状态已模拟"));
+      } catch (error) {
+        message.error(
+          error instanceof Error ? error.message : t("模拟升级状态失败"),
+        );
+      }
+    },
+    [
+      debugUpdateMutation,
+      t,
+      updateDebugReleaseNotes,
+      updateDebugVersion,
+    ],
+  );
 
   const handleWaitForWeixinQrLogin = useCallback(async (sessionKey: string) => {
     currentWeixinQrSessionKeyRef.current = sessionKey;
@@ -3971,6 +4034,37 @@ export const SettingsPage = () => {
                       ) : null}
 
                       {canInstallUpdate ? (
+                        <div className="mb-3">
+                          <Typography.Text strong className="!text-sm">
+                            {t("更新日志")}
+                          </Typography.Text>
+                          <ScrollArea className="mt-2 max-h-[320px] rounded border border-[#dbe5f5] bg-slate-50">
+                            <div className="markdown-body chat-markdown chat-markdown--assistant p-4 text-sm">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  a: ({ href, children }) => (
+                                    <a
+                                      href={href}
+                                      onClick={(event) => {
+                                        if (!href) return;
+                                        event.preventDefault();
+                                        void openUrl(href);
+                                      }}
+                                    >
+                                      {children}
+                                    </a>
+                                  ),
+                                }}
+                              >
+                                {updateReleaseNotes}
+                              </ReactMarkdown>
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      ) : null}
+
+                      {canInstallUpdate ? (
                         <div className="flex items-center gap-2">
                           <Button
                             type="primary"
@@ -3979,7 +4073,7 @@ export const SettingsPage = () => {
                             }}
                             loading={installUpdateMutation.isPending}
                           >
-                            {t("安装更新")}
+                            {t("重启升级到新版本")}
                           </Button>
                         </div>
                       ) : null}
@@ -3988,6 +4082,134 @@ export const SettingsPage = () => {
                 </ScrollArea>
               ),
             },
+            ...(import.meta.env.DEV
+              ? [
+                  {
+                    key: "debug",
+                    label: t("Debug"),
+                    children: (
+                      <ScrollArea className="h-full">
+                        <div className="px-5 pb-5">
+                          <Typography.Title
+                            level={4}
+                            className="!text-slate-900"
+                          >
+                            {t("Debug")}
+                          </Typography.Title>
+                          <div className="rounded-xl border border-dashed border-[#b9c8df] bg-[#f8fbff] p-4">
+                            <div className="mb-3">
+                              <Typography.Text strong>
+                                {t("升级调试")}
+                              </Typography.Text>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {t("仅开发环境可见")}
+                              </div>
+                            </div>
+                            <Row gutter={[12, 12]}>
+                              <Col xs={24} md={8}>
+                                <Input
+                                  value={updateDebugVersion}
+                                  onChange={(event) => {
+                                    setUpdateDebugVersion(event.target.value);
+                                  }}
+                                  placeholder={t("模拟版本号")}
+                                />
+                              </Col>
+                              <Col xs={24} md={16}>
+                                <Input.TextArea
+                                  value={updateDebugReleaseNotes}
+                                  onChange={(event) => {
+                                    setUpdateDebugReleaseNotes(
+                                      event.target.value,
+                                    );
+                                  }}
+                                  placeholder={t("更新日志 Markdown")}
+                                  autoSize={{ minRows: 2, maxRows: 5 }}
+                                />
+                              </Col>
+                            </Row>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                size="small"
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("idle");
+                                }}
+                              >
+                                {t("模拟未检查")}
+                              </Button>
+                              <Button
+                                size="small"
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("checking");
+                                }}
+                              >
+                                {t("模拟检查中")}
+                              </Button>
+                              <Button
+                                size="small"
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("available", {
+                                    progressPercent: 0,
+                                  });
+                                }}
+                              >
+                                {t("模拟发现新版本")}
+                              </Button>
+                              <Button
+                                size="small"
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("downloading", {
+                                    progressPercent: 48,
+                                  });
+                                }}
+                              >
+                                {t("模拟下载中")}
+                              </Button>
+                              <Button
+                                size="small"
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("downloaded", {
+                                    progressPercent: 100,
+                                    message: "新版本已下载完成，可以安装",
+                                  });
+                                }}
+                              >
+                                {t("模拟已下载")}
+                              </Button>
+                              <Button
+                                size="small"
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("upToDate");
+                                }}
+                              >
+                                {t("模拟已是最新")}
+                              </Button>
+                              <Button
+                                size="small"
+                                danger
+                                loading={debugUpdateMutation.isPending}
+                                onClick={() => {
+                                  void handleDebugUpdateStatus("failed", {
+                                    message: "检查更新失败",
+                                  });
+                                }}
+                              >
+                                {t("模拟失败")}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </ScrollArea>
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
         <Modal

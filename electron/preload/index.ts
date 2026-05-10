@@ -265,6 +265,13 @@ const api = {
     check: (payload?: { force?: boolean }) =>
       invoke<AppUpdateStatusDTO>("update:check", payload ?? {}),
     quitAndInstall: () => invoke<boolean>("update:quitAndInstall"),
+    debugSetStatus: (payload: {
+      stage: AppUpdateStatusDTO["stage"];
+      latestVersion?: string;
+      releaseNotes?: string;
+      progressPercent?: number;
+      message?: string;
+    }) => invoke<AppUpdateStatusDTO>("update:debugSetStatus", payload),
     subscribeStatus: (handler: (event: AppUpdateStatusDTO) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

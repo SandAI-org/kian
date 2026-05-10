@@ -574,3 +574,20 @@ export const updateCheckSchema = z
   .optional();
 
 export const updateQuitAndInstallSchema = z.object({}).optional();
+
+export const updateDebugStatusSchema = z.object({
+  stage: z.enum([
+    'idle',
+    'checking',
+    'available',
+    'downloading',
+    'verifying',
+    'downloaded',
+    'upToDate',
+    'failed'
+  ]),
+  latestVersion: z.string().trim().min(1).optional(),
+  releaseNotes: z.string().optional(),
+  progressPercent: z.number().min(0).max(100).optional(),
+  message: z.string().optional()
+});

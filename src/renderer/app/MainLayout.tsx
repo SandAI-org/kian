@@ -21,9 +21,12 @@ import {
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AppUpdateStatusDTO, ModuleType } from '@shared/types';
+import { ScrollArea } from '@renderer/components/ScrollArea';
 import { api } from '@renderer/lib/api';
+import { openUrl } from '@renderer/lib/openUrl';
 import { toggleWindowMaximizeFromChrome } from '@renderer/lib/windowChrome';
 import {
   MAIN_AGENT_INPUT_FOCUS_EVENT,
@@ -32,13 +35,14 @@ import {
 import { NEW_CURRENT_AGENT_SESSION_EVENT } from '@renderer/modules/chat/MainAgentPage';
 import { NEW_PROJECT_SESSION_EVENT } from '@renderer/modules/project/ProjectWorkspacePage';
 import kianLogo from '@renderer/assets/kian-logo.png';
-import { Input, Layout, Menu, Tooltip, Typography, message } from 'antd';
+import { Button, Input, Layout, Menu, Modal, Tooltip, Typography, message } from 'antd';
 import { CompactDropdown } from '@renderer/components/CompactDropdown';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
 import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { DEFAULT_SHORTCUT_CONFIG } from '@shared/utils/shortcuts';
 import { resolveStartupDefaultRouteGate } from './startupDefaultRoute';
+import remarkGfm from 'remark-gfm';
 
 const { Sider, Header, Content } = Layout;
 const GUIDE_SEEN_STORAGE_KEY = 'kian.guide.seen.v1';
@@ -78,6 +82,7 @@ export const MainLayout = () => {
   const [titleDraft, setTitleDraft] = useState('');
   const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatusDTO | null>(null);
+  const [updateChangelogModalOpen, setUpdateChangelogModalOpen] = useState(false);
   const isHomePage = location.pathname === '/';
   const isProjectPage = Boolean(projectMatch);
   const isTasksPage = location.pathname.startsWith('/tasks');
@@ -444,6 +449,8 @@ export const MainLayout = () => {
   }, [t]);
 
   const isUpdateReady = updateStatus?.stage === 'downloaded';
+  const updateReleaseNotes =
+    updateStatus?.releaseNotes?.trim() || t('暂无更新说明');
 
   const startTitleEditing = useCallback(() => {
     if (!project?.id || updateProjectMutation.isPending) return;
@@ -535,6 +542,7 @@ export const MainLayout = () => {
   );
 
   return (
+    <>
     <Layout className="h-full min-h-0 !bg-[#f4f7fc]">
       <Sider
         width={76}
@@ -592,17 +600,19 @@ export const MainLayout = () => {
           />
           <div className="mt-auto flex w-full flex-col items-center">
             {isUpdateReady ? (
-              <Tooltip title="重启升级到新版本" placement="right">
+              <Tooltip title={t('重启升级到新版本')} placement="right">
                 <div className="upgrade-ready-badge no-drag">
                   <button
                     type="button"
-                    onClick={handleInstallDownloadedUpdate}
+                    onClick={() => {
+                      setUpdateChangelogModalOpen(true);
+                    }}
                     className="upgrade-ready-badge__button"
-                    aria-label="重启升级到新版本"
+                    aria-label={t('重启升级到新版本')}
                   >
                     <ArrowUpOutlined />
                   </button>
-                  <span className="upgrade-ready-badge__tag">新版本</span>
+                  <span className="upgrade-ready-badge__tag">{t('新版本')}</span>
                 </div>
               </Tooltip>
             ) : null}
@@ -751,6 +761,60 @@ export const MainLayout = () => {
         </Content>
       </Layout>
     </Layout>
+    <Modal
+      title={t('更新日志')}
+      open={updateChangelogModalOpen}
+      onCancel={() => {
+        setUpdateChangelogModalOpen(false);
+      }}
+      footer={[
+        <Button
+          key="cancel"
+          onClick={() => {
+            setUpdateChangelogModalOpen(false);
+          }}
+        >
+          {t('稍后')}
+        </Button>,
+        <Button
+          key="install"
+          type="primary"
+          onClick={handleInstallDownloadedUpdate}
+        >
+          {t('立即重启并升级')}
+        </Button>,
+      ]}
+      width={680}
+    >
+      <div className="mb-3 text-sm text-slate-500">
+        {t('最新版本：')}
+        {updateStatus?.downloadedVersion ?? updateStatus?.latestVersion ?? '-'}
+      </div>
+      <ScrollArea className="max-h-[420px] rounded border border-[#dbe5f5] bg-slate-50">
+        <div className="markdown-body chat-markdown chat-markdown--assistant p-4 text-sm">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  onClick={(event) => {
+                    if (!href) return;
+                    event.preventDefault();
+                    void openUrl(href);
+                  }}
+                >
+                  {children}
+                </a>
+              ),
+            }}
+          >
+            {updateReleaseNotes}
+          </ReactMarkdown>
+        </div>
+      </ScrollArea>
+    </Modal>
+    </>
   );
 };
 

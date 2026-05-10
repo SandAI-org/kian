@@ -313,6 +313,15 @@ jobs:
 
           const distDir = 'dist';
           const appVersion = process.env.APP_VERSION || '';
+          const releaseNotes = fs.readFileSync('release-body.md', 'utf8').trimEnd();
+
+          const yamlBlock = (key, value) => {
+            if (!value) return [`${key}: ''`];
+            return [
+              `${key}: |-`,
+              ...value.split(/\r?\n/u).map((line) => `  ${line}`)
+            ];
+          };
 
           if (!appVersion) {
             console.error('Missing APP_VERSION.');
@@ -378,6 +387,7 @@ jobs:
             ]),
             `path: ${preferredFile.url}`,
             `sha512: ${preferredFile.sha512}`,
+            ...yamlBlock('releaseNotes', releaseNotes),
             `releaseDate: '${new Date().toISOString()}'`
           ];
 
@@ -397,6 +407,15 @@ jobs:
 
           const distDir = 'dist';
           const appVersion = process.env.APP_VERSION || '';
+          const releaseNotes = fs.readFileSync('release-body.md', 'utf8').trimEnd();
+
+          const yamlBlock = (key, value) => {
+            if (!value) return [`${key}: ''`];
+            return [
+              `${key}: |-`,
+              ...value.split(/\r?\n/u).map((line) => `  ${line}`)
+            ];
+          };
 
           if (!appVersion) {
             console.error('Missing APP_VERSION.');
@@ -452,6 +471,7 @@ jobs:
             ]),
             `path: ${preferredFile.url}`,
             `sha512: ${preferredFile.sha512}`,
+            ...yamlBlock('releaseNotes', releaseNotes),
             `releaseDate: '${new Date().toISOString()}'`
           ];
 

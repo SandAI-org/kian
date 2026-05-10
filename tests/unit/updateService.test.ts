@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   appVersion: '1.2.3',
   quit: vi.fn(),
+  hide: vi.fn(),
   listeners: new Map<string, Array<(...args: any[]) => void>>(),
   checkForUpdates: vi.fn<() => Promise<unknown>>(),
   downloadUpdate: vi.fn<() => Promise<unknown>>(),
@@ -22,7 +23,17 @@ vi.mock('electron', () => ({
   app: {
     getVersion: () => state.appVersion,
     getPath: () => '/tmp',
+    isPackaged: false,
     quit: state.quit
+  },
+  BrowserWindow: {
+    getAllWindows: () => [
+      {
+        isDestroyed: () => false,
+        isVisible: () => true,
+        hide: state.hide
+      }
+    ]
   }
 }));
 vi.mock('electron-updater', () => ({
@@ -53,6 +64,7 @@ describe('updateService', () => {
     vi.resetModules();
     vi.useRealTimers();
     state.quit.mockReset();
+    state.hide.mockReset();
     state.listeners.clear();
     state.checkForUpdates.mockReset();
     state.downloadUpdate.mockReset();
@@ -105,6 +117,18 @@ describe('updateService', () => {
     expect(status.progressPercent).toBe(100);
     expect(status.message).toContain('已准备好安装');
     expect(status.downloadedFilePath).toBe('/tmp/Kian-1.2.3.zip');
+  });
+
+  it('uses updater metadata as update release notes', async () => {
+    state.appVersion = '1.2.2';
+    state.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '1.2.3', releaseNotes: '## Changes\n\n- Better updates' }
+    });
+
+    const { updateService } = await import('../../electron/main/services/updateService');
+    const status = await updateService.checkForUpdates({ force: true });
+
+    expect(status.releaseNotes).toBe('## Changes\n\n- Better updates');
   });
 
   it('does not report up to date when updater returns a newer version in updateInfo', async () => {
@@ -190,7 +214,35 @@ describe('updateService', () => {
     const result = await updateService.quitAndInstall();
 
     expect(result).toBe(true);
+    expect(state.hide).toHaveBeenCalledTimes(1);
     expect(state.quitAndInstall).toHaveBeenCalledWith(false, true);
+    expect(state.hide.mock.invocationCallOrder[0]).toBeLessThan(
+      state.quitAndInstall.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('mocks quit and install for debug update status in development', async () => {
+    state.appVersion = '1.2.2';
+
+    const { updateService } = await import('../../electron/main/services/updateService');
+    const status = updateService.debugSetStatus({
+      stage: 'downloaded',
+      currentVersion: '1.2.2',
+      latestVersion: '9.9.9',
+      downloadedVersion: '9.9.9',
+      progressPercent: 100,
+      releaseNotes: 'debug notes'
+    });
+
+    expect(status.stage).toBe('downloaded');
+    expect(status.releaseNotes).toBe('debug notes');
+
+    const result = await updateService.quitAndInstall();
+
+    expect(result).toBe(true);
+    expect(state.hide).toHaveBeenCalledTimes(1);
+    expect(state.quitAndInstall).not.toHaveBeenCalled();
+    expect(updateService.getStatus().message).toBe('已模拟重启并升级');
   });
 
   it('schedules automatic checks on startup and repeats after the interval', async () => {

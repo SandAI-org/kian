@@ -1,5 +1,5 @@
 import type { AppUpdateStatusDTO } from "@shared/types";
-import { app } from "electron";
+import { app, BrowserWindow } from "electron";
 import { autoUpdater } from "electron-updater";
 import { logger } from "./logger";
 import { updateEvents } from "./updateEvents";
@@ -22,6 +22,7 @@ class UpdateService {
   private nextCheckTimer: ReturnType<typeof setTimeout> | null = null;
   private started = false;
   private updaterInitialized = false;
+  private debugInstallMockActive = false;
 
   getStatus(): AppUpdateStatusDTO {
     return { ...this.status };
@@ -82,6 +83,20 @@ class UpdateService {
     }
 
     try {
+      this.hideAppWindows();
+      if (this.debugInstallMockActive && this.isDevelopmentMode()) {
+        this.setStatus({
+          stage: "idle",
+          latestVersion: undefined,
+          downloadedVersion: undefined,
+          downloadedFilePath: undefined,
+          releaseNotes: undefined,
+          progressPercent: undefined,
+          message: "已模拟重启并升级",
+        });
+        this.debugInstallMockActive = false;
+        return true;
+      }
       autoUpdater.quitAndInstall(false, true);
       return true;
     } catch (error) {
@@ -90,6 +105,28 @@ class UpdateService {
         message: error instanceof Error ? error.message : "安装更新失败",
       });
       throw error;
+    }
+  }
+
+  debugSetStatus(status: AppUpdateStatusDTO): AppUpdateStatusDTO {
+    if (!this.isDevelopmentMode()) {
+      throw new Error("升级调试仅开发环境可用");
+    }
+
+    this.debugInstallMockActive = status.stage === "downloaded";
+    this.setStatus(status);
+    return this.getStatus();
+  }
+
+  private isDevelopmentMode(): boolean {
+    return !app.isPackaged || process.env.NODE_ENV === "development";
+  }
+
+  private hideAppWindows(): void {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && window.isVisible()) {
+        window.hide();
+      }
     }
   }
 
@@ -118,6 +155,7 @@ class UpdateService {
       latestVersion: undefined,
       downloadedVersion: undefined,
       downloadedFilePath: undefined,
+      releaseNotes: undefined,
       progressPercent: undefined,
       message: undefined,
       lastCheckedAt: new Date().toISOString(),
@@ -142,6 +180,7 @@ class UpdateService {
         latestVersion: normalizeVersion(info.version),
         downloadedVersion: undefined,
         downloadedFilePath: undefined,
+        releaseNotes: this.getReleaseNotesFromUpdateInfo(info),
         progressPercent: 0,
         message: undefined,
       });
@@ -164,6 +203,9 @@ class UpdateService {
       this.markDownloaded(
         normalizeVersion(info.version),
         info.downloadedFile,
+        {
+          releaseNotes: this.getReleaseNotesFromUpdateInfo(info),
+        },
       );
     });
 
@@ -175,6 +217,7 @@ class UpdateService {
           : undefined,
         downloadedVersion: undefined,
         downloadedFilePath: undefined,
+        releaseNotes: undefined,
         progressPercent: undefined,
         message: undefined,
       });
@@ -189,15 +232,40 @@ class UpdateService {
     });
   }
 
-  private markDownloaded(version: string, downloadedFilePath?: string): void {
+  private markDownloaded(
+    version: string,
+    downloadedFilePath?: string,
+    options?: { releaseNotes?: string },
+  ): void {
     this.setStatus({
       stage: "downloaded",
       latestVersion: version,
       downloadedVersion: version,
       downloadedFilePath,
+      releaseNotes: options?.releaseNotes ?? this.status.releaseNotes,
       progressPercent: 100,
       message: "新版本已下载完成，可以安装",
     });
+  }
+
+  private getReleaseNotesFromUpdateInfo(info: unknown): string | undefined {
+    if (!info || typeof info !== "object") return undefined;
+    const releaseNotes = (info as { releaseNotes?: unknown }).releaseNotes;
+    if (typeof releaseNotes === "string") {
+      return releaseNotes.trim() || undefined;
+    }
+    if (Array.isArray(releaseNotes)) {
+      const notes = releaseNotes
+        .map((item) => {
+          if (!item || typeof item !== "object") return "";
+          const note = (item as { note?: unknown }).note;
+          return typeof note === "string" ? note.trim() : "";
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      return notes || undefined;
+    }
+    return undefined;
   }
 
   private async performCheck(force: boolean): Promise<AppUpdateStatusDTO> {
@@ -210,6 +278,14 @@ class UpdateService {
     const shouldTreatAsNewerVersion = Boolean(
       nextVersion && compareVersions(nextVersion, currentVersion) > 0,
     );
+    const releaseNotes =
+      nextVersion && shouldTreatAsNewerVersion
+        ? this.getReleaseNotesFromUpdateInfo(result?.updateInfo)
+        : undefined;
+
+    if (shouldTreatAsNewerVersion && releaseNotes) {
+      this.setStatus({ releaseNotes });
+    }
 
     if (
       shouldTreatAsNewerVersion &&
@@ -220,6 +296,7 @@ class UpdateService {
         latestVersion: nextVersion ?? undefined,
         downloadedVersion: undefined,
         downloadedFilePath: undefined,
+        releaseNotes,
         progressPercent: 0,
         message: undefined,
       });
@@ -231,6 +308,7 @@ class UpdateService {
         latestVersion: nextVersion ?? currentVersion,
         downloadedVersion: undefined,
         downloadedFilePath: undefined,
+        releaseNotes: undefined,
         progressPercent: undefined,
         message: undefined,
       });

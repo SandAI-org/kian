@@ -182,6 +182,13 @@ export const api = {
     check: async (payload?: { force?: boolean }): Promise<AppUpdateStatusDTO> =>
       unwrap(await window.api.update.check(payload)),
     quitAndInstall: async (): Promise<boolean> => unwrap(await window.api.update.quitAndInstall()),
+    debugSetStatus: async (payload: {
+      stage: AppUpdateStatusDTO["stage"];
+      latestVersion?: string;
+      releaseNotes?: string;
+      progressPercent?: number;
+      message?: string;
+    }): Promise<AppUpdateStatusDTO> => unwrap(await window.api.update.debugSetStatus(payload)),
     subscribeStatus: (handler: (event: AppUpdateStatusDTO) => void) => window.api.update.subscribeStatus(handler)
   },
   file: {

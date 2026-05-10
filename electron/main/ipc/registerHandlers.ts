@@ -45,6 +45,7 @@ import {
   setMcpServerEnabledSchema,
   updateMcpServerSchema,
   updateCheckSchema,
+  updateDebugStatusSchema,
   updateQuitAndInstallSchema,
   saveTelegramChatChannelConfigSchema,
   waitForWeixinQrLoginSchema,
@@ -173,6 +174,31 @@ export const registerHandlers = (): void => {
   handle('update:quitAndInstall', updateQuitAndInstallSchema, async () =>
     updateService.quitAndInstall()
   );
+  handle('update:debugSetStatus', updateDebugStatusSchema, async (input) => {
+    const current = updateService.getStatus();
+    const latestVersion =
+      input.latestVersion ??
+      (input.stage === 'idle' || input.stage === 'upToDate'
+        ? current.currentVersion
+        : '9.9.9');
+    return updateService.debugSetStatus({
+      stage: input.stage,
+      currentVersion: current.currentVersion,
+      latestVersion:
+        input.stage === 'idle' ? undefined : latestVersion,
+      downloadedVersion:
+        input.stage === 'downloaded' ? latestVersion : undefined,
+      releaseNotes: input.releaseNotes,
+      progressPercent:
+        input.progressPercent ??
+        (input.stage === 'downloaded'
+          ? 100
+          : input.stage === 'downloading'
+            ? 48
+            : undefined),
+      message: input.message,
+    });
+  });
 
   handle('project:list', z.object({}).optional(), async () => repositoryService.listProjects());
 

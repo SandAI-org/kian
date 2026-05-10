@@ -415,6 +415,7 @@ export interface AppUpdateStatusDTO {
   latestVersion?: string;
   downloadedVersion?: string;
   downloadedFilePath?: string;
+  releaseNotes?: string;
   progressPercent?: number;
   message?: string;
   lastCheckedAt?: string;
