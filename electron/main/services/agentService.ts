@@ -26,7 +26,6 @@ import type {
   ChatThinkingLevel,
   ClaudeConfigStatus,
   DelegationContext,
-  ModuleType,
 } from "@shared/types";
 import { app } from "electron";
 import { createHash, randomUUID } from "node:crypto";
@@ -874,7 +873,7 @@ const buildChatMessageMetadataJson = (metadata: ChatMessageMetadata): string =>
 
 const buildDelegationMessageContent = (input: {
   delegationId: string;
-  module: ModuleType;
+  module: ChatModuleType;
   task: string;
 }): string =>
   [
@@ -1188,7 +1187,7 @@ export const createDelegationTools = (input: {
       name: "callSubAgent",
       label: "callSubAgent",
       description:
-        "将具体任务异步委派给子智能体。涉及某个 Agent 工作区内的执行、创作、文档整理或应用开发时优先调用该工具；如果没有合适的 Agent，先使用 CreateAgent。",
+        "在用户明确要求委派，或你已说明原因并获得用户同意后，将具体任务异步委派给子智能体。默认应由主 Agent 先使用自身模块和技能处理；如果已获同意但没有合适的 Agent，先使用 CreateAgent。",
       parameters: Type.Object({
         agent: Type.Optional(
           Type.String({ description: "目标 Agent 的 ID 或名称" }),
@@ -1199,8 +1198,8 @@ export const createDelegationTools = (input: {
         task: Type.String({ description: "发给子智能体 的完整任务" }),
         module: Type.Optional(
           Type.Union([
+            Type.Literal("main"),
             Type.Literal("docs"),
-            Type.Literal("creation"),
             Type.Literal("assets"),
             Type.Literal("app"),
           ]),
@@ -1215,11 +1214,11 @@ export const createDelegationTools = (input: {
               : "";
         const task = typeof params.task === "string" ? params.task.trim() : "";
         const module =
-          params.module === "creation" ||
+          params.module === "main" ||
           params.module === "assets" ||
           params.module === "app" ||
           params.module === "docs"
-            ? (params.module as ModuleType)
+            ? (params.module as ChatModuleType)
             : "docs";
         if (!projectQuery) {
           return { text: "callSubAgent failed: agent 不能为空", isError: true };
@@ -1653,7 +1652,7 @@ const createOrResumeSession = async (
     module: moduleName ?? "unknown",
     projectCwd,
     contextSnapshot,
-    moduleKeys: scope.type === "main" ? ["docs"] : undefined,
+    moduleKeys: scope.type === "main" ? ["docs", "assets", "app"] : undefined,
     includeAgentSummary: scope.type !== "main",
     includeSummaryHeading: scope.type !== "main",
   });

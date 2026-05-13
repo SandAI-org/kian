@@ -8,7 +8,9 @@ import { settingsRuntimeService } from "../../electron/main/services/settingsRun
 vi.mock("../../electron/main/services/repositoryService", () => ({
   repositoryService: {
     listProjects: vi.fn(),
+    getProjectById: vi.fn(),
     createProject: vi.fn(),
+    buildAppWorkspace: vi.fn(),
   },
 }));
 
@@ -115,6 +117,59 @@ describe("createAppOperationTools", () => {
       ]);
       expect(result).toEqual({
         text: "已打开 Agent 阿青 (agent-a)，并切换到 文档 模块。",
+      });
+    } finally {
+      dispose();
+    }
+  });
+
+  it("BuildAndRefreshApp defaults to the main agent app in main scope", async () => {
+    const events: AppOperationEvent[] = [];
+    const dispose = appOperationEvents.on((event) => {
+      events.push(event);
+    });
+    mockedRepositoryService.buildAppWorkspace.mockResolvedValue({
+      projectId: "main-agent",
+      appDir: "/Users/lei/KianWorkspaceTest/.kian/main-agent/app",
+      distIndexPath:
+        "/Users/lei/KianWorkspaceTest/.kian/main-agent/app/dist/index.html",
+      builtAt: "2026-05-13T17:02:45.117Z",
+      installedDependencies: false,
+    });
+
+    try {
+      const tool = createAppOperationTools("main-agent", "main").find(
+        (item) => item.name === "BuildAndRefreshApp",
+      );
+
+      expect(tool).toBeDefined();
+
+      const result = await tool!.handler({});
+
+      expect(mockedRepositoryService.listProjects).not.toHaveBeenCalled();
+      expect(mockedRepositoryService.getProjectById).not.toHaveBeenCalled();
+      expect(mockedRepositoryService.buildAppWorkspace).toHaveBeenCalledWith(
+        "main-agent",
+      );
+      expect(events).toEqual([
+        {
+          type: "navigate",
+          projectId: "main-agent",
+          module: "app",
+        },
+        {
+          type: "app_preview_refreshed",
+          projectId: "main-agent",
+        },
+      ]);
+      expect(result).toEqual({
+        text: [
+          '已完成 Agent 主 Agent (main-agent) 的"构建并预览"。',
+          "预览入口：/Users/lei/KianWorkspaceTest/.kian/main-agent/app/dist/index.html",
+          "构建时间：2026-05-13T17:02:45.117Z",
+          "依赖已就绪，直接完成构建。",
+          "已切换到应用模块并刷新预览。",
+        ].join("\n"),
       });
     } finally {
       dispose();

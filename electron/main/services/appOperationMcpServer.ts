@@ -1,8 +1,8 @@
 import { Type } from "@mariozechner/pi-ai";
 import type {
+  ChatModuleType,
   ChatScope,
   DocumentDTO,
-  ModuleType,
   ProjectDTO,
 } from "@shared/types";
 import path from "node:path";
@@ -12,12 +12,15 @@ import { repositoryService } from "./repositoryService";
 import { settingsRuntimeService } from "./settingsRuntimeService";
 import { WORKSPACE_ROOT } from "./workspacePaths";
 
-const MODULE_LABELS: Record<ModuleType, string> = {
+const MODULE_LABELS: Record<ChatModuleType, string> = {
+  main: "聊天",
   docs: "文档",
   creation: "音视频",
   assets: "素材",
   app: "应用",
 };
+const MAIN_AGENT_SCOPE_ID = "main-agent";
+const MAIN_AGENT_NAME = "主 Agent";
 
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -36,6 +39,18 @@ const normalizeDocumentPath = (value: string): string =>
 
 const describeProject = (project: ProjectDTO): string =>
   project.name === project.id ? project.id : `${project.name} (${project.id})`;
+
+const createMainAgentProjectDto = (): ProjectDTO => {
+  const timestamp = new Date(0).toISOString();
+  return {
+    id: MAIN_AGENT_SCOPE_ID,
+    name: MAIN_AGENT_NAME,
+    description: null,
+    cover: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+};
 
 const sortProjectsByUpdatedAtDesc = (projects: ProjectDTO[]): ProjectDTO[] =>
   [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -114,12 +129,21 @@ const resolveProject = async (
   fallbackProjectId: string,
   rawProjectQuery?: string,
 ): Promise<ProjectDTO> => {
-  if (rawProjectQuery && rawProjectQuery.trim()) {
+  const query = rawProjectQuery?.trim();
+  if (
+    (!query && fallbackProjectId.trim() === MAIN_AGENT_SCOPE_ID) ||
+    query === MAIN_AGENT_SCOPE_ID ||
+    query === MAIN_AGENT_NAME
+  ) {
+    return createMainAgentProjectDto();
+  }
+
+  if (query) {
     const projects = await repositoryService.listProjects();
     if (projects.length === 0) {
       throw new Error("当前没有可用 Agent");
     }
-    return resolveMostLikelyProjectMatch(projects, rawProjectQuery).project;
+    return resolveMostLikelyProjectMatch(projects, query).project;
   }
 
   const fallback = await repositoryService.getProjectById(fallbackProjectId);
@@ -202,7 +226,7 @@ const resolveUniqueDocumentMatch = (
 
 const emitNavigate = (input: {
   projectId: string;
-  module?: ModuleType;
+  module?: ChatModuleType;
   documentId?: string;
 }): void => {
   appOperationEvents.emit({
@@ -230,16 +254,16 @@ export const createAppOperationTools = (
       name: "SwitchModule",
       label: "SwitchModule",
       description:
-        "切换当前应用模块。支持 docs(文档)、creation(音视频)、assets(素材)、app(应用)。",
+        "切换当前应用模块。支持 main(聊天)、docs(文档)、assets(素材)、app(应用)。",
       parameters: Type.Object({
         module: Type.Union(
           [
+            Type.Literal("main"),
             Type.Literal("docs"),
-            Type.Literal("creation"),
             Type.Literal("assets"),
             Type.Literal("app"),
           ],
-          { description: "目标模块：docs | creation | assets | app" },
+          { description: "目标模块：main | docs | assets | app" },
         ),
         project_id: Type.Optional(
           Type.String({
@@ -255,7 +279,7 @@ export const createAppOperationTools = (
       }),
       async handler(input) {
         try {
-          const module = input.module as ModuleType;
+          const module = input.module as ChatModuleType;
           const projectId =
             (input.agent_id as string | undefined) ??
             (input.project_id as string | undefined);
@@ -463,8 +487,8 @@ export const createAppOperationTools = (
         module: Type.Optional(
           Type.Union(
             [
+              Type.Literal("main"),
               Type.Literal("docs"),
-              Type.Literal("creation"),
               Type.Literal("assets"),
               Type.Literal("app"),
             ],
@@ -488,7 +512,7 @@ export const createAppOperationTools = (
             (input.agent as string | undefined) ??
             (input.agent_id as string | undefined) ??
             (input.project_id as string | undefined);
-          const module = (input.module as ModuleType | undefined) ?? "docs";
+          const module = (input.module as ChatModuleType | undefined) ?? "docs";
           const project = await resolveProject(currentProjectId, projectQuery);
 
           emitNavigate({ projectId: project.id, module });

@@ -123,9 +123,9 @@ describe("skillService active visibility", () => {
     const installed = await skillService.listInstalledSkills();
 
     const expectedVisibility = new Map([
-      ["html-ppt-creator", { mainAgentVisible: false, projectAgentVisible: true }],
+      ["html-ppt-creator", { mainAgentVisible: true, projectAgentVisible: true }],
       ["docs-manager", { mainAgentVisible: true, projectAgentVisible: true }],
-      ["app-creator", { mainAgentVisible: false, projectAgentVisible: true }],
+      ["app-creator", { mainAgentVisible: true, projectAgentVisible: true }],
       ["video-creator", { mainAgentVisible: false, projectAgentVisible: true }],
       ["self-management", { mainAgentVisible: true, projectAgentVisible: false }],
       ["skill-management", { mainAgentVisible: true, projectAgentVisible: true }],
@@ -204,7 +204,7 @@ describe("skillService active visibility", () => {
 
     const rawAfter = await fs.readFile(metaPath, "utf8");
     const metaAfter = JSON.parse(rawAfter) as Record<string, unknown>;
-    expect(metaAfter.mainAgentVisible).toBe(false);
+    expect(metaAfter.mainAgentVisible).toBe(true);
     expect(metaAfter.projectAgentVisible).toBe(true);
   });
 
@@ -271,7 +271,10 @@ describe("skillService active visibility", () => {
       projectSkills.some((skill) => skill.title === "programer"),
     ).toBe(true);
     expect(mainSkills.some((skill) => skill.title === "html-ppt-creator")).toBe(
-      false,
+      true,
+    );
+    expect(mainSkills.some((skill) => skill.title === "app-creator")).toBe(
+      true,
     );
     expect(
       projectSkills.some((skill) => skill.title === "html-ppt-creator"),
@@ -319,6 +322,9 @@ describe("skillService active visibility", () => {
     );
     expect(
       loadedSkills.skills.some((skill) => skill.name === "html-ppt-creator"),
-    ).toBe(false);
+    ).toBe(true);
+    expect(loadedSkills.skills.some((skill) => skill.name === "app-creator")).toBe(
+      true,
+    );
   });
 });
