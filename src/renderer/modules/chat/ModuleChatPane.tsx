@@ -79,7 +79,9 @@ import {
 import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import {
   formatToolDisplayName,
   normalizeToolDetailText,
@@ -868,8 +870,8 @@ const MarkdownMessage = memo(
         className={`markdown-body chat-markdown ${user ? "chat-markdown--user" : "chat-markdown--assistant"} ${className ?? ""}`}
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex, rehypeHighlight]}
           urlTransform={(url) => url}
           components={{
             pre: ({ children }) => (

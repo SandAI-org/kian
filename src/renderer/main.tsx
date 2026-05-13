@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from "antd";
 import "github-markdown-css/github-markdown.css";
 import "highlight.js/styles/github.css";
+import "katex/dist/katex.min.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";

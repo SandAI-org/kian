@@ -27,7 +27,9 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 const parseSizeFromAlt = (
   alt: string,
@@ -317,8 +319,8 @@ export const MarkdownEditor = ({
             <div className="px-3 py-2">
               {value.trim() ? (
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight]}
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex, rehypeHighlight]}
                   components={{
                     h1: ({ children }) => (
                       <h1 className="mb-3 mt-1 text-2xl font-semibold text-slate-900">
