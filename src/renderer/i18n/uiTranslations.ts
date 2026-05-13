@@ -221,6 +221,7 @@ const EN_US_EXACT: Record<string, string> = {
   "删除对话失败": "Failed to delete chat",
   "发送失败": "Failed to send",
   "打断失败": "Failed to interrupt",
+  "粘贴文件失败": "Failed to paste file",
   "当前环境无法读取文件路径":
     "File paths cannot be read in the current environment",
   "添加文件": "Add file",
@@ -1562,6 +1563,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "未找到 SKILL.md，无法安装该技能":
       "SKILL.md를 찾을 수 없어 스킬을 설치할 수 없습니다",
     "当前环境无法读取文件路径": "현재 환경에서는 파일 경로를 읽을 수 없습니다",
+    "粘贴文件失败": "파일을 붙여넣지 못했습니다",
     "已安装技能": "설치된 스킬",
     "快捷键提示关闭状态保存失败":
       "단축키 안내 닫힘 상태를 저장하지 못했습니다",
@@ -2285,6 +2287,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "SKILL.md が見つからないため、スキルをインストールできません",
     "当前环境无法读取文件路径":
       "現在の環境ではファイルパスを読み取れません",
+    "粘贴文件失败": "ファイルを貼り付けられませんでした",
     "已安装技能": "インストール済みスキル",
     "快捷键提示关闭状态保存失败":
       "ショートカット案内の閉じた状態を保存できませんでした",

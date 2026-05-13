@@ -1,4 +1,5 @@
 import { dialog, ipcMain, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -22,6 +23,7 @@ import {
   docUpdateSchema,
   fileOpenSchema,
   filePickForUploadSchema,
+  fileSavePastedUploadSchema,
   fileSavePngSchema,
   fileShowInFinderSchema,
   getAvailableModelsSchema,
@@ -74,6 +76,7 @@ import { linkOpenService } from '../services/linkOpenService';
 import { resolveLocalMediaPath } from '../services/localMediaPath';
 import { settingsRuntimeService } from '../services/settingsRuntimeService';
 import { weixinChannelService } from '../services/chatChannel/weixinChannelService';
+import { INTERNAL_ROOT } from '../services/workspacePaths';
 
 const UPLOAD_DIALOG_EXTENSIONS = [
   'pdf', 'docx', 'csv', 'xlsx',
@@ -82,6 +85,36 @@ const UPLOAD_DIALOG_EXTENSIONS = [
   'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus',
   'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', 'flv', 'wmv', 'm3u8'
 ];
+const PASTED_UPLOADS_DIR = path.join(INTERNAL_ROOT, 'pasted-uploads');
+const MIME_EXTENSION_MAP: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/bmp': '.bmp',
+  'image/svg+xml': '.svg',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'text/plain': '.txt',
+  'text/csv': '.csv',
+  'application/json': '.json',
+  'application/pdf': '.pdf',
+};
+
+const sanitizePastedUploadFileName = (name: string, mimeType?: string): string => {
+  const baseName = path.basename(name.trim()).replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_');
+  const fallbackExtension = mimeType ? MIME_EXTENSION_MAP[mimeType.toLowerCase()] : undefined;
+  const normalized = baseName || `pasted-file${fallbackExtension ?? ''}`;
+  const withExtension = path.extname(normalized) || !fallbackExtension
+    ? normalized
+    : `${normalized}${fallbackExtension}`;
+  if (withExtension.length <= 160) {
+    return withExtension;
+  }
+  const extension = path.extname(withExtension);
+  const nameOnly = extension ? withExtension.slice(0, -extension.length) : withExtension;
+  return `${nameOnly.slice(0, 160 - extension.length)}${extension}`;
+};
 const translateDialogText = (
   language: import('@shared/i18n').AppLanguage,
   value: string,
@@ -385,6 +418,19 @@ export const registerHandlers = (): void => {
       });
     }
     return files;
+  });
+  handle('file:savePastedUpload', fileSavePastedUploadSchema, async (input) => {
+    await fs.mkdir(PASTED_UPLOADS_DIR, { recursive: true });
+    const safeName = sanitizePastedUploadFileName(input.name, input.mimeType);
+    const targetPath = path.join(PASTED_UPLOADS_DIR, `${Date.now()}-${randomUUID()}-${safeName}`);
+    const buffer = Buffer.from(input.dataBase64, 'base64');
+    await fs.writeFile(targetPath, buffer);
+    return {
+      name: safeName,
+      sourcePath: targetPath,
+      mimeType: input.mimeType,
+      size: buffer.byteLength
+    };
   });
   handle('file:showInFinder', fileShowInFinderSchema, async (input) => {
     const targetPath = resolveFileTargetPath(input);

@@ -24,6 +24,7 @@ import type {
   ChatThinkingLevel,
   ChatStreamEvent,
   ChatUploadFilePayload,
+  SavePastedUploadFilePayload,
   CronJobDTO,
   DiscordChatChannelStatus,
   InstalledSkillDTO,
@@ -195,6 +196,10 @@ export const api = {
     getPathForFile: (file: File): string => window.api.file.getPathForFile(file),
     pickForUpload: async (): Promise<ChatUploadFilePayload[]> =>
       unwrap(await window.api.file.pickForUpload()),
+    savePastedUpload: async (
+      payload: SavePastedUploadFilePayload,
+    ): Promise<ChatUploadFilePayload> =>
+      unwrap(await window.api.file.savePastedUpload(payload)),
     showInFinder: async (
       filePath: string,
       projectId?: string,

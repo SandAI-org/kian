@@ -11,7 +11,13 @@ import {
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import type { ChatThinkingLevel } from "@shared/types";
 import { Button, Input, Tooltip } from "antd";
-import type { ChangeEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  KeyboardEvent,
+  ReactNode,
+  RefObject,
+} from "react";
 
 export interface LocalChatFile {
   key: string;
@@ -65,6 +71,7 @@ interface ChatComposerProps {
   onCompositionStart: () => void;
   onCompositionEnd: (value: string) => void;
   onInputKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onInputPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   placeholder: string;
   fileInputRef?: RefObject<HTMLInputElement | null>;
   onSelectFiles?: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -109,6 +116,7 @@ export const ChatComposer = ({
   onCompositionStart,
   onCompositionEnd,
   onInputKeyDown,
+  onInputPaste,
   placeholder,
   fileInputRef,
   onSelectFiles,
@@ -258,6 +266,7 @@ export const ChatComposer = ({
               onCompositionEnd(event.currentTarget.value);
             }}
             onKeyDown={onInputKeyDown}
+            onPaste={onInputPaste}
             className="!border-0 !bg-transparent !px-0 !py-0 !shadow-none"
             placeholder={placeholder}
           />

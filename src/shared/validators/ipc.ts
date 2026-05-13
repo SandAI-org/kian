@@ -177,6 +177,12 @@ export const fileSavePngSchema = z.object({
 
 export const filePickForUploadSchema = z.object({}).optional();
 
+export const fileSavePastedUploadSchema = z.object({
+  name: z.string().min(1).max(255),
+  mimeType: z.string().optional(),
+  dataBase64: z.string().min(1)
+});
+
 export const windowOpenAppPreviewSchema = z.object({
   projectId: z.string().min(1),
   distIndexPath: z.string().min(1),

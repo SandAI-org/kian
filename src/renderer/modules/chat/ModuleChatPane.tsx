@@ -63,6 +63,7 @@ import { domToPng } from "modern-screenshot";
 import {
   MouseEvent,
   ChangeEvent,
+  ClipboardEvent,
   isValidElement,
   memo,
   useCallback,
@@ -381,6 +382,21 @@ const detectMediaKind = (
 
 const isImageFile = (fileName: string, mimeType?: string): boolean =>
   detectMediaKind(fileName, mimeType) === "image";
+
+const readFileAsBase64 = async (file: File): Promise<string> => {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read file"));
+    });
+    reader.readAsDataURL(file);
+  });
+  const commaIndex = dataUrl.indexOf(",");
+  return commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+};
 
 const buildExtendedMarkdown = (
   kind: ExtendedMarkdownKind,
@@ -2875,6 +2891,33 @@ export const ModuleChatPane = ({
   // Send handler
   // ---------------------------------------------------------------------------
 
+  const appendPendingFiles = useCallback((files: LocalChatFile[]): void => {
+    if (files.length === 0) {
+      return;
+    }
+
+    setPendingFiles((prev) => {
+      const byKey = new Map(prev.map((item) => [item.key, item]));
+      for (const file of files) {
+        const existing = byKey.get(file.key);
+        if (existing) {
+          if (file.previewUrl) {
+            URL.revokeObjectURL(file.previewUrl);
+          }
+          continue;
+        }
+        byKey.set(file.key, file);
+      }
+      const merged = [...byKey.values()];
+      if (merged.length <= 20) {
+        return merged;
+      }
+      const overflow = merged.slice(20);
+      revokePreviewUrls(overflow);
+      return merged.slice(0, 20);
+    });
+  }, []);
+
   const handleSelectFiles = (event: ChangeEvent<HTMLInputElement>): void => {
     const selected = Array.from(event.target.files ?? []);
     if (selected.length === 0) {
@@ -2903,31 +2946,63 @@ export const ModuleChatPane = ({
       });
     }
 
-    if (supportedFiles.length > 0) {
-      setPendingFiles((prev) => {
-        const byKey = new Map(prev.map((item) => [item.key, item]));
-        for (const file of supportedFiles) {
-          const existing = byKey.get(file.key);
-          if (existing) {
-            if (file.previewUrl) {
-              URL.revokeObjectURL(file.previewUrl);
-            }
-            continue;
-          }
-          byKey.set(file.key, file);
-        }
-        const merged = [...byKey.values()];
-        if (merged.length <= 20) {
-          return merged;
-        }
-        const overflow = merged.slice(20);
-        revokePreviewUrls(overflow);
-        return merged.slice(0, 20);
-      });
-    }
+    appendPendingFiles(supportedFiles);
 
     // Allow picking the same file again later.
     event.target.value = "";
+  };
+
+  const handlePasteFiles = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const clipboardFiles = Array.from(event.clipboardData.files);
+    const itemFiles = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    const selected = clipboardFiles.length > 0 ? clipboardFiles : itemFiles;
+    if (selected.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    void (async () => {
+      const supportedFiles: LocalChatFile[] = [];
+      for (const rawFile of selected) {
+        const legacyPath = (rawFile as File & { path?: string }).path;
+        let sourcePath = api.file.getPathForFile(rawFile) || legacyPath;
+        let name = rawFile.name || "pasted-file";
+        let size = rawFile.size;
+
+        if (!sourcePath) {
+          try {
+            const saved = await api.file.savePastedUpload({
+              name,
+              mimeType: rawFile.type || undefined,
+              dataBase64: await readFileAsBase64(rawFile),
+            });
+            sourcePath = saved.sourcePath;
+            name = saved.name;
+            size = saved.size ?? rawFile.size;
+          } catch {
+            message.error(t("粘贴文件失败"));
+            continue;
+          }
+        }
+
+        supportedFiles.push({
+          key: `${sourcePath}:${rawFile.lastModified}:${size}`,
+          name,
+          sourcePath,
+          size,
+          mimeType: rawFile.type || undefined,
+          extension: getFileExtension(name),
+          previewUrl: isImageFile(name, rawFile.type || undefined)
+            ? URL.createObjectURL(rawFile)
+            : undefined,
+        });
+      }
+
+      appendPendingFiles(supportedFiles);
+    })();
   };
 
   const handleRemovePendingFile = (key: string): void => {
@@ -3291,6 +3366,7 @@ export const ModuleChatPane = ({
           insertNewlineAtCursor(event.currentTarget);
         }
       }}
+      onInputPaste={handlePasteFiles}
       placeholder={
         canInterrupt
           ? t("继续发送消息修正我的行为...")

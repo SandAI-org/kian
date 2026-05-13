@@ -21,6 +21,7 @@ import type {
   ChatSessionDTO,
   ChatStreamEvent,
   ChatUploadFilePayload,
+  SavePastedUploadFilePayload,
   ClaudeConfigStatus,
   CronJobDTO,
   CreationBoardDTO,
@@ -288,6 +289,8 @@ const api = {
   file: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
     pickForUpload: () => invoke<ChatUploadFilePayload[]>("file:pickForUpload"),
+    savePastedUpload: (payload: SavePastedUploadFilePayload) =>
+      invoke<ChatUploadFilePayload>("file:savePastedUpload", payload),
     showInFinder: (
       filePath: string,
       projectId?: string,

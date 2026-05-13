@@ -330,6 +330,12 @@ export interface ChatUploadFilePayload {
   size?: number;
 }
 
+export interface SavePastedUploadFilePayload {
+  name: string;
+  mimeType?: string;
+  dataBase64: string;
+}
+
 export interface ChatSendResponse {
   assistantMessage: string;
   toolActions: string[];
