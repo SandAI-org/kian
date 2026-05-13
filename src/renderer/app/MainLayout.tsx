@@ -11,19 +11,20 @@ import {
   CheckSquareOutlined,
   CompassFilled,
   CompassOutlined,
+  CrownFilled,
+  CrownOutlined,
   DownOutlined,
   InfoCircleOutlined,
   RobotOutlined,
   RobotFilled,
   SettingFilled,
   SettingOutlined,
-  StarFilled,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AppUpdateStatusDTO, ModuleType } from '@shared/types';
+import type { AppUpdateStatusDTO, ChatModuleType } from '@shared/types';
 import { ScrollArea } from '@renderer/components/ScrollArea';
 import { api } from '@renderer/lib/api';
 import { openUrl } from '@renderer/lib/openUrl';
@@ -46,18 +47,20 @@ import remarkGfm from 'remark-gfm';
 
 const { Sider, Header, Content } = Layout;
 const GUIDE_SEEN_STORAGE_KEY = 'kian.guide.seen.v1';
-const PROJECT_MODULE_ITEMS: Array<{ key: ModuleType; label: string }> = [
+type ProjectModuleKey = Extract<ChatModuleType, 'main' | 'docs' | 'assets' | 'app'>;
+
+const PROJECT_MODULE_ITEMS: Array<{ key: ProjectModuleKey; label: string }> = [
+  { key: 'main', label: '聊天' },
   { key: 'docs', label: '文档' },
-  { key: 'creation', label: '音视频创作' },
   { key: 'assets', label: '素材' },
   { key: 'app', label: '应用' }
 ];
 
-const resolveProjectModule = (value: string | null): ModuleType => {
-  if (value === 'creation' || value === 'assets' || value === 'docs' || value === 'app') {
+const resolveProjectModule = (value: string | null): ProjectModuleKey => {
+  if (value === 'main' || value === 'assets' || value === 'docs' || value === 'app') {
     return value;
   }
-  return 'docs';
+  return 'main';
 };
 
 export const shouldKeepHeaderActions = (pathname: string): boolean =>
@@ -197,6 +200,9 @@ export const MainLayout = () => {
           params.set('stamp', String(Date.now()));
 
           if (event.scope.type === 'main') {
+            if (event.module === 'docs' || event.module === 'assets' || event.module === 'app') {
+              params.set('module', event.module);
+            }
             navigate(
               {
                 pathname: '/main-agent',
@@ -231,6 +237,16 @@ export const MainLayout = () => {
         }
 
         const search = searchParams.toString();
+        if (event.projectId === 'main-agent') {
+          navigate(
+            {
+              pathname: '/main-agent',
+              search: search ? `?${search}` : ''
+            },
+            { replace: true }
+          );
+          return;
+        }
         navigate(
           {
             pathname: `/agent/${event.projectId}`,
@@ -512,7 +528,7 @@ export const MainLayout = () => {
   ]);
 
   const switchProjectModule = useCallback(
-    (module: ModuleType) => {
+    (module: ProjectModuleKey) => {
       if (!isProjectPage) return;
       const searchParams = new URLSearchParams(location.search);
       searchParams.set('module', module);
@@ -565,7 +581,11 @@ export const MainLayout = () => {
             items={[
               {
                 key: '/main-agent',
-                icon: <StarFilled style={{ color: isMainAgentEntrySelected ? '#d4a017' : '#b8c4da' }} />,
+                icon: isMainAgentEntrySelected ? (
+                  <CrownFilled style={{ color: '#d4a017' }} />
+                ) : (
+                  <CrownOutlined style={{ color: '#b8c4da' }} />
+                ),
                 label: ''
               },
               {
@@ -733,7 +753,7 @@ export const MainLayout = () => {
                             : 'text-slate-600 hover:bg-[#eef3fc] hover:text-slate-900'
                         }`}
                       >
-                        {item.label}
+                        {t(item.label)}
                       </button>
                     );
                   })}

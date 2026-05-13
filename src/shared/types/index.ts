@@ -398,7 +398,7 @@ export type AppOperationEvent =
   | {
       type: 'navigate';
       projectId: string;
-      module?: ModuleType;
+      module?: ChatModuleType;
       documentId?: string;
     }
   | {

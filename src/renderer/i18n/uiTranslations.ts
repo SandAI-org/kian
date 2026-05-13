@@ -14,7 +14,6 @@ const EN_US_EXACT: Record<string, string> = {
   "定时任务": "Scheduled Tasks",
   "技能": "Skills",
   "文档": "Docs",
-  "音视频创作": "Media Creation",
   "素材": "Assets",
   "应用": "App",
   "主 Agent": "Main Agent",
@@ -393,7 +392,6 @@ const KO_KR_EXACT: Record<string, string> = {
   "定时任务": "예약 작업",
   "技能": "스킬",
   "文档": "문서",
-  "音视频创作": "오디오/비디오 제작",
   "素材": "소재",
   "应用": "앱",
   "主 Agent": "메인 에이전트",
@@ -596,7 +594,6 @@ const JA_JP_EXACT: Record<string, string> = {
   "定时任务": "定期タスク",
   "技能": "スキル",
   "文档": "ドキュメント",
-  "音视频创作": "音声・動画制作",
   "素材": "アセット",
   "应用": "アプリ",
   "主 Agent": "メインエージェント",
@@ -801,10 +798,10 @@ const EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
 const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   "zh-CN": {},
   "en-US": {
-    "# 新文档\n\n在这里记录你的音视频创作笔记。\n":
-      "# New Document\n\nWrite your audio and video creation notes here.\n",
-    "# 新文档\n\n在这里记录你的音视频创作笔记。":
-      "# New Document\n\nWrite your audio and video creation notes here.",
+    "# 新文档\n\n在这里记录你的想法和资料。\n":
+      "# New Document\n\nCapture your ideas and materials here.\n",
+    "# 新文档\n\n在这里记录你的想法和资料。":
+      "# New Document\n\nCapture your ideas and materials here.",
     "Agent 名称保存失败": "Failed to save agent name",
     "AI 生成": "AI Generated",
     "Angular 应用": "Angular App",
@@ -1356,10 +1353,10 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "한국어": "Korean",
   },
   "ko-KR": {
-    "# 新文档\n\n在这里记录你的音视频创作笔记。\n":
-      "# 새 문서\n\n여기에 오디오/비디오 제작 노트를 기록하세요.\n",
-    "# 新文档\n\n在这里记录你的音视频创作笔记。":
-      "# 새 문서\n\n여기에 오디오/비디오 제작 노트를 기록하세요.",
+    "# 新文档\n\n在这里记录你的想法和资料。\n":
+      "# 새 문서\n\n여기에 아이디어와 자료를 기록하세요.\n",
+    "# 新文档\n\n在这里记录你的想法和资料。":
+      "# 새 문서\n\n여기에 아이디어와 자료를 기록하세요.",
     "Agent 名称保存失败": "에이전트 이름 저장 실패",
     "Agent 已删除": "에이전트를 삭제했습니다",
     "AI 生成": "AI 생성",
@@ -2080,10 +2077,10 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "Google Lyria 2 音乐生成。": "Google Lyria 2 음악 생성.",
   },
   "ja-JP": {
-    "# 新文档\n\n在这里记录你的音视频创作笔记。\n":
-      "# 新しいドキュメント\n\nここに音声・動画制作のメモを記録します。\n",
-    "# 新文档\n\n在这里记录你的音视频创作笔记。":
-      "# 新しいドキュメント\n\nここに音声・動画制作のメモを記録します。",
+    "# 新文档\n\n在这里记录你的想法和资料。\n":
+      "# 新しいドキュメント\n\nここにアイデアと資料を記録します。\n",
+    "# 新文档\n\n在这里记录你的想法和资料。":
+      "# 新しいドキュメント\n\nここにアイデアと資料を記録します。",
     "Agent 名称保存失败": "エージェント名の保存に失敗しました",
     "Agent 已删除": "エージェントを削除しました",
     "AI 生成": "AI生成",

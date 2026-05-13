@@ -670,7 +670,7 @@ export const DocsModule = ({
         title: targetPath,
         content: translateUiText(
           language,
-          "# 新文档\n\n在这里记录你的音视频创作笔记。\n",
+          "# 新文档\n\n在这里记录你的想法和资料。\n",
         ),
       });
       const createdPath = stripDocsPrefix(created.id);

@@ -1,28 +1,30 @@
 import { SplitPane } from "@renderer/components/SplitPane";
 import { AppModule } from "@renderer/modules/app/AppModule";
 import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
+import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
 import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
-import { CreationModule } from "@renderer/modules/creation/CreationModule";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import { api } from "@renderer/lib/api";
 import { CHAT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
-import type { ChatScope, ModuleType } from "@shared/types";
+import type { ChatModuleType, ChatScope, ModuleType } from "@shared/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 
 export const NEW_PROJECT_SESSION_EVENT = "project:new-session";
 
-const resolveProjectModule = (value: string | null): ModuleType => {
+type ProjectModuleKey = Extract<ChatModuleType, "main" | "docs" | "assets" | "app">;
+
+const resolveProjectModule = (value: string | null): ProjectModuleKey => {
   if (
-    value === "creation" ||
+    value === "main" ||
     value === "assets" ||
     value === "docs" ||
     value === "app"
   ) {
     return value;
   }
-  return "docs";
+  return "main";
 };
 
 export const ProjectWorkspacePage = () => {
@@ -167,14 +169,6 @@ export const ProjectWorkspacePage = () => {
           />
         </div>
         <div
-          className={activeModule === "creation" ? "h-full min-h-0" : "hidden"}
-        >
-          <CreationModule
-            projectId={projectId}
-            onContextChange={(ctx) => updateContext("creation", ctx)}
-          />
-        </div>
-        <div
           className={activeModule === "assets" ? "h-full min-h-0" : "hidden"}
         >
           <AssetsModule
@@ -204,20 +198,34 @@ export const ProjectWorkspacePage = () => {
 
   return (
     <div className="h-full min-h-0 px-5 pb-5">
-      <SplitPane
-        left={left}
-        right={
-          <ModuleChatPane
-            projectId={projectId}
-            scope={chatScope}
-            module={activeModule}
-            chatVariant="project"
-            contextSnapshot={contexts}
-            sessionId={currentSessionId}
-            onSessionCreated={handleSessionCreated}
-          />
-        }
-      />
+      {activeModule === "main" ? (
+        <AgentChatWorkspace
+          projectId={projectId}
+          scope={chatScope}
+          module="main"
+          chatVariant="project"
+          currentSessionId={currentSessionId}
+          onSelectSession={handleSelectSession}
+          onNewSession={handleNewSession}
+          onSessionCreated={handleSessionCreated}
+          contextSnapshot={contexts}
+        />
+      ) : (
+        <SplitPane
+          left={left}
+          right={
+            <ModuleChatPane
+              projectId={projectId}
+              scope={chatScope}
+              module={activeModule}
+              chatVariant="project"
+              contextSnapshot={contexts}
+              sessionId={currentSessionId}
+              onSessionCreated={handleSessionCreated}
+            />
+          }
+        />
+      )}
     </div>
   );
 };

@@ -195,6 +195,9 @@ const getProjectDir = (projectId: string): string =>
 const getMainAgentRootDir = (): string => path.join(INTERNAL_ROOT, "main-agent");
 const getMainAgentDocsDir = (): string =>
   path.join(getMainAgentRootDir(), "docs");
+const getMainAgentAppDir = (): string => path.join(getMainAgentRootDir(), "app");
+const getMainAgentAssetsDir = (): string =>
+  path.join(getMainAgentRootDir(), "assets");
 const getProjectMetaPath = (projectId: string): string =>
   path.join(getProjectDir(projectId), "project.json");
 
@@ -205,7 +208,9 @@ const getDocsDir = (projectId: string): string =>
 
 const APP_DIR_NAME = "app";
 const getAppDir = (projectId: string): string =>
-  path.join(getProjectDir(projectId), APP_DIR_NAME);
+  projectId.trim() === MAIN_AGENT_SCOPE_ID
+    ? getMainAgentAppDir()
+    : path.join(getProjectDir(projectId), APP_DIR_NAME);
 const getAppPackageJsonPath = (projectId: string): string =>
   path.join(getAppDir(projectId), "package.json");
 const getAppDistIndexPath = (projectId: string): string =>
@@ -219,7 +224,9 @@ const getCreationBoardPath = (projectId: string): string =>
   path.join(getCreationDir(projectId), "board.json");
 
 const getAssetsDir = (projectId: string): string =>
-  path.join(getProjectDir(projectId), "assets");
+  projectId.trim() === MAIN_AGENT_SCOPE_ID
+    ? getMainAgentAssetsDir()
+    : path.join(getProjectDir(projectId), "assets");
 const ASSETS_GENERATED_DIR_NAME = "generated";
 const ASSETS_USER_FILES_DIR_NAME = "user_files";
 const ASSETS_META_FILE_NAME = "meta.json";
@@ -1913,6 +1920,24 @@ const readProjectMeta = async (projectId: string): Promise<ProjectMetaFile> => {
 };
 
 const ensureProjectStructure = async (projectId: string): Promise<void> => {
+  if (projectId.trim() === MAIN_AGENT_SCOPE_ID) {
+    await ensureMainAgentStructure();
+    await ensureDir(getAppDir(projectId));
+    await ensureDir(getAssetsDir(projectId));
+    await ensureDir(getGeneratedAssetsDir(projectId));
+    await ensureDir(getUserFilesDir(projectId));
+
+    if (!(await pathExists(getAssetsMetaPath(projectId)))) {
+      await writeJson<AssetMetaMap>(getAssetsMetaPath(projectId), {});
+    }
+
+    if (!(await pathExists(getAssetsLegacyIndexPath(projectId)))) {
+      await writeJson<AssetDTO[]>(getAssetsLegacyIndexPath(projectId), []);
+    }
+
+    return;
+  }
+
   await ensureDir(getProjectDir(projectId));
   await ensureDir(getDocsDir(projectId));
   await ensureDir(getAppDir(projectId));

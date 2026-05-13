@@ -1,7 +1,9 @@
-import { MenuUnfoldOutlined } from "@ant-design/icons";
 import { SplitPane } from "@renderer/components/SplitPane";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
+import { AppModule } from "@renderer/modules/app/AppModule";
+import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
+import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import type { ChatScope, ChatSessionKind, ModuleType } from "@shared/types";
 import { useCallback, useEffect, useState } from "react";
@@ -10,20 +12,20 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@renderer/lib/api";
 import { MAIN_AGENT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
 import { toggleWindowMaximizeFromChrome } from "@renderer/lib/windowChrome";
-import { ChatSessionList } from "@renderer/modules/chat/ChatSessionList";
 import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
-import { Button } from "antd";
 import { useSearchParams } from "react-router-dom";
 
 const MAIN_AGENT_SCOPE_ID = "main-agent";
 const MAIN_SCOPE: ChatScope = { type: "main" };
 const MERGED_SESSION_KINDS: ChatSessionKind[] = ["normal", "digital_avatar"];
 
-type AgentMode = "chat" | "docs";
+type AgentMode = "chat" | "docs" | "assets" | "app";
 
 const MODES: { key: AgentMode; label: string }[] = [
   { key: "chat", label: "聊天" },
   { key: "docs", label: "文档" },
+  { key: "assets", label: "素材" },
+  { key: "app", label: "应用" },
 ];
 
 export const NEW_CURRENT_AGENT_SESSION_EVENT = "main-agent:new-session";
@@ -36,11 +38,11 @@ export const MainAgentPage = () => {
   );
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
+  const requestedModule = searchParams.get("module");
   const [mode, setMode] = useState<AgentMode>("chat");
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(
     undefined,
   );
-  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
   const [contexts, setContexts] = useState<Record<ModuleType, unknown>>({
     docs: {},
     creation: {},
@@ -58,6 +60,18 @@ export const MainAgentPage = () => {
   const handleDocsContextChange = useCallback(
     (context: unknown) => {
       updateContext("docs", context);
+    },
+    [updateContext],
+  );
+  const handleAssetsContextChange = useCallback(
+    (context: unknown) => {
+      updateContext("assets", context);
+    },
+    [updateContext],
+  );
+  const handleAppContextChange = useCallback(
+    (context: unknown) => {
+      updateContext("app", context);
     },
     [updateContext],
   );
@@ -127,6 +141,16 @@ export const MainAgentPage = () => {
     setSearchParams,
   ]);
 
+  useEffect(() => {
+    if (
+      requestedModule === "docs" ||
+      requestedModule === "assets" ||
+      requestedModule === "app"
+    ) {
+      setMode(requestedModule);
+    }
+  }, [requestedModule]);
+
   return (
     <div className="flex h-full min-h-0 flex-col px-5 pt-3 pb-5">
       {/* Header with centered switch tab — matching project module switcher style */}
@@ -165,78 +189,65 @@ export const MainAgentPage = () => {
               : "pointer-events-none -translate-x-4 opacity-0"
           }`}
         >
-          <div className="flex h-full gap-0.5">
-            <div
-              className={`shrink-0 transition-[width] duration-200 ${chatSidebarCollapsed ? "w-10" : "w-64"}`}
-            >
-              {chatSidebarCollapsed ? (
-                <div className="flex items-center justify-center">
-                  <Button
-                    type="text"
-                    shape="circle"
-                    icon={<MenuUnfoldOutlined />}
-                    title="展开对话列表"
-                    aria-label="展开对话列表"
-                    size="small"
-                    onClick={() => setChatSidebarCollapsed(false)}
-                  />
-                </div>
-              ) : (
-                <ChatSessionList
-                  scope={MAIN_SCOPE}
-                  module="main"
-                  currentSessionId={currentSessionId}
-                  onSelectSession={handleSelectSession}
-                  onNewSession={handleNewSession}
-                  sessionKinds={MERGED_SESSION_KINDS}
-                  collapsible
-                  onCollapse={() => setChatSidebarCollapsed(true)}
-                />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="mx-auto h-full">
-                <ModuleChatPane
-                  scope={MAIN_SCOPE}
-                  module="main"
-                  chatVariant="main"
-                  acceptMainInputFocusEvents={mode === "chat"}
-                  contextSnapshot={contexts}
-                  hideBorder={false}
-                  sessionId={currentSessionId}
-                  onSessionCreated={handleSessionCreated}
-                />
-              </div>
-            </div>
-          </div>
+          <AgentChatWorkspace
+            scope={MAIN_SCOPE}
+            module="main"
+            chatVariant="main"
+            currentSessionId={currentSessionId}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            onSessionCreated={handleSessionCreated}
+            sessionKinds={MERGED_SESSION_KINDS}
+            acceptMainInputFocusEvents={mode === "chat"}
+            contextSnapshot={contexts}
+            hideBorder={false}
+          />
         </div>
 
-        {/* Docs mode */}
+        {/* Module modes */}
         <div
           className={`absolute inset-0 transition-all duration-300 ease-in-out ${
-            mode === "docs"
+            mode !== "chat"
               ? "pointer-events-auto translate-x-0 opacity-100"
               : "pointer-events-none translate-x-4 opacity-0"
           }`}
         >
           <SplitPane
             left={
-              <DocsModule
-                projectId={MAIN_AGENT_SCOPE_ID}
-                onContextChange={handleDocsContextChange}
-                chatScope={MAIN_SCOPE}
-                chatModule="main"
-                currentSessionId={currentSessionId}
-                onSelectSession={handleSelectSession}
-                onNewSession={handleNewSession}
-              />
+              <div className="h-full min-h-0">
+                <div className={mode === "docs" ? "h-full min-h-0" : "hidden"}>
+                  <DocsModule
+                    projectId={MAIN_AGENT_SCOPE_ID}
+                    onContextChange={handleDocsContextChange}
+                    chatScope={MAIN_SCOPE}
+                    chatModule="main"
+                    currentSessionId={currentSessionId}
+                    onSelectSession={handleSelectSession}
+                    onNewSession={handleNewSession}
+                  />
+                </div>
+                <div
+                  className={mode === "assets" ? "h-full min-h-0" : "hidden"}
+                >
+                  <AssetsModule
+                    projectId={MAIN_AGENT_SCOPE_ID}
+                    onContextChange={handleAssetsContextChange}
+                  />
+                </div>
+                <div className={mode === "app" ? "h-full min-h-0" : "hidden"}>
+                  <AppModule
+                    projectId={MAIN_AGENT_SCOPE_ID}
+                    onContextChange={handleAppContextChange}
+                  />
+                </div>
+              </div>
             }
             right={
               <ModuleChatPane
                 scope={MAIN_SCOPE}
                 module="main"
                 chatVariant="main"
-                acceptMainInputFocusEvents={mode === "docs"}
+                acceptMainInputFocusEvents={mode !== "chat"}
                 contextSnapshot={contexts}
                 sessionId={currentSessionId}
                 onSessionCreated={handleSessionCreated}

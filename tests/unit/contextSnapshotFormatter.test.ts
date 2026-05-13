@@ -50,11 +50,8 @@ describe("buildContextSnapshotSection", () => {
     );
     expect(result).toContain("- 当前文档ID：代码块渲染测试.md");
     expect(result).toContain("- 当前文档标题：代码块渲染测试.md");
-    expect(result).toContain("## 创作模块（creation）");
-    expect(result).toContain(
-      "- 视频创作工作目录：/Users/lei/KianWorkspaceTest/p-2026-03-11-1/creation",
-    );
-    expect(result).toContain("- 更新时间：");
+    expect(result).not.toContain("## 创作模块（creation）");
+    expect(result).not.toContain("- 更新时间：");
     expect(result).not.toContain("(空字符串)");
     expect(result).toContain("## 素材模块（assets）");
     expect(result).toContain(

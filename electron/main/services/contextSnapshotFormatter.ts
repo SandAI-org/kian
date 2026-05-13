@@ -2,9 +2,15 @@ import path from "node:path";
 
 type SnapshotModuleKey = "docs" | "creation" | "assets" | "app";
 
-const SNAPSHOT_MODULE_KEYS: SnapshotModuleKey[] = [
+const KNOWN_MODULE_KEYS: SnapshotModuleKey[] = [
   "docs",
   "creation",
+  "assets",
+  "app",
+];
+
+const SNAPSHOT_MODULE_KEYS: SnapshotModuleKey[] = [
+  "docs",
   "assets",
   "app",
 ];
@@ -221,7 +227,7 @@ export const buildContextSnapshotSection = (input: {
 
   if (contextRecord) {
     const extras = Object.entries(contextRecord).filter(
-      ([key]) => !handledKeys.has(key) && !SNAPSHOT_MODULE_KEYS.includes(key as SnapshotModuleKey),
+      ([key]) => !handledKeys.has(key) && !KNOWN_MODULE_KEYS.includes(key as SnapshotModuleKey),
     );
     if (extras.length > 0) {
       moduleLines.push("## 其他上下文字段");
