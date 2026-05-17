@@ -111,6 +111,26 @@ describe("sendFeishuBotMessage", () => {
     });
   });
 
+  it("can send direct messages by open_id", async () => {
+    await sendFeishuBotMessage(
+      "tenant_access_token_value",
+      "ou_owner_001",
+      "hello owner",
+      "open_id",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+    );
+
+    const body = JSON.parse(String(requestInit.body)) as {
+      receive_id: string;
+    };
+    expect(body.receive_id).toBe("ou_owner_001");
+  });
+
   it("renders mermaid fences as ascii code blocks in interactive cards", async () => {
     await sendFeishuBotMessage(
       "tenant_access_token_value",

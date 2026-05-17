@@ -12,6 +12,7 @@ import type {
 } from "@shared/types";
 import { randomUUID } from "node:crypto";
 import {
+  createDiscordDirectMessageChannel as createDiscordDirectMessageChannelImpl,
   editDiscordBotMessage as editDiscordBotMessageImpl,
   fetchDiscordBotProfile as fetchDiscordBotProfileImpl,
   fetchDiscordChannelDisplayName as fetchDiscordChannelDisplayNameImpl,
@@ -284,6 +285,7 @@ interface FeishuSenderId {
 }
 
 type FeishuUserIdType = "open_id" | "user_id" | "union_id";
+type FeishuReceiveIdType = "chat_id" | FeishuUserIdType;
 
 type FeishuMessageReceiveEvent = Parameters<
   NonNullable<Lark.EventHandles["im.message.receive_v1"]>
@@ -1307,6 +1309,13 @@ const sendDiscordBotDocument = async (
   await sendDiscordBotDocumentImpl(token, chatId, filePath, replyToMessageId);
 };
 
+const createDiscordDirectMessageChannel = async (
+  token: string,
+  userId: string,
+): Promise<string> => {
+  return await createDiscordDirectMessageChannelImpl(token, userId);
+};
+
 const setDiscordMessageReaction = async (
   token: string,
   chatId: string,
@@ -1377,7 +1386,7 @@ const sendFeishuBotMessage = async (
   token: string,
   receiveId: string,
   text: string,
-  receiveIdType: "chat_id" | "user_id" = "chat_id",
+  receiveIdType: FeishuReceiveIdType = "chat_id",
   replyToMessageId?: string,
 ): Promise<string | undefined> => {
   return await sendFeishuBotMessageImpl(
@@ -1393,7 +1402,7 @@ const sendFeishuBotCard = async (input: {
   token: string;
   receiveId: string;
   card: Record<string, unknown>;
-  receiveIdType?: "chat_id" | "user_id";
+  receiveIdType?: FeishuReceiveIdType;
   replyToMessageId?: string;
 }): Promise<string | undefined> => {
   return await sendFeishuBotCardImpl(input);
@@ -1418,7 +1427,7 @@ const sendFeishuBotCardByCardId = async (input: {
   token: string;
   receiveId: string;
   cardId: string;
-  receiveIdType?: "chat_id" | "user_id";
+  receiveIdType?: FeishuReceiveIdType;
   replyToMessageId?: string;
 }): Promise<string | undefined> => {
   return await sendFeishuBotCardByCardIdImpl(input);
@@ -1445,7 +1454,7 @@ const sendFeishuBotDocument = async (
   token: string,
   receiveId: string,
   filePath: string,
-  receiveIdType: "chat_id" | "user_id" = "chat_id",
+  receiveIdType: FeishuReceiveIdType = "chat_id",
   replyToMessageId?: string,
 ): Promise<void> => {
   await sendFeishuBotDocumentImpl(
@@ -2239,6 +2248,39 @@ const buildAssistantMirrorPayload = (input: {
   };
 };
 
+const buildCronJobAssistantPayload = (input: {
+  projectId: string;
+  module: ChatModuleType;
+  sessionId: string;
+  message: string;
+  isError: boolean;
+  streamEvents?: ChatStreamEvent[];
+  toolActions?: string[];
+  toolCalls?: TelegramToolCallSummary[];
+}): {
+  messageText: string;
+  assistantText: string;
+  attachments: string[];
+} => {
+  const attachments = extractTelegramFileAttachments(
+    input.message,
+    toChatScopeFromProjectId(input.projectId),
+  );
+  const assistantText = stripTelegramFileMarkdown(input.message);
+  const toolCalls = resolveMirrorToolCalls(input);
+  const messageText = formatTelegramAssistantBody({
+    message: assistantText,
+    hasAttachments: attachments.length > 0,
+    isError: input.isError,
+    toolCalls,
+  });
+  return {
+    messageText,
+    assistantText,
+    attachments,
+  };
+};
+
 const broadcastDiscordMessage = async (
   state: DiscordRuntime,
   text: string,
@@ -2360,6 +2402,226 @@ const broadcastFeishuAssistantMessage = async (
     }
     if (payload.messageText || payload.attachments.length === 0) {
       await sendFeishuBotMessage(state.token, chatId, payload.messageText, "chat_id");
+    }
+  }
+};
+
+const getBotOwnerUserIds = (state: BotRuntime): string[] =>
+  Array.from(state.ownerUserIds)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+const resolveFeishuOwnerReceiveIdType = (ownerUserId: string): FeishuUserIdType => {
+  if (ownerUserId.startsWith("ou_")) return "open_id";
+  if (ownerUserId.startsWith("on_")) return "union_id";
+  return "user_id";
+};
+
+const sendDiscordOwnerMessage = async (
+  state: DiscordRuntime,
+  ownerUserId: string,
+  text: string,
+): Promise<void> => {
+  const chatId = await createDiscordDirectMessageChannel(state.token, ownerUserId);
+  await sendDiscordBotMessage(state.token, chatId, text);
+};
+
+const sendDiscordOwnerDocument = async (
+  state: DiscordRuntime,
+  ownerUserId: string,
+  filePath: string,
+): Promise<void> => {
+  const chatId = await createDiscordDirectMessageChannel(state.token, ownerUserId);
+  await sendDiscordBotDocument(state.token, chatId, filePath);
+};
+
+const sendFeishuOwnerMessage = async (
+  state: BotRuntime,
+  ownerUserId: string,
+  text: string,
+): Promise<void> => {
+  await sendFeishuBotMessage(
+    state.token,
+    ownerUserId,
+    text,
+    resolveFeishuOwnerReceiveIdType(ownerUserId),
+  );
+};
+
+const sendFeishuOwnerDocument = async (
+  state: BotRuntime,
+  ownerUserId: string,
+  filePath: string,
+): Promise<void> => {
+  await sendFeishuBotDocument(
+    state.token,
+    ownerUserId,
+    filePath,
+    resolveFeishuOwnerReceiveIdType(ownerUserId),
+  );
+};
+
+const mirrorDiscordCronJobAssistantMessage = async (
+  state: DiscordRuntime,
+  input: {
+    projectId: string;
+    module: ChatModuleType;
+    sessionId: string;
+    message: string;
+    isError: boolean;
+    streamEvents?: ChatStreamEvent[];
+    toolActions?: string[];
+    toolCalls?: TelegramToolCallSummary[];
+  },
+): Promise<void> => {
+  const payload = buildCronJobAssistantPayload(input);
+  for (const ownerUserId of getBotOwnerUserIds(state)) {
+    try {
+      if (payload.messageText || payload.attachments.length === 0) {
+        await sendDiscordOwnerMessage(state, ownerUserId, payload.messageText);
+      }
+      let sentAttachmentCount = 0;
+      for (const attachmentPath of payload.attachments) {
+        try {
+          await sendDiscordOwnerDocument(state, ownerUserId, attachmentPath);
+          sentAttachmentCount += 1;
+        } catch (error) {
+          logger.warn("Failed to mirror Discord cron job attachment", {
+            ownerUserId,
+            attachmentPath,
+            error,
+          });
+        }
+      }
+      if (
+        !payload.assistantText &&
+        payload.attachments.length > 0 &&
+        sentAttachmentCount === 0
+      ) {
+        const attachmentErrorMessage = formatTelegramAssistantBody({
+          message: "附件发送失败，请检查文件路径或权限。",
+          hasAttachments: false,
+          toolCalls: undefined,
+          isError: false,
+        });
+        await sendDiscordOwnerMessage(state, ownerUserId, attachmentErrorMessage);
+      }
+    } catch (error) {
+      logger.warn("Failed to mirror cron job assistant message to Discord owner", {
+        ownerUserId,
+        error,
+      });
+    }
+  }
+};
+
+const mirrorFeishuCronJobAssistantMessage = async (
+  state: BotRuntime,
+  input: {
+    projectId: string;
+    module: ChatModuleType;
+    sessionId: string;
+    message: string;
+    isError: boolean;
+    streamEvents?: ChatStreamEvent[];
+    toolActions?: string[];
+    toolCalls?: TelegramToolCallSummary[];
+  },
+): Promise<void> => {
+  const payload = buildCronJobAssistantPayload(input);
+  for (const ownerUserId of getBotOwnerUserIds(state)) {
+    try {
+      let sentAttachmentCount = 0;
+      for (const attachmentPath of payload.attachments) {
+        try {
+          await sendFeishuOwnerDocument(state, ownerUserId, attachmentPath);
+          sentAttachmentCount += 1;
+        } catch (error) {
+          logger.warn("Failed to mirror Feishu cron job attachment", {
+            ownerUserId,
+            attachmentPath,
+            error,
+          });
+        }
+      }
+      if (
+        !payload.assistantText &&
+        payload.attachments.length > 0 &&
+        sentAttachmentCount === 0
+      ) {
+        const attachmentErrorMessage = formatTelegramAssistantBody({
+          message: "附件发送失败，请检查文件路径或权限。",
+          hasAttachments: false,
+          toolCalls: undefined,
+          isError: false,
+        });
+        await sendFeishuOwnerMessage(state, ownerUserId, attachmentErrorMessage);
+        continue;
+      }
+      if (payload.messageText || payload.attachments.length === 0) {
+        await sendFeishuOwnerMessage(state, ownerUserId, payload.messageText);
+      }
+    } catch (error) {
+      logger.warn("Failed to mirror cron job assistant message to Feishu owner", {
+        ownerUserId,
+        error,
+      });
+    }
+  }
+};
+
+const mirrorTelegramCronJobAssistantMessage = async (
+  state: TelegramRuntime,
+  input: {
+    projectId: string;
+    module: ChatModuleType;
+    sessionId: string;
+    message: string;
+    isError: boolean;
+    streamEvents?: ChatStreamEvent[];
+    toolActions?: string[];
+    toolCalls?: TelegramToolCallSummary[];
+  },
+): Promise<void> => {
+  const chatIds = getOutboundChatIds(state);
+  if (chatIds.length === 0) return;
+  const payload = buildCronJobAssistantPayload(input);
+  for (const chatId of chatIds) {
+    try {
+      if (payload.messageText || payload.attachments.length === 0) {
+        await sendTelegramMessage(state.token, chatId, payload.messageText);
+      }
+      let sentAttachmentCount = 0;
+      for (const attachmentPath of payload.attachments) {
+        try {
+          await sendTelegramDocument(state.token, chatId, attachmentPath);
+          sentAttachmentCount += 1;
+        } catch (error) {
+          logger.warn("Failed to mirror telegram cron job attachment", {
+            chatId,
+            attachmentPath,
+            error,
+          });
+        }
+      }
+      if (
+        !payload.assistantText &&
+        payload.attachments.length > 0 &&
+        sentAttachmentCount === 0
+      ) {
+        const attachmentErrorMessage = formatTelegramAssistantBody({
+          message: "附件发送失败，请检查文件路径或权限。",
+          hasAttachments: false,
+          isError: false,
+          toolCalls: undefined,
+        });
+        await sendTelegramMessage(state.token, chatId, attachmentErrorMessage);
+      }
+    } catch (error) {
+      logger.warn("Failed to mirror cron job assistant message to telegram owner", {
+        chatId,
+        error,
+      });
     }
   }
 };
@@ -4369,6 +4631,51 @@ export const chatChannelService = {
               error,
             });
           }
+        }
+      },
+    };
+  },
+
+  createCronJobAssistantMirrorStreamer(input: {
+    projectId: string;
+    module: ChatModuleType;
+    sessionId: string;
+  }): TelegramAssistantProgressiveStreamer {
+    const telegramState = running && runtime ? runtime : null;
+    const discordState = discordRuntime;
+    const feishuState = feishuRuntime;
+    if (!telegramState && !discordState && !feishuState) {
+      return {
+        pushEvent: () => undefined,
+        finalize: async () => undefined,
+      };
+    }
+
+    const streamEvents: ChatStreamEvent[] = [];
+
+    return {
+      pushEvent: (event) => {
+        streamEvents.push(event);
+      },
+      finalize: async (finalInput) => {
+        const mirrorInput = {
+          ...input,
+          message: finalInput.fallbackAssistantMessage,
+          isError: Boolean(finalInput.isError),
+          streamEvents,
+          toolActions: finalInput.toolActions,
+        };
+
+        if (telegramState) {
+          await mirrorTelegramCronJobAssistantMessage(telegramState, mirrorInput);
+        }
+
+        if (discordState) {
+          await mirrorDiscordCronJobAssistantMessage(discordState, mirrorInput);
+        }
+
+        if (feishuState) {
+          await mirrorFeishuCronJobAssistantMessage(feishuState, mirrorInput);
         }
       },
     };

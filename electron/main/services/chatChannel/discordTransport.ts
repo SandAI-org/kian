@@ -46,6 +46,10 @@ interface DiscordSentMessage {
   id?: string;
 }
 
+interface DiscordDirectMessageChannel {
+  id?: string;
+}
+
 interface DiscordChannelInfo {
   name?: string;
   recipients?: Array<{
@@ -69,6 +73,29 @@ export const fetchDiscordBotProfile = async (
     throw new Error("Discord bot profile is missing id");
   }
   return { id };
+};
+
+export const createDiscordDirectMessageChannel = async (
+  token: string,
+  userId: string,
+): Promise<string> => {
+  const response = await fetch(`${DISCORD_API_BASE}/users/@me/channels`, {
+    method: "POST",
+    headers: {
+      authorization: `Bot ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      recipient_id: userId,
+    }),
+  });
+  await assertHttpOk(response, "Discord", "私聊会话创建");
+  const payload = (await response.json()) as DiscordDirectMessageChannel;
+  const channelId = payload.id?.trim() ?? "";
+  if (!channelId) {
+    throw new Error("Discord direct message channel is missing id");
+  }
+  return channelId;
 };
 
 export const sendDiscordBotMessage = async (

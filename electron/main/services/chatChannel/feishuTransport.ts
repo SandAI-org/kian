@@ -11,6 +11,8 @@ const FEISHU_EXTENDED_IMAGE_MARKDOWN_PATTERN =
 const FEISHU_IMAGE_KEY_PATTERN = /^img_[A-Za-z0-9_-]+$/;
 const FEISHU_CARD_FALLBACK_TEXT = "Agent 未返回文本内容。";
 
+type FeishuReceiveIdType = "chat_id" | "user_id" | "open_id" | "union_id";
+
 const IMAGE_EXTENSION_MIME_MAP: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -330,7 +332,7 @@ const uploadFeishuMessageFile = async (
 const sendFeishuStructuredMessage = async (input: {
   accessToken: string;
   receiveId: string;
-  receiveIdType: "chat_id" | "user_id";
+  receiveIdType: FeishuReceiveIdType;
   replyToMessageId?: string;
   msgType: string;
   content: string;
@@ -541,7 +543,7 @@ export const sendFeishuBotMessage = async (
   token: string,
   receiveId: string,
   text: string,
-  receiveIdType: "chat_id" | "user_id" = "chat_id",
+  receiveIdType: FeishuReceiveIdType = "chat_id",
   replyToMessageId?: string,
 ): Promise<string | undefined> => {
   const accessToken = await resolveFeishuAccessToken(token);
@@ -568,7 +570,7 @@ export const sendFeishuBotCard = async (input: {
   token: string;
   receiveId: string;
   card: Record<string, unknown>;
-  receiveIdType?: "chat_id" | "user_id";
+  receiveIdType?: FeishuReceiveIdType;
   replyToMessageId?: string;
 }): Promise<string | undefined> => {
   const accessToken = await resolveFeishuAccessToken(input.token);
@@ -681,7 +683,7 @@ export const sendFeishuBotCardByCardId = async (input: {
   token: string;
   receiveId: string;
   cardId: string;
-  receiveIdType?: "chat_id" | "user_id";
+  receiveIdType?: FeishuReceiveIdType;
   replyToMessageId?: string;
 }): Promise<string | undefined> => {
   const accessToken = await resolveFeishuAccessToken(input.token);
@@ -770,7 +772,7 @@ export const sendFeishuBotDocument = async (
   token: string,
   receiveId: string,
   filePath: string,
-  receiveIdType: "chat_id" | "user_id" = "chat_id",
+  receiveIdType: FeishuReceiveIdType = "chat_id",
   replyToMessageId?: string,
 ): Promise<void> => {
   const accessToken = await resolveFeishuAccessToken(token);

@@ -18,8 +18,7 @@ vi.mock("../../electron/main/services/chatService", () => ({
 
 vi.mock("../../electron/main/services/chatChannelService", () => ({
   chatChannelService: {
-    mirrorAgentUserMessage: vi.fn(),
-    createAgentAssistantMirrorStreamer: vi.fn(),
+    createCronJobAssistantMirrorStreamer: vi.fn(),
   },
 }));
 
@@ -102,7 +101,7 @@ describe("cronjobService", () => {
       createdAt: "2026-03-10T09:00:00.000Z",
       updatedAt: "2026-03-10T09:00:00.000Z",
     });
-    vi.mocked(chatChannelService.createAgentAssistantMirrorStreamer).mockReturnValue(
+    vi.mocked(chatChannelService.createCronJobAssistantMirrorStreamer).mockReturnValue(
       assistantMirrorStreamer,
     );
     vi.mocked(chatService.send).mockResolvedValue({
@@ -125,12 +124,6 @@ describe("cronjobService", () => {
       },
       module: "docs",
       title: "Agent 会话",
-    });
-    expect(chatChannelService.mirrorAgentUserMessage).toHaveBeenCalledWith({
-      projectId: "agent-a",
-      module: "docs",
-      sessionId: "session-agent-a",
-      message: "整理日报",
     });
     expect(chatService.send).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -194,7 +187,7 @@ describe("cronjobService", () => {
         updatedAt: "2026-03-10T09:00:00.000Z",
       },
     ]);
-    vi.mocked(chatChannelService.createAgentAssistantMirrorStreamer).mockReturnValue(
+    vi.mocked(chatChannelService.createCronJobAssistantMirrorStreamer).mockReturnValue(
       assistantMirrorStreamer,
     );
     vi.mocked(chatService.send).mockResolvedValue({
@@ -208,12 +201,6 @@ describe("cronjobService", () => {
 
     expect(repositoryService.listChatSessions).toHaveBeenCalledWith({
       type: "main",
-    });
-    expect(chatChannelService.mirrorAgentUserMessage).toHaveBeenCalledWith({
-      projectId: "main-agent",
-      module: "main",
-      sessionId: "session-main",
-      message: "汇总看板",
     });
     expect(chatService.send).toHaveBeenCalledWith(
       expect.objectContaining({

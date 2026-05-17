@@ -316,14 +316,7 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
     }));
   const module = session.module ?? target.defaultModule;
 
-  void chatChannelService.mirrorAgentUserMessage({
-    projectId: target.projectId,
-    module,
-    sessionId: session.id,
-    message
-  });
-
-  const assistantMirrorStreamer = chatChannelService.createAgentAssistantMirrorStreamer({
+  const assistantMirrorStreamer = chatChannelService.createCronJobAssistantMirrorStreamer({
     projectId: target.projectId,
     module,
     sessionId: session.id
