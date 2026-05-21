@@ -143,4 +143,55 @@ describe("repositoryService cronjob", () => {
       targetAgentId: agent.id,
     });
   });
+
+  it("includes the latest execution feedback on cron job cards", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "26 17 21 5 *",
+            content: "创建提醒文件",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T09:25:00.000Z",
+      jobId: "cronjob-1",
+      cron: "26 17 21 5 *",
+      content: "创建提醒文件",
+      status: "failed",
+      error: "first failure",
+    });
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T09:26:00.000Z",
+      jobId: "cronjob-1",
+      cron: "26 17 21 5 *",
+      content: "创建提醒文件",
+      status: "dispatched",
+      sessionId: "session-cron",
+      assistantMessage: "文件已创建",
+    });
+
+    const jobs = await repositoryService.listCronJobs();
+
+    expect(jobs[0]).toMatchObject({
+      id: "cronjob-1",
+      lastExecution: {
+        executedAt: "2026-05-21T09:26:00.000Z",
+        status: "dispatched",
+        sessionId: "session-cron",
+        assistantMessage: "文件已创建",
+      },
+    });
+  });
 });

@@ -715,7 +715,65 @@ describe("repositoryService project management", () => {
       sessionUpdatedAt: "2026-03-05T09:31:00.000Z",
       sessionModule: "main",
       sessionKind: "normal",
+      sessionHidden: false,
       sessionMetadataJson: null,
     });
+  });
+
+  it("marks hidden chat session history update events", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const session = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "",
+      hidden: true,
+    });
+
+    expect(state.emitHistoryUpdated).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sessionId: session.id,
+        messageId: "",
+        sessionHidden: true,
+      }),
+    );
+
+    await repositoryService.updateChatSessionTitle({
+      scope: { type: "main" },
+      sessionId: session.id,
+      title: "隐藏标题",
+    });
+
+    expect(state.emitHistoryUpdated).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sessionId: session.id,
+        messageId: "",
+        sessionTitle: "隐藏标题",
+        sessionHidden: true,
+      }),
+    );
+
+    await repositoryService.appendMessage({
+      scope: { type: "main" },
+      sessionId: session.id,
+      role: "assistant",
+      content: "隐藏消息",
+    });
+
+    expect(state.emitHistoryUpdated).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        sessionId: session.id,
+        role: "assistant",
+        sessionHidden: true,
+        message: expect.objectContaining({
+          content: "隐藏消息",
+        }),
+      }),
+    );
   });
 });

@@ -71,7 +71,7 @@ const buildSessionFromHistoryEvent = (
     projectId: event.scope.type === "project" ? event.scope.projectId : undefined,
     module: event.sessionModule,
     kind: event.sessionKind ?? "normal",
-    hidden: false,
+    hidden: event.sessionHidden ?? false,
     title: event.sessionTitle?.trim() ?? "",
     sdkSessionId: null,
     metadataJson: event.sessionMetadataJson ?? null,
@@ -150,44 +150,48 @@ export const applyChatHistoryUpdateToCache = (
   const scopeKey = getChatScopeKey(event.scope);
   const sessionsQueryKey = getChatSessionsQueryKey(scopeKey);
   const sessionsQueryPrefix = ["chat-sessions", scopeKey] as const;
-  const currentSessions =
-    queryClient.getQueryData<ChatSessionDTO[]>(sessionsQueryKey) ?? [];
-  const existingSession = currentSessions.find(
-    (session) => session.id === event.sessionId,
-  );
+  const sessionIsHidden = event.sessionHidden === true;
 
-  if (!existingSession) {
-    const inferredSession = buildSessionFromHistoryEvent(event);
-    if (inferredSession) {
-      upsertChatSessionList(queryClient, event.scope, inferredSession);
-    } else {
-      void queryClient.invalidateQueries({
-        queryKey: sessionsQueryKey,
-        exact: true,
-      });
+  if (!sessionIsHidden) {
+    const currentSessions =
+      queryClient.getQueryData<ChatSessionDTO[]>(sessionsQueryKey) ?? [];
+    const existingSession = currentSessions.find(
+      (session) => session.id === event.sessionId,
+    );
+
+    if (!existingSession) {
+      const inferredSession = buildSessionFromHistoryEvent(event);
+      if (inferredSession) {
+        upsertChatSessionList(queryClient, event.scope, inferredSession);
+      } else {
+        void queryClient.invalidateQueries({
+          queryKey: sessionsQueryKey,
+          exact: true,
+        });
+      }
     }
+
+    patchChatSessionList(queryClient, event.scope, event.sessionId, (session) => {
+      const nextTitle = event.sessionTitle?.trim() || session.title;
+      const nextUpdatedAt = event.sessionUpdatedAt ?? event.createdAt;
+      if (
+        nextTitle === session.title &&
+        nextUpdatedAt === session.updatedAt
+      ) {
+        return session;
+      }
+
+      return {
+        ...session,
+        title: nextTitle,
+        updatedAt: nextUpdatedAt,
+      };
+    });
+
+    void queryClient.invalidateQueries({
+      queryKey: sessionsQueryPrefix,
+    });
   }
-
-  patchChatSessionList(queryClient, event.scope, event.sessionId, (session) => {
-    const nextTitle = event.sessionTitle?.trim() || session.title;
-    const nextUpdatedAt = event.sessionUpdatedAt ?? event.createdAt;
-    if (
-      nextTitle === session.title &&
-      nextUpdatedAt === session.updatedAt
-    ) {
-      return session;
-    }
-
-    return {
-      ...session,
-      title: nextTitle,
-      updatedAt: nextUpdatedAt,
-    };
-  });
-
-  void queryClient.invalidateQueries({
-    queryKey: sessionsQueryPrefix,
-  });
 
   if (!event.messageId.trim()) {
     return;

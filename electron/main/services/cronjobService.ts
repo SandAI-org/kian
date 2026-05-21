@@ -27,6 +27,7 @@ interface CronJobDispatchResult {
   projectId: string | null;
   projectName: string | null;
   sessionId: string | null;
+  assistantMessage?: string | null;
 }
 
 interface CronJobTargetContext {
@@ -237,6 +238,7 @@ const logCronJobExecution = async (input: {
   sessionId?: string | null;
   reason?: string | null;
   error?: string | null;
+  assistantMessage?: string | null;
 }): Promise<void> => {
   try {
     await repositoryService.logCronJobExecution({
@@ -249,7 +251,8 @@ const logCronJobExecution = async (input: {
       projectName: input.projectName ?? null,
       sessionId: input.sessionId ?? null,
       reason: input.reason ?? null,
-      error: input.error ?? null
+      error: input.error ?? null,
+      assistantMessage: input.assistantMessage ?? null
     });
   } catch (error) {
     logger.error('Failed to write cron job execution log', {
@@ -301,19 +304,18 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
       reason: 'empty_content',
       projectId: null,
       projectName: null,
-      sessionId: null
+      sessionId: null,
+      assistantMessage: null
     };
   }
 
   const target = await resolveCronJobTarget(job);
-  const sessions = await repositoryService.listChatSessions(target.scope);
-  const session =
-    sessions[0] ??
-    (await repositoryService.createChatSession({
-      scope: target.scope,
-      module: target.defaultModule,
-      title: target.scope.type === 'main' ? '主智能体会话' : 'Agent 会话'
-    }));
+  const session = await repositoryService.createChatSession({
+    scope: target.scope,
+    module: target.defaultModule,
+    title: target.scope.type === 'main' ? '主智能体会话' : 'Agent 会话',
+    hidden: true
+  });
   const module = session.module ?? target.defaultModule;
 
   const assistantMirrorStreamer = chatChannelService.createCronJobAssistantMirrorStreamer({
@@ -345,7 +347,8 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
     status: 'dispatched',
     projectId: target.projectId,
     projectName: target.projectName,
-    sessionId: session.id
+    sessionId: session.id,
+    assistantMessage: result.assistantMessage
   };
 };
 
@@ -382,7 +385,8 @@ const tick = async (): Promise<void> => {
           projectId: result.projectId,
           projectName: result.projectName,
           sessionId: result.sessionId,
-          reason: result.reason
+          reason: result.reason,
+          assistantMessage: result.assistantMessage
         });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

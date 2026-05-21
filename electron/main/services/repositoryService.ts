@@ -13,6 +13,7 @@ import {
   type CreationSceneDTO,
   type CreationShotDTO,
   type CronJobDTO,
+  type CronJobLastExecutionDTO,
   type DocExplorerEntryDTO,
   type DocumentDTO,
   type ModuleType,
@@ -33,6 +34,15 @@ interface CronJobFileItem {
   content: string;
   status: string;
   targetAgentId?: string | null;
+}
+interface CronJobExecutionLogItem {
+  executedAt: string;
+  jobId: string;
+  status: CronJobLastExecutionDTO["status"];
+  reason?: string | null;
+  error?: string | null;
+  sessionId?: string | null;
+  assistantMessage?: string | null;
 }
 
 const nowISO = (): string => new Date().toISOString();
@@ -2033,6 +2043,47 @@ const readRawCronJobItems = async (): Promise<unknown[]> => {
   return Array.isArray(raw) ? raw : [];
 };
 
+const readLatestCronJobExecutionByJobId = async (): Promise<
+  Map<string, CronJobLastExecutionDTO>
+> => {
+  const filePath = getCronJobLogPath();
+  if (!(await pathExists(filePath))) {
+    return new Map();
+  }
+
+  const raw = await fs.readFile(filePath, "utf8");
+  const latestByJobId = new Map<string, CronJobLastExecutionDTO>();
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    try {
+      const parsed = JSON.parse(trimmed) as Partial<CronJobExecutionLogItem>;
+      if (
+        typeof parsed.jobId !== "string" ||
+        typeof parsed.executedAt !== "string" ||
+        (parsed.status !== "dispatched" &&
+          parsed.status !== "skipped" &&
+          parsed.status !== "failed")
+      ) {
+        continue;
+      }
+
+      latestByJobId.set(parsed.jobId, {
+        executedAt: parsed.executedAt,
+        status: parsed.status,
+        reason: parsed.reason ?? null,
+        error: parsed.error ?? null,
+        sessionId: parsed.sessionId ?? null,
+        assistantMessage: parsed.assistantMessage ?? null,
+      });
+    } catch {}
+  }
+
+  return latestByJobId;
+};
+
 const resolveCronJobTargetAgentName = async (
   targetAgentId: string | null | undefined,
 ): Promise<string | null> => {
@@ -2053,6 +2104,7 @@ const resolveCronJobTargetAgentName = async (
 const toCronJobDto = async (
   item: CronJobFileItem,
   index: number,
+  lastExecution?: CronJobLastExecutionDTO | null,
 ): Promise<CronJobDTO> => ({
   id: `cronjob-${index + 1}`,
   cron: item.cron,
@@ -2061,6 +2113,7 @@ const toCronJobDto = async (
   status: item.status,
   targetAgentId: item.targetAgentId ?? null,
   targetAgentName: await resolveCronJobTargetAgentName(item.targetAgentId),
+  lastExecution: lastExecution ?? null,
 });
 
 const readProjectMeta = async (projectId: string): Promise<ProjectMetaFile> => {
@@ -2416,7 +2469,13 @@ const updateChatSessionTimestamp = async (
 export const repositoryService = {
   async listCronJobs(): Promise<CronJobDTO[]> {
     const rows = await readCronJobItems();
-    return Promise.all(rows.map((item, index) => toCronJobDto(item, index)));
+    const latestExecutionByJobId = await readLatestCronJobExecutionByJobId();
+    return Promise.all(
+      rows.map((item, index) => {
+        const jobId = `cronjob-${index + 1}`;
+        return toCronJobDto(item, index, latestExecutionByJobId.get(jobId));
+      }),
+    );
   },
 
   async setCronJobStatus(input: {
@@ -2439,6 +2498,7 @@ export const repositoryService = {
 
     await writeJson(getCronJobPath(), rows);
     const normalized = normalizeCronJobItems([rows[index]])[0];
+    const latestExecutionByJobId = await readLatestCronJobExecutionByJobId();
     return toCronJobDto(
       normalized ?? {
         cron: "",
@@ -2447,6 +2507,7 @@ export const repositoryService = {
         targetAgentId: null,
       },
       index,
+      latestExecutionByJobId.get(input.id),
     );
   },
 
@@ -2461,6 +2522,7 @@ export const repositoryService = {
     sessionId?: string | null;
     reason?: string | null;
     error?: string | null;
+    assistantMessage?: string | null;
   }): Promise<void> {
     await ensureWorkspaceRoot();
 
@@ -2477,6 +2539,7 @@ export const repositoryService = {
         name: input.projectName ?? null,
       },
       sessionId: input.sessionId ?? null,
+      assistantMessage: input.assistantMessage ?? null,
     });
 
     await fs.appendFile(getCronJobLogPath(), `${line}\n`, "utf8");
@@ -3384,6 +3447,7 @@ export const repositoryService = {
       sessionUpdatedAt: timestamp,
       sessionModule: input.module,
       sessionKind: next.kind,
+      sessionHidden: next.hidden,
       sessionMetadataJson: next.metadataJson,
     });
 
@@ -3590,6 +3654,7 @@ export const repositoryService = {
       sessionUpdatedAt: updatedAt,
       sessionModule: session.module,
       sessionKind: session.kind,
+      sessionHidden: session.hidden,
       sessionMetadataJson: session.metadataJson,
     });
   },
@@ -3652,6 +3717,7 @@ export const repositoryService = {
         createdAt: next.createdAt,
         sessionUpdatedAt,
         sessionKind: matchedSession.kind,
+        sessionHidden: matchedSession.hidden,
         sessionMetadataJson: matchedSession.metadataJson,
         message: cachedMessages.find((item) => item.id === next.id) ?? next,
       });

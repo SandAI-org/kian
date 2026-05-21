@@ -425,6 +425,7 @@ export interface ChatHistoryUpdatedEvent {
   sessionUpdatedAt?: string;
   sessionModule?: ChatModuleType;
   sessionKind?: ChatSessionKind;
+  sessionHidden?: boolean;
   sessionMetadataJson?: string | null;
   message?: ChatMessageDTO;
 }
@@ -663,6 +664,18 @@ export interface CronJobDTO {
   status: string;
   targetAgentId?: string | null;
   targetAgentName?: string | null;
+  lastExecution?: CronJobLastExecutionDTO | null;
+}
+
+export type CronJobExecutionStatus = 'dispatched' | 'skipped' | 'failed';
+
+export interface CronJobLastExecutionDTO {
+  executedAt: string;
+  status: CronJobExecutionStatus;
+  reason?: string | null;
+  error?: string | null;
+  sessionId?: string | null;
+  assistantMessage?: string | null;
 }
 
 export type TaskStatus = 'running' | 'stopped' | 'success';

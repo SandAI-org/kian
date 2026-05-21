@@ -136,6 +136,55 @@ describe("chatQueryCache", () => {
     });
   });
 
+  it("does not add hidden sessions to the visible session list", () => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const sessionsKey = getChatSessionsQueryKey("main");
+    const messagesKey = getChatMessagesQueryKey("main", "hidden-session");
+
+    queryClient.setQueryData(sessionsKey, []);
+    queryClient.setQueryData(messagesKey, []);
+
+    applyChatHistoryUpdateToCache(queryClient, {
+      scope: { type: "main" },
+      sessionId: "hidden-session",
+      messageId: "m-hidden",
+      role: "assistant",
+      createdAt: "2026-03-23T00:00:01.000Z",
+      sessionModule: "main",
+      sessionKind: "normal",
+      sessionHidden: true,
+      sessionUpdatedAt: "2026-03-23T00:00:01.000Z",
+      message: {
+        id: "m-hidden",
+        sessionId: "hidden-session",
+        role: "assistant",
+        content: "后台任务结果",
+        createdAt: "2026-03-23T00:00:01.000Z",
+      },
+    });
+
+    expect(queryClient.getQueryData(sessionsKey)).toEqual([]);
+    expect(queryClient.getQueryData(messagesKey)).toEqual([
+      {
+        id: "m-hidden",
+        sessionId: "hidden-session",
+        role: "assistant",
+        content: "后台任务结果",
+        createdAt: "2026-03-23T00:00:01.000Z",
+      },
+    ]);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["chat-sessions", "main"],
+    });
+  });
+
   it("stores queue snapshots under the per-session queued message key", () => {
     queryClient = new QueryClient({
       defaultOptions: {
