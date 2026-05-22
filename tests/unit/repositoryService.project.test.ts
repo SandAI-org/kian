@@ -354,6 +354,34 @@ describe("repositoryService project management", () => {
     expect(digitalAvatar.kind).toBe("digital_avatar");
   });
 
+  it("includes hidden runtime sessions when requested for debugging", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const normal = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "regular",
+    });
+    const runtime = await repositoryService.createChatSession({
+      scope: { type: "main" },
+      module: "main",
+      title: "runtime",
+      kind: "group_runtime",
+      hidden: true,
+    });
+
+    const sessions = await repositoryService.listChatSessions(
+      { type: "main" },
+      { includeHidden: true },
+    );
+
+    expect(sessions.map((session) => session.id).sort()).toEqual(
+      [runtime.id, normal.id].sort(),
+    );
+  });
+
   it("reuses a digital avatar session for the same conversation key", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"
@@ -686,6 +714,8 @@ describe("repositoryService project management", () => {
       sessionTitle: "自动标题",
       sessionUpdatedAt: "2026-03-05T09:31:00.000Z",
       sessionModule: "main",
+      sessionKind: "normal",
+      sessionMetadataJson: null,
     });
   });
 });

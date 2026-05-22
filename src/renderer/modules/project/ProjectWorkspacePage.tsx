@@ -6,16 +6,25 @@ import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import { api } from "@renderer/lib/api";
 import { CHAT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
-import type { ChatModuleType, ChatScope, ModuleType } from "@shared/types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { getChatSessionsQueryKey } from "@renderer/modules/chat/chatQueryCache";
+import type {
+  ChatModuleType,
+  ChatScope,
+  ChatSessionDTO,
+  ModuleType,
+} from "@shared/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 
 export const NEW_PROJECT_SESSION_EVENT = "project:new-session";
 
-type ProjectModuleKey = Extract<ChatModuleType, "main" | "docs" | "assets" | "app">;
+export type ProjectModuleKey = Extract<
+  ChatModuleType,
+  "main" | "docs" | "assets" | "app"
+>;
 
-const resolveProjectModule = (value: string | null): ProjectModuleKey => {
+export const resolveProjectModule = (value: string | null): ProjectModuleKey => {
   if (
     value === "main" ||
     value === "assets" ||
@@ -27,33 +36,54 @@ const resolveProjectModule = (value: string | null): ProjectModuleKey => {
   return "main";
 };
 
-export const ProjectWorkspacePage = () => {
-  const { projectId = "" } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeModuleParam = searchParams.get("module");
-  const activeDocumentParam = searchParams.get("doc") ?? undefined;
-  const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
+interface ProjectWorkspaceContentProps {
+  projectId: string;
+  activeModule: ProjectModuleKey;
+  activeDocumentId?: string;
+  pendingRouteSessionId?: string;
+  className?: string;
+  onPendingRouteSessionConsumed?: () => void;
+}
+
+export const ProjectWorkspaceContent = ({
+  projectId,
+  activeModule,
+  activeDocumentId,
+  pendingRouteSessionId = "",
+  className = "h-full min-h-0",
+  onPendingRouteSessionConsumed,
+}: ProjectWorkspaceContentProps) => {
   const [contexts, setContexts] = useState<Record<ModuleType, unknown>>({
     docs: {},
     creation: {},
     assets: {},
     app: {},
   });
-  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(
-    undefined,
-  );
+  const [currentSessionIds, setCurrentSessionIds] = useState<
+    Record<string, string | undefined>
+  >({});
+  const consumedRouteSessionRef = useRef("");
   const queryClient = useQueryClient();
-
-  const activeModule = useMemo(
-    () => resolveProjectModule(activeModuleParam),
-    [activeModuleParam],
-  );
 
   const chatScope = useMemo<ChatScope>(
     () => ({ type: "project", projectId }),
     [projectId],
   );
   const scopeKey = projectId;
+  const hasScopedSession = Object.prototype.hasOwnProperty.call(
+    currentSessionIds,
+    scopeKey,
+  );
+  const cachedCurrentSessionId = useMemo(
+    () =>
+      queryClient.getQueryData<ChatSessionDTO[]>(
+        getChatSessionsQueryKey(scopeKey),
+      )?.[0]?.id,
+    [queryClient, scopeKey],
+  );
+  const currentSessionId = hasScopedSession
+    ? currentSessionIds[scopeKey]
+    : cachedCurrentSessionId;
 
   const updateContext = useCallback((module: ModuleType, context: unknown) => {
     setContexts((prev) => ({
@@ -68,19 +98,31 @@ export const ProjectWorkspacePage = () => {
       module: activeModule,
       title: "",
     });
-    setCurrentSessionId(created.id);
+    setCurrentSessionIds((prev) => ({
+      ...prev,
+      [scopeKey]: created.id,
+    }));
     void queryClient.invalidateQueries({
       queryKey: ["chat-sessions", scopeKey],
     });
   }, [activeModule, chatScope, queryClient, scopeKey]);
 
-  const handleSelectSession = useCallback((sessionId: string) => {
-    setCurrentSessionId(sessionId);
-  }, []);
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      setCurrentSessionIds((prev) => ({
+        ...prev,
+        [scopeKey]: sessionId,
+      }));
+    },
+    [scopeKey],
+  );
 
   const handleSessionCreated = useCallback(
     (sessionId: string) => {
-      setCurrentSessionId(sessionId);
+      setCurrentSessionIds((prev) => ({
+        ...prev,
+        [scopeKey]: sessionId,
+      }));
       void queryClient.invalidateQueries({
         queryKey: ["chat-sessions", scopeKey],
       });
@@ -103,7 +145,11 @@ export const ProjectWorkspacePage = () => {
       return;
     }
 
-    setCurrentSessionId(pendingRouteSessionId);
+    setCurrentSessionIds((prev) => ({
+      ...prev,
+      [scopeKey]: pendingRouteSessionId,
+    }));
+    consumedRouteSessionRef.current = pendingRouteSessionId;
     void queryClient.invalidateQueries({
       queryKey: ["chat-sessions", scopeKey],
     });
@@ -115,33 +161,48 @@ export const ProjectWorkspacePage = () => {
       window.dispatchEvent(new Event(CHAT_INPUT_FOCUS_EVENT));
     });
 
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("session");
-    nextParams.delete("source");
-    nextParams.delete("stamp");
-    setSearchParams(nextParams, { replace: true });
+    onPendingRouteSessionConsumed?.();
   }, [
+    onPendingRouteSessionConsumed,
     pendingRouteSessionId,
     queryClient,
     scopeKey,
-    searchParams,
-    setSearchParams,
   ]);
 
   useEffect(() => {
+    if (pendingRouteSessionId) return;
+    if (consumedRouteSessionRef.current) {
+      consumedRouteSessionRef.current = "";
+      return;
+    }
+
     let cancelled = false;
 
     const syncProjectSession = async (): Promise<void> => {
-      setCurrentSessionId(undefined);
       try {
         const sessions = await api.chat.getSessions(chatScope);
         if (cancelled) {
           return;
         }
-        setCurrentSessionId(sessions[0]?.id);
+        setCurrentSessionIds((prev) => {
+          const selectedSessionId = prev[scopeKey];
+          if (
+            selectedSessionId &&
+            sessions.some((session) => session.id === selectedSessionId)
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [scopeKey]: sessions[0]?.id,
+          };
+        });
       } catch {
         if (!cancelled) {
-          setCurrentSessionId(undefined);
+          setCurrentSessionIds((prev) => ({
+            ...prev,
+            [scopeKey]: undefined,
+          }));
         }
       }
     };
@@ -151,7 +212,7 @@ export const ProjectWorkspacePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [chatScope]);
+  }, [chatScope, pendingRouteSessionId, scopeKey]);
 
   const left = useMemo(
     () => (
@@ -159,7 +220,7 @@ export const ProjectWorkspacePage = () => {
         <div className={activeModule === "docs" ? "h-full min-h-0" : "hidden"}>
           <DocsModule
             projectId={projectId}
-            requestedDocumentId={activeDocumentParam}
+            requestedDocumentId={activeDocumentId}
             onContextChange={(ctx) => updateContext("docs", ctx)}
             chatScope={chatScope}
             chatModule={activeModule}
@@ -185,7 +246,7 @@ export const ProjectWorkspacePage = () => {
       </div>
     ),
     [
-      activeDocumentParam,
+      activeDocumentId,
       activeModule,
       chatScope,
       currentSessionId,
@@ -197,7 +258,7 @@ export const ProjectWorkspacePage = () => {
   );
 
   return (
-    <div className="h-full min-h-0 px-5 pb-5">
+    <div className={className}>
       {activeModule === "main" ? (
         <AgentChatWorkspace
           projectId={projectId}
@@ -227,5 +288,36 @@ export const ProjectWorkspacePage = () => {
         />
       )}
     </div>
+  );
+};
+
+export const ProjectWorkspacePage = () => {
+  const { projectId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeModule = useMemo(
+    () => resolveProjectModule(searchParams.get("module")),
+    [searchParams],
+  );
+  const activeDocumentId = searchParams.get("doc") ?? undefined;
+  const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
+
+  const handlePendingRouteSessionConsumed = useCallback(() => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("session");
+    nextParams.delete("source");
+    nextParams.delete("stamp");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  return (
+    <ProjectWorkspaceContent
+      key={projectId}
+      projectId={projectId}
+      activeModule={activeModule}
+      activeDocumentId={activeDocumentId}
+      pendingRouteSessionId={pendingRouteSessionId}
+      className="h-full min-h-0 px-5 pb-5"
+      onPendingRouteSessionConsumed={handlePendingRouteSessionConsumed}
+    />
   );
 };

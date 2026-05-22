@@ -167,6 +167,34 @@ a:focus-visible,
   background: var(--surface-2);
 }
 
+.agent-group-thinking-hint {
+  position: relative;
+  width: fit-content;
+  overflow: hidden;
+  padding: 0 2px;
+  line-height: 1.5;
+}
+
+.agent-group-thinking-hint::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--primary) 24%, transparent),
+    transparent
+  );
+  animation: agent-group-thinking-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-group-thinking-shimmer {
+  to {
+    transform: translateX(120%);
+  }
+}
+
 .docs-editor-panel {
   border: 1px solid var(--stroke);
   background: var(--surface);

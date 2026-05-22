@@ -1,7 +1,4 @@
 import { Type } from "@mariozechner/pi-ai";
-import type { ChatScope } from "@shared/types";
-import { applyPatch, type Operation } from "fast-json-patch";
-import jmespath from "jmespath";
 import { execSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -24,25 +21,9 @@ import type {
 } from "./modelProviders/types";
 import { settingsService } from "./settingsService";
 
-const CREATION_DIR_NAME = "creation";
-const DSL_BOARD_FILE_NAME = "board.json";
 const ASSETS_DIR_NAME = "assets";
 const GENERATED_DIR_NAME = "generated";
 const ASSETS_META_FILE_NAME = "meta.json";
-
-const SUPPORTED_PATCH_OPS = new Set([
-  "add",
-  "remove",
-  "replace",
-  "move",
-  "copy",
-]);
-
-type PatchOperationInput = {
-  op?: unknown;
-  path?: unknown;
-  from?: unknown;
-};
 
 type AssetMetaEntry = {
   source?: string;
@@ -82,9 +63,6 @@ const resolveAssetsDir = (projectCwd: string): string =>
 
 const resolveAssetsMetaPath = (projectCwd: string): string =>
   path.resolve(projectCwd, ASSETS_DIR_NAME, ASSETS_META_FILE_NAME);
-
-const resolveDslBoardPath = (projectCwd: string): string =>
-  path.resolve(projectCwd, CREATION_DIR_NAME, DSL_BOARD_FILE_NAME);
 
 const parseJson = (raw: string, filePath: string): unknown => {
   try {
@@ -172,104 +150,6 @@ const updateGeneratedAssetMeta = async (input: {
   await writeAssetMetaMap(metaPath, metaMap);
 };
 
-const readDslBoard = async (boardPath: string): Promise<unknown> => {
-  try {
-    const raw = await fs.readFile(boardPath, "utf8");
-    return parseJson(raw, boardPath);
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException;
-    if (err.code === "ENOENT") {
-      return {};
-    }
-    throw error;
-  }
-};
-
-const writeDslBoard = async (
-  boardPath: string,
-  payload: unknown,
-): Promise<void> => {
-  await ensureDir(path.dirname(boardPath));
-  await fs.writeFile(
-    boardPath,
-    `${JSON.stringify(payload, null, 2)}\n`,
-    "utf8",
-  );
-};
-
-const parsePatchOperations = (input: string): Operation[] => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(input);
-  } catch (error) {
-    throw new Error(`patch is not valid JSON: ${toErrorMessage(error)}`);
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error("patch must be a JSON array string (RFC 6902)");
-  }
-
-  parsed.forEach((item, index) => {
-    if (!item || typeof item !== "object") {
-      throw new Error(`patch[${index}] must be an object`);
-    }
-
-    const operation = item as PatchOperationInput;
-    if (typeof operation.op !== "string") {
-      throw new Error(`patch[${index}].op must be a string`);
-    }
-    if (!SUPPORTED_PATCH_OPS.has(operation.op)) {
-      throw new Error(`patch[${index}].op "${operation.op}" is not supported`);
-    }
-
-    if (typeof operation.path !== "string") {
-      throw new Error(`patch[${index}].path must be a string`);
-    }
-    if (operation.path !== "" && !operation.path.startsWith("/")) {
-      throw new Error(`patch[${index}].path must be a JSON Pointer`);
-    }
-
-    if (
-      (operation.op === "move" || operation.op === "copy") &&
-      typeof operation.from !== "string"
-    ) {
-      throw new Error(
-        `patch[${index}].from is required for op=${operation.op}`,
-      );
-    }
-
-    if (
-      (operation.op === "move" || operation.op === "copy") &&
-      typeof operation.from === "string" &&
-      operation.from !== "" &&
-      !operation.from.startsWith("/")
-    ) {
-      throw new Error(`patch[${index}].from must be a JSON Pointer`);
-    }
-  });
-
-  return parsed as Operation[];
-};
-
-const summarizePatchOperations = (operations: Operation[]): string => {
-  const lines = operations.map((operation) => {
-    const op = operation.op;
-    const targetPath = operation.path;
-
-    if ((op === "move" || op === "copy") && "from" in operation) {
-      const fromPath = operation.from;
-      return `${op} ${fromPath} -> ${targetPath}`;
-    }
-
-    return `${op} ${targetPath}`;
-  });
-
-  return [
-    `applied ${operations.length} operation(s):`,
-    ...lines.map((line) => `- ${line}`),
-  ].join("\n");
-};
-
 const toJsonText = (value: unknown): string => {
   if (value === undefined) {
     return "null";
@@ -300,64 +180,8 @@ const getFalProviderForGeneration = async (projectCwd: string) => {
   };
 };
 
-export const createBuiltinTools = (
-  projectCwd: string,
-  scopeType: ChatScope["type"],
-): CustomToolDef[] => {
-  const projectAgentOnlyToolNames = new Set(["ReadDsl", "UpdateDsl"]);
+export const createBuiltinTools = (projectCwd: string): CustomToolDef[] => {
   const tools: CustomToolDef[] = [
-    {
-      name: "ReadDsl",
-      label: "ReadDsl",
-      description:
-        "Query the current workspace creation DSL board (`creation/board.json`) using a JMESPath expression.\n\nParameter: jmespath_expr (required) — JMESPath query expression.\n\nSyntax: @ = root; foo / foo.bar = field and nesting; foo[0] / foo[*].bar = array index and map; foo[?bar==`value`] = filter; keys(@) = all keys at root.\n\nReturns: On success, the query result as JSON string; on failure, an error message.",
-      parameters: Type.Object({
-        jmespath_expr: Type.String({
-          description: "JMESPath query expression; @ denotes the root document",
-        }),
-      }),
-      async handler(input) {
-        try {
-          const jmespathExpr = input.jmespath_expr as string;
-          const boardPath = resolveDslBoardPath(projectCwd);
-          const board = await readDslBoard(boardPath);
-          const queryResult = jmespath.search(board, jmespathExpr);
-          return { text: toJsonText(queryResult) };
-        } catch (error) {
-          return {
-            text: `ReadDsl failed: ${toErrorMessage(error)}`,
-            isError: true,
-          };
-        }
-      },
-    },
-    {
-      name: "UpdateDsl",
-      label: "UpdateDsl",
-      description:
-        "Update the current workspace creation DSL board (`creation/board.json`) using JSON Patch (RFC 6902).\n\nParameter: patch (required) — JSON Patch operations array as a JSON string. Supported ops: add, remove, replace, move, copy. Paths are JSON Pointer (e.g. /foo, /foo/bar, /foo/0, /foo/- for append).\n\nReturns: On success, a summary of applied changes (add/remove/replace/move/copy and paths); on failure, an error message.",
-      parameters: Type.Object({
-        patch: Type.String({
-          description: "JSON string of JSON Patch operations array (RFC 6902)",
-        }),
-      }),
-      async handler(input) {
-        try {
-          const patch = input.patch as string;
-          const boardPath = resolveDslBoardPath(projectCwd);
-          const currentBoard = await readDslBoard(boardPath);
-          const operations = parsePatchOperations(patch);
-          const result = applyPatch(currentBoard, operations, true, false);
-          await writeDslBoard(boardPath, result.newDocument);
-          return { text: summarizePatchOperations(operations) };
-        } catch (error) {
-          return {
-            text: `UpdateDsl failed: ${toErrorMessage(error)}`,
-            isError: true,
-          };
-        }
-      },
-    },
     {
       name: "GenerateImage",
       label: "GenerateImage",
@@ -817,9 +641,5 @@ export const createBuiltinTools = (
     ...createBrowserUseTools(projectCwd),
   ];
 
-  if (scopeType === "project") {
-    return tools;
-  }
-
-  return tools.filter((tool) => !projectAgentOnlyToolNames.has(tool.name));
+  return tools;
 };

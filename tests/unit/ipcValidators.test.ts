@@ -242,7 +242,8 @@ describe('ipc validators', () => {
       language: 'en-US',
       themeMode: 'dark',
       linkOpenMode: 'system',
-      quickGuideDismissed: true
+      quickGuideDismissed: true,
+      showHiddenSessions: true
     });
     expect(result.success).toBe(true);
   });

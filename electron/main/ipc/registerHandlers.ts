@@ -6,6 +6,11 @@ import { z } from 'zod';
 import { handle } from './handlerUtils';
 import {
   assetImportSchema,
+  agentGroupCreateSchema,
+  agentGroupMembersSchema,
+  agentGroupMessageListSchema,
+  agentGroupUpdateSchema,
+  agentGroupUserMessageSendSchema,
   chatQueueSchema,
   chatQueuedMessagesSchema,
   chatListSessionsSchema,
@@ -72,6 +77,7 @@ import { onboardingService } from '../services/onboardingService';
 import { updateService } from '../services/updateService';
 import { appPreviewWindowService } from '../services/appPreviewWindowService';
 import { agentService } from '../services/agentService';
+import { agentGroupService } from '../services/agentGroupService';
 import { linkOpenService } from '../services/linkOpenService';
 import { resolveLocalMediaPath } from '../services/localMediaPath';
 import { settingsRuntimeService } from '../services/settingsRuntimeService';
@@ -257,6 +263,43 @@ export const registerHandlers = (): void => {
     return true;
   });
 
+  handle('agentGroup:list', z.object({}).optional(), async () =>
+    agentGroupService.listGroups()
+  );
+
+  handle('agentGroup:create', agentGroupCreateSchema, async (input) =>
+    agentGroupService.createGroup(input)
+  );
+
+  handle('agentGroup:update', agentGroupUpdateSchema, async (input) =>
+    agentGroupService.updateGroup(input)
+  );
+
+  handle('agentGroup:delete', z.object({ id: z.string().min(1) }), async (input) => {
+    await agentGroupService.deleteGroup(input.id);
+    return true;
+  });
+
+  handle('agentGroup:addMembers', agentGroupMembersSchema, async (input) =>
+    agentGroupService.addMembers(input)
+  );
+
+  handle('agentGroup:removeMember', agentGroupMembersSchema, async (input) =>
+    agentGroupService.removeMember(input)
+  );
+
+  handle('agentGroupMessage:list', agentGroupMessageListSchema, async (input) =>
+    agentGroupService.listMessages(input)
+  );
+
+  handle('agentGroupMessage:getTypingState', z.object({ groupId: z.string().min(1) }), async (input) =>
+    agentGroupService.getTypingState(input.groupId)
+  );
+
+  handle('agentGroupMessage:sendUserMessage', agentGroupUserMessageSendSchema, async (input) =>
+    agentGroupService.sendUserMessage(input)
+  );
+
   handle('docs:list', z.object({ projectId: z.string() }), async (input) =>
     repositoryService.listDocuments(input.projectId)
   );
@@ -345,6 +388,7 @@ export const registerHandlers = (): void => {
     async (input) =>
       repositoryService.listChatSessions(input.scope, {
         kinds: input.kinds,
+        includeHidden: input.includeHidden,
       })
   );
   handle('chat:getMessages', z.object({ scope: chatScopeSchema, sessionId: z.string() }), async (input) =>
@@ -698,7 +742,8 @@ export const registerHandlers = (): void => {
         linkOpenMode: input.linkOpenMode,
         mainSubModeEnabled: true,
         quickGuideDismissed: input.quickGuideDismissed,
-        chatInputShortcutTipDismissed: input.chatInputShortcutTipDismissed
+        chatInputShortcutTipDismissed: input.chatInputShortcutTipDismissed,
+        showHiddenSessions: input.showHiddenSessions
       });
       await settingsRuntimeService.reload({
         targets: [...settingsReloadTargets.general]

@@ -6,15 +6,22 @@ interface ScrollAreaProps {
   className?: string;
   style?: CSSProperties;
   autoHide?: boolean;
+  onScroll?: (event: Event) => void;
 }
 
 export const ScrollArea = ({
   children,
   className,
   style,
-  autoHide = false
+  autoHide = false,
+  onScroll
 }: ScrollAreaProps) => (
-  <SimpleBar className={className} style={style} autoHide={autoHide}>
+  <SimpleBar
+    className={className}
+    style={style}
+    autoHide={autoHide}
+    scrollableNodeProps={onScroll ? { onScroll } : undefined}
+  >
     {children}
   </SimpleBar>
 );

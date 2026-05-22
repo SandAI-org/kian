@@ -263,12 +263,13 @@ describe("settingsService.getAgentSystemPrompt", () => {
       mainSubModeEnabled: true,
       quickGuideDismissed: true,
       chatInputShortcutTipDismissed: true,
+      showHiddenSessions: true,
     });
 
     await expect(
       fs.readFile(path.join(tempRoot, ".global", "config.json"), "utf8"),
     ).resolves.toBe(
-      '{\n  "workspaceRoot": "/tmp/next-workspace",\n  "language": "en-US",\n  "themeMode": "dark",\n  "linkOpenMode": "system",\n  "quickGuideDismissed": true,\n  "chatInputShortcutTipDismissed": true\n}\n',
+      '{\n  "workspaceRoot": "/tmp/next-workspace",\n  "language": "en-US",\n  "themeMode": "dark",\n  "linkOpenMode": "system",\n  "quickGuideDismissed": true,\n  "chatInputShortcutTipDismissed": true,\n  "showHiddenSessions": true\n}\n',
     );
   });
 
@@ -298,6 +299,7 @@ describe("settingsService.getAgentSystemPrompt", () => {
       mainSubModeEnabled: true,
       quickGuideDismissed: false,
       chatInputShortcutTipDismissed: false,
+      showHiddenSessions: false,
     });
   });
 

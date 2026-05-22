@@ -97,10 +97,19 @@ export const ChatSessionList = ({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const generalConfigQuery = useQuery({
+    queryKey: ["settings", "general"],
+    queryFn: api.settings.getGeneralConfig,
+  });
+  const showHiddenSessions = generalConfigQuery.data?.showHiddenSessions ?? false;
 
   const sessionsQuery = useQuery({
-    queryKey: getChatSessionsQueryKey(scopeKey, sessionKinds),
-    queryFn: () => api.chat.getSessions(scope, { kinds: sessionKinds }),
+    queryKey: getChatSessionsQueryKey(scopeKey, sessionKinds, showHiddenSessions),
+    queryFn: () =>
+      api.chat.getSessions(scope, {
+        kinds: sessionKinds,
+        includeHidden: showHiddenSessions,
+      }),
     enabled: Boolean(scopeKey),
   });
 
@@ -187,7 +196,11 @@ export const ChatSessionList = ({
     }
 
     setIsSavingTitle(true);
-    const sessionsQueryKey = getChatSessionsQueryKey(scopeKey, sessionKinds);
+    const sessionsQueryKey = getChatSessionsQueryKey(
+      scopeKey,
+      sessionKinds,
+      showHiddenSessions,
+    );
     const previousSessions =
       queryClient.getQueryData<ChatSessionDTO[]>(sessionsQueryKey);
     const optimisticUpdatedAt = new Date().toISOString();
@@ -210,6 +223,7 @@ export const ChatSessionList = ({
         };
       },
       sessionKinds,
+      showHiddenSessions,
     );
     setEditingSessionId(null);
     setTitleDraft("");
@@ -231,6 +245,7 @@ export const ChatSessionList = ({
     scope,
     scopeKey,
     sessionKinds,
+    showHiddenSessions,
     sessions,
     t,
     titleDraft,
@@ -371,6 +386,11 @@ export const ChatSessionList = ({
                     {sourceLabel ? (
                       <span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-1 text-[10px] leading-4 text-blue-500">
                         {sourceLabel}
+                      </span>
+                    ) : null}
+                    {session.hidden ? (
+                      <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 text-[10px] leading-4 text-slate-500">
+                        {t("隐藏")}
                       </span>
                     ) : null}
                     <span className="i18n-no-translate truncate text-sm font-medium leading-5">

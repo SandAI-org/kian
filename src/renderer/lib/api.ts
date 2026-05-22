@@ -1,6 +1,10 @@
 import { unwrap } from './result';
 import type {
   AgentModelDTO,
+  AgentGroupDTO,
+  AgentGroupMessageDTO,
+  AgentGroupMessagePageDTO,
+  AgentGroupTypingStateDTO,
   AgentProviderDTO,
   AppBuildResultDTO,
   BroadcastChannelDTO,
@@ -83,6 +87,48 @@ export const api = {
       unwrap(await window.api.project.update(payload)),
     delete: async (id: string) => unwrap(await window.api.project.delete(id))
   },
+  agentGroup: {
+    list: async (): Promise<AgentGroupDTO[]> =>
+      unwrap(await window.api.agentGroup.list()),
+    create: async (payload: {
+      name: string;
+      description?: string;
+      memberProjectIds?: string[];
+    }) =>
+      unwrap(await window.api.agentGroup.create(payload)),
+    update: async (payload: {
+      id: string;
+      name?: string;
+      description?: string | null;
+    }) => unwrap(await window.api.agentGroup.update(payload)),
+    delete: async (id: string) => unwrap(await window.api.agentGroup.delete(id)),
+    addMembers: async (payload: { groupId: string; projectIds: string[] }) =>
+      unwrap(await window.api.agentGroup.addMembers(payload)),
+    removeMember: async (payload: { groupId: string; projectIds: string[] }) =>
+      unwrap(await window.api.agentGroup.removeMember(payload)),
+  },
+  agentGroupMessage: {
+    list: async (payload: {
+      groupId: string;
+      limit?: number;
+      beforeCursor?: string | null;
+    }): Promise<AgentGroupMessagePageDTO> =>
+      unwrap(await window.api.agentGroupMessage.list(payload)),
+    getTypingState: async (payload: {
+      groupId: string;
+    }): Promise<AgentGroupTypingStateDTO> =>
+      unwrap(await window.api.agentGroupMessage.getTypingState(payload)),
+    sendUserMessage: async (payload: {
+      groupId: string;
+      content: string;
+    }): Promise<AgentGroupMessageDTO> =>
+      unwrap(await window.api.agentGroupMessage.sendUserMessage(payload)),
+    subscribeUpdated: (
+      handler: (event: { groupId: string; message: AgentGroupMessageDTO }) => void,
+    ) => window.api.agentGroupMessage.subscribeUpdated(handler),
+    subscribeTypingUpdated: (handler: (event: AgentGroupTypingStateDTO) => void) =>
+      window.api.agentGroupMessage.subscribeTypingUpdated(handler),
+  },
   docs: {
     list: async (projectId: string) => unwrap(await window.api.docs.list(projectId)),
     explorer: async (projectId: string) => unwrap(await window.api.docs.explorer(projectId)),
@@ -139,7 +185,7 @@ export const api = {
       scope: ChatScope;
       module: ModuleType | 'main';
       title: string;
-      kind?: 'normal' | 'digital_avatar' | 'channel_runtime';
+      kind?: ChatSessionKind;
       hidden?: boolean;
       metadataJson?: string | null;
     }) =>
@@ -148,7 +194,7 @@ export const api = {
       unwrap(await window.api.chat.getDigitalAvatarSession(scope)),
     getSessions: async (
       scope: ChatScope,
-      options?: { kinds?: ChatSessionKind[] },
+      options?: { kinds?: ChatSessionKind[]; includeHidden?: boolean },
     ) => unwrap(await window.api.chat.getSessions(scope, options)),
     getMessages: async (scope: ChatScope, sessionId: string) =>
       unwrap(await window.api.chat.getMessages(scope, sessionId)),

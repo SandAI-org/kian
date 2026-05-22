@@ -3,7 +3,7 @@ import type { AppThemeMode } from "@shared/theme";
 
 export type ModuleType = 'docs' | 'creation' | 'assets' | 'app';
 export type ChatModuleType = ModuleType | 'main';
-export type ChatSessionKind = 'normal' | 'digital_avatar' | 'channel_runtime';
+export type ChatSessionKind = 'normal' | 'digital_avatar' | 'channel_runtime' | 'group_runtime';
 export type ChatCapabilityMode = 'full' | 'chat_only';
 export type AppType = 'react' | 'vue' | 'svelte' | 'nextjs' | 'nuxt' | 'angular' | 'vanilla' | 'unknown';
 export type ProjectCreationSource = 'manual' | 'agent';
@@ -47,6 +47,42 @@ export interface ProjectDTO {
   cover?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AgentGroupDTO {
+  id: string;
+  name: string;
+  description?: string | null;
+  memberProjectIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentGroupMessageDTO {
+  id: string;
+  groupId: string;
+  senderType: 'user' | 'agent' | 'system';
+  senderAgentId?: string | null;
+  senderAgentName?: string | null;
+  content: string;
+  notificationId?: string | null;
+  createdAt: string;
+}
+
+export interface AgentGroupMessagePageDTO {
+  messages: AgentGroupMessageDTO[];
+  nextBeforeCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface AgentGroupTypingAgentDTO {
+  agentProjectId: string;
+  agentName: string;
+}
+
+export interface AgentGroupTypingStateDTO {
+  groupId: string;
+  agents: AgentGroupTypingAgentDTO[];
 }
 
 export interface DocumentDTO {
@@ -588,6 +624,7 @@ export interface GeneralConfigDTO {
   mainSubModeEnabled: boolean;
   quickGuideDismissed: boolean;
   chatInputShortcutTipDismissed: boolean;
+  showHiddenSessions: boolean;
 }
 
 export interface BroadcastChannelDTO {

@@ -37,6 +37,7 @@ import {
 } from "./agentPrompt";
 import { appOperationEvents } from "./appOperationEvents";
 import { createAppOperationTools } from "./appOperationMcpServer";
+import { createAgentGroupTools } from "./agentGroupService";
 import { createBuiltinTools } from "./builtinMcpServer";
 import {
   applyChatStreamEventToTimeline,
@@ -98,6 +99,12 @@ type ActiveAgentRequestState = {
   resolvePromptDone?: () => void;
   queuedRequests: QueuedAgentRequestState[];
   activeQueuedRequest?: ActiveQueuedRequestTurnState;
+};
+
+type AgentGroupRuntimeMetadata = {
+  groupId: string;
+  notificationId?: string;
+  triggeredMessageIds?: string[];
 };
 
 type QueuedAgentRequestState = {
@@ -284,6 +291,49 @@ const getSessionStoreKey = (scope: ChatScope, chatSessionId: string): string =>
 
 const getAgentLogLabel = (scope: ChatScope): string =>
   scope.type === "main" ? MAIN_AGENT_NAME : `子智能体(${scope.projectId})`;
+
+const parseAgentGroupRuntimeMetadata = (
+  session: { kind?: ChatSessionKind; metadataJson?: string | null } | null,
+): AgentGroupRuntimeMetadata | null => {
+  if (session?.kind !== "group_runtime" || !session.metadataJson) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(session.metadataJson) as Partial<AgentGroupRuntimeMetadata>;
+    if (typeof parsed.groupId === "string" && parsed.groupId.trim()) {
+      return {
+        groupId: parsed.groupId.trim(),
+        notificationId:
+          typeof parsed.notificationId === "string"
+            ? parsed.notificationId
+            : undefined,
+        triggeredMessageIds: Array.isArray(parsed.triggeredMessageIds)
+          ? parsed.triggeredMessageIds.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : undefined,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const buildAgentGroupRuntimeInstructionSection = (
+  metadata: AgentGroupRuntimeMetadata | null,
+): string =>
+  metadata
+    ? [
+        "# 群聊协作规则",
+        "",
+        "- 你正在一个多人 Agent 群聊中。",
+        "- 群消息历史不是你的 LLM 上下文；需要了解群信息时使用 ListGroupMessages 和 ListGroupMembers。",
+        "- 如果决定公开发言，必须调用 SendMessageToGroup；不要只在隐藏 session 中回复。",
+        "- 没有被 @ 时，如无必要不要回复。",
+        "- 每次回复尽量简洁，避免重复最近观点。",
+      ].join("\n")
+    : "";
 
 const collectExplicitSkillPaths = (
   skills: Array<{ skillFilePath: string }>,
@@ -1383,6 +1433,8 @@ const createOrResumeSession = async (
     chatSessionId,
   );
   const sessionKind: ChatSessionKind = currentChatSession?.kind ?? "normal";
+  const agentGroupRuntimeMetadata =
+    parseAgentGroupRuntimeMetadata(currentChatSession);
   const effectiveCapabilityMode: ChatCapabilityMode = capabilityMode;
   const status = await settingsService.getClaudeStatus(scope);
   const effectiveThinkingLevel = thinkingLevel ?? DEFAULT_CHAT_THINKING_LEVEL;
@@ -1549,7 +1601,7 @@ const createOrResumeSession = async (
 
   // Create custom tools from our business logic
   const builtinTools = toolAccessEnabled
-    ? createBuiltinTools(projectCwd, scope.type).map(toToolDefinition)
+    ? createBuiltinTools(projectCwd).map(toToolDefinition)
     : [];
   const appOperationTools = toolAccessEnabled
     ? createAppOperationTools(
@@ -1569,11 +1621,21 @@ const createOrResumeSession = async (
         runtime: delegationToolRuntime,
       }).map(toToolDefinition)
     : [];
+  const agentGroupTools =
+    toolAccessEnabled &&
+    scope.type === "project" &&
+    agentGroupRuntimeMetadata?.groupId
+      ? createAgentGroupTools({
+          groupId: agentGroupRuntimeMetadata.groupId,
+          agentProjectId: scope.projectId,
+        }).map(toToolDefinition)
+      : [];
   const customTools = [
     ...builtinTools,
     ...appOperationTools,
     ...sessionControlTools,
     ...delegationTools,
+    ...agentGroupTools,
     ...(toolAccessEnabled ? mcpRuntime.tools : []),
   ];
   const toolNames = [
@@ -1589,6 +1651,7 @@ const createOrResumeSession = async (
     appOperationToolNames: appOperationTools.map((tool) => tool.name),
     sessionControlToolNames: sessionControlTools.map((tool) => tool.name),
     delegationToolNames: delegationTools.map((tool) => tool.name),
+    agentGroupToolNames: agentGroupTools.map((tool) => tool.name),
     mcpToolNames: mcpRuntime.tools.map((tool) => tool.name),
     capabilityMode: effectiveCapabilityMode,
     sessionKind,
@@ -1669,6 +1732,8 @@ const createOrResumeSession = async (
     scope,
     delegationContext,
   });
+  const agentGroupRuntimeInstructionSection =
+    buildAgentGroupRuntimeInstructionSection(agentGroupRuntimeMetadata);
   const explicitSkillPaths = collectExplicitSkillPaths(activeSkills);
   let hasLoggedFinalSystemPrompt = false;
   const resourceLoader = new DefaultResourceLoader({
@@ -1685,9 +1750,13 @@ const createOrResumeSession = async (
         contextSnapshotSection,
         softwareInfoSection,
       });
-      const finalSystemPrompt = roleInstructionSection
-        ? `${basePrompt}\n\n${roleInstructionSection}`
-        : basePrompt;
+      const finalSystemPrompt = [
+        basePrompt,
+        roleInstructionSection,
+        agentGroupRuntimeInstructionSection,
+      ]
+        .filter((section) => section.trim())
+        .join("\n\n");
       if (isDevelopmentMode && !hasLoggedFinalSystemPrompt) {
         hasLoggedFinalSystemPrompt = true;
         logger.info("Final system prompt metadata (development)", {

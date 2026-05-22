@@ -228,6 +228,7 @@ const DEFAULT_GENERAL_CONFIG_FLAGS = {
   linkOpenMode: "builtin" as LinkOpenMode,
   quickGuideDismissed: false,
   chatInputShortcutTipDismissed: false,
+  showHiddenSessions: false,
 } as const;
 
 const defaultSystemPromptCache = new Map<string, string>();
@@ -438,6 +439,10 @@ const normalizeGeneralConfig = (
     chatInputShortcutTipDismissed: normalizeBoolean(
       raw.chatInputShortcutTipDismissed,
       DEFAULT_GENERAL_CONFIG_FLAGS.chatInputShortcutTipDismissed,
+    ),
+    showHiddenSessions: normalizeBoolean(
+      raw.showHiddenSessions,
+      DEFAULT_GENERAL_CONFIG_FLAGS.showHiddenSessions,
     ),
   };
 };
@@ -2116,6 +2121,7 @@ export const settingsService = {
     mainSubModeEnabled?: boolean;
     quickGuideDismissed?: boolean;
     chatInputShortcutTipDismissed?: boolean;
+    showHiddenSessions?: boolean;
   }): Promise<void> {
     const currentConfig = await this.getGeneralConfig();
     const nextConfig: GeneralConfigDTO = {
@@ -2139,6 +2145,10 @@ export const settingsService = {
         typeof input.chatInputShortcutTipDismissed === "boolean"
           ? input.chatInputShortcutTipDismissed
           : currentConfig.chatInputShortcutTipDismissed,
+      showHiddenSessions:
+        typeof input.showHiddenSessions === "boolean"
+          ? input.showHiddenSessions
+          : currentConfig.showHiddenSessions,
     };
 
     await fs.mkdir(GLOBAL_CONFIG_DIR, { recursive: true });
@@ -2153,6 +2163,7 @@ export const settingsService = {
           quickGuideDismissed: nextConfig.quickGuideDismissed,
           chatInputShortcutTipDismissed:
             nextConfig.chatInputShortcutTipDismissed,
+          showHiddenSessions: nextConfig.showHiddenSessions,
         },
         null,
         2,

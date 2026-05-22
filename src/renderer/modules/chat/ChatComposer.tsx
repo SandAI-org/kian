@@ -83,6 +83,7 @@ interface ChatComposerProps {
   onModelChange?: (value: string) => void;
   selectedThinkingLevel: ChatThinkingLevel;
   onThinkingLevelChange: (value: ChatThinkingLevel) => void;
+  showThinkingLevel?: boolean;
   thinkingLevelOptions?: Array<{ label: string; value: ChatThinkingLevel }>;
   thinkingLevelMenuHeader: string;
   canInterrupt: boolean;
@@ -128,6 +129,7 @@ export const ChatComposer = ({
   onModelChange,
   selectedThinkingLevel,
   onThinkingLevelChange,
+  showThinkingLevel = true,
   thinkingLevelOptions = [],
   thinkingLevelMenuHeader,
   canInterrupt,
@@ -145,14 +147,14 @@ export const ChatComposer = ({
     modelOptions.length <= 1 || !onModelChange;
   const containerClassName =
     variant === "embedded"
-      ? "no-drag rounded-[24px] border border-[#dbe5f5] bg-white px-4 py-4"
-      : "no-drag rounded-xl border border-[#dbe5f5] bg-white px-3 py-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)]";
+      ? "no-drag rounded-[24px] border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.92)] px-4 py-4"
+      : "no-drag rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.92)] px-3 py-3 shadow-[var(--shadow-panel)]";
 
   return (
     <div className={containerClassName}>
       {!controlsOnly && queuedMessages.length > 0 ? (
-        <div className="mb-3 rounded-lg border border-[#dbe5f5] bg-[#f7faff]">
-          <div className="border-b border-[#dbe5f5] px-3 py-2 text-[12px] font-medium text-slate-600">
+        <div className="mb-3 rounded-lg border border-[var(--stroke)] bg-[var(--surface-2)]">
+          <div className="border-b border-[var(--stroke)] px-3 py-2 text-[12px] font-medium text-[var(--text-soft)]">
             {queuedMessagesLabel}
           </div>
           <ScrollArea className="max-h-28 px-3 py-2">
@@ -160,20 +162,20 @@ export const ChatComposer = ({
               {queuedMessages.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-md border border-[#d8e2f2] bg-white px-2.5 py-2"
+                  className="rounded-md border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-2"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       {item.sourceName ? (
-                        <div className="flex items-center gap-1 text-[12px] text-slate-700">
+                        <div className="flex items-center gap-1 text-[12px] text-[var(--text-soft)]">
                           <span>{queuedSourcePrefix}</span>
-                          <span className="inline-flex rounded-full border border-[#d8e2f2] bg-[#f7faff] px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          <span className="inline-flex rounded-full border border-[var(--stroke)] bg-[var(--surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-soft)]">
                             {item.sourceName}
                           </span>
                           <span>{queuedSourceSuffix}</span>
                         </div>
                       ) : (
-                        <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-700">
+                        <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--text-soft)]">
                           {item.content}
                         </div>
                       )}
@@ -183,7 +185,7 @@ export const ChatComposer = ({
                         type="button"
                         onClick={() => onRemoveQueuedMessage(item.id)}
                         disabled={interruptLoading}
-                        className="shrink-0 text-[12px] font-medium text-slate-400 transition-colors enabled:hover:cursor-pointer enabled:hover:text-[#f97316] disabled:cursor-not-allowed disabled:text-slate-300"
+                        className="shrink-0 text-[12px] font-medium text-[var(--muted)] transition-colors enabled:hover:cursor-pointer enabled:hover:text-[#f97316] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {removeQueuedMessageLabel}
                       </button>
@@ -200,7 +202,7 @@ export const ChatComposer = ({
         <div className="mb-3 flex flex-wrap gap-2">
           {pendingFiles.map((file) => (
             <div key={file.key} className="relative h-14 w-14">
-              <div className="h-full w-full overflow-hidden rounded-md border border-[#d8e2f2]">
+              <div className="h-full w-full overflow-hidden rounded-md border border-[var(--stroke)]">
                 {file.previewUrl ? (
                   <RevealableImage
                     src={file.previewUrl}
@@ -210,7 +212,7 @@ export const ChatComposer = ({
                     imageClassName="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center bg-[#f3f6fb] text-slate-500">
+                  <div className="flex h-full w-full flex-col items-center justify-center bg-[var(--surface-3)] text-[var(--muted)]">
                     <FileTextOutlined className="text-sm" />
                     <span className="max-w-[48px] truncate text-[10px] leading-none">
                       {(file.extension || "file")
@@ -236,13 +238,13 @@ export const ChatComposer = ({
       ) : null}
 
       {!controlsOnly && showInputShortcutTip && onDismissInputShortcutTip ? (
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#dbe5f5] bg-[#f7faff] px-3 py-2 text-[12px] text-slate-600">
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[var(--stroke)] bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-soft)]">
           <span>{chatInputShortcutHint}</span>
           <Button
             type="link"
             size="small"
             onClick={onDismissInputShortcutTip}
-            className="!h-auto !p-0 !text-[12px] !text-slate-500 hover:!text-slate-700"
+            className="!h-auto !p-0 !text-[12px] !text-[var(--muted)] hover:!text-[var(--text)]"
           >
             {dismissShortcutTipLabel}
           </Button>
@@ -251,7 +253,7 @@ export const ChatComposer = ({
 
       {controlsOnly ? (
         readOnlyNotice ? (
-          <div className="rounded-lg border border-[#dbe5f5] bg-[#f7faff] px-3 py-2 text-[12px] text-slate-600">
+          <div className="rounded-lg border border-[var(--stroke)] bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-soft)]">
             {readOnlyNotice}
           </div>
         ) : null
@@ -303,16 +305,18 @@ export const ChatComposer = ({
               disabled={disableModelSelector}
             />
           ) : null}
-          <CompactSelect
-            key="chat-thinking-level-select"
-            value={selectedThinkingLevel}
-            onChange={(value: string) =>
-              onThinkingLevelChange(value as ChatThinkingLevel)
-            }
-            options={thinkingLevelOptions}
-            menuHeader={thinkingLevelMenuHeader}
-            popupMinWidth={132}
-          />
+          {showThinkingLevel ? (
+            <CompactSelect
+              key="chat-thinking-level-select"
+              value={selectedThinkingLevel}
+              onChange={(value: string) =>
+                onThinkingLevelChange(value as ChatThinkingLevel)
+              }
+              options={thinkingLevelOptions}
+              menuHeader={thinkingLevelMenuHeader}
+              popupMinWidth={132}
+            />
+          ) : null}
         </div>
         {!controlsOnly ? (
           <Tooltip title={chatInputShortcutHint} placement="left">

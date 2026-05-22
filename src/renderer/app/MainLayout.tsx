@@ -15,8 +15,8 @@ import {
   CrownOutlined,
   DownOutlined,
   InfoCircleOutlined,
-  RobotOutlined,
-  RobotFilled,
+  MessageFilled,
+  MessageOutlined,
   SettingFilled,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -94,7 +94,7 @@ export const MainLayout = () => {
   const isMcpPage = location.pathname.startsWith('/mcp');
   const isMainAgentPage = location.pathname.startsWith('/main-agent');
   const headerTitle = isHomePage
-    ? '智能体'
+    ? '聊天'
     : location.pathname.startsWith('/settings')
       ? '设置'
       : isMcpPage
@@ -216,10 +216,11 @@ export const MainLayout = () => {
           if (event.module !== 'main') {
             params.set('module', event.module);
           }
+          params.set('agent', event.scope.projectId);
 
           navigate(
             {
-              pathname: `/agent/${event.scope.projectId}`,
+              pathname: '/',
               search: `?${params.toString()}`
             },
             { replace: false }
@@ -236,8 +237,8 @@ export const MainLayout = () => {
           searchParams.set('doc', event.documentId);
         }
 
-        const search = searchParams.toString();
         if (event.projectId === 'main-agent') {
+          const search = searchParams.toString();
           navigate(
             {
               pathname: '/main-agent',
@@ -247,9 +248,11 @@ export const MainLayout = () => {
           );
           return;
         }
+        searchParams.set('agent', event.projectId);
+        const search = searchParams.toString();
         navigate(
           {
-            pathname: `/agent/${event.projectId}`,
+            pathname: '/',
             search: search ? `?${search}` : ''
           },
           { replace: true }
@@ -590,7 +593,7 @@ export const MainLayout = () => {
               },
               {
                 key: '/',
-                icon: isProjectsEntrySelected ? <RobotFilled /> : <RobotOutlined />,
+                icon: isProjectsEntrySelected ? <MessageFilled /> : <MessageOutlined />,
                 label: ''
               },
               {

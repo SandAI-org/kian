@@ -24,6 +24,7 @@ import { pathToFileURL } from 'node:url';
 import { registerHandlers } from './ipc/registerHandlers';
 import { chatChannelService } from './services/chatChannelService';
 import { chatEvents } from './services/chatEvents';
+import { agentGroupService } from './services/agentGroupService';
 import { appOperationEvents } from './services/appOperationEvents';
 import { cronjobService } from './services/cronjobService';
 import { logger } from './services/logger';
@@ -1144,6 +1145,20 @@ app
       for (const window of BrowserWindow.getAllWindows()) {
         if (window.isDestroyed()) continue;
         window.webContents.send('chat:queueUpdated', payload);
+      }
+    });
+
+    agentGroupService.onMessagesUpdated((payload) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue;
+        window.webContents.send('agentGroupMessage:updated', payload);
+      }
+    });
+
+    agentGroupService.onTypingUpdated((payload) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue;
+        window.webContents.send('agentGroupMessage:typingUpdated', payload);
       }
     });
 

@@ -848,7 +848,7 @@ const FileReferenceCard = ({
 // Sub-components
 // ---------------------------------------------------------------------------
 
-const MarkdownMessage = memo(
+export const MarkdownMessage = memo(
   ({
     content,
     projectId,
@@ -1009,7 +1009,7 @@ const MarkdownMessage = memo(
 );
 MarkdownMessage.displayName = "MarkdownMessage";
 
-const AssistantMessageContextMenu = memo(
+export const AssistantMessageContextMenu = memo(
   ({
     content,
     projectId,

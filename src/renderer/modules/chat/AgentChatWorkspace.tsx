@@ -43,11 +43,14 @@ export const AgentChatWorkspace = ({
   const { language } = useAppI18n();
   const t = (value: string): string => translateUiText(language, value);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const sidebarWidthClass = sidebarCollapsed
+    ? "w-10 min-w-[2.5rem] max-w-[2.5rem] basis-[2.5rem]"
+    : "w-64 min-w-[16rem] max-w-[16rem] basis-[16rem]";
 
   return (
-    <div className="flex h-full gap-0.5">
+    <div className="flex h-full min-h-0 w-full overflow-hidden gap-0.5">
       <div
-        className={`shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? "w-10" : "w-64"}`}
+        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${sidebarWidthClass}`}
       >
         {sidebarCollapsed ? (
           <div className="flex items-center justify-center">
@@ -74,7 +77,7 @@ export const AgentChatWorkspace = ({
           />
         )}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-0">
         <div className="mx-auto h-full">
           <ModuleChatPane
             projectId={projectId}

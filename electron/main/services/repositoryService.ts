@@ -3178,7 +3178,7 @@ export const repositoryService = {
     },
   ): Promise<ChatSessionDTO[]> {
     const includeHidden = options?.includeHidden ?? false;
-    const allowedKinds = options?.kinds ?? ["normal"];
+    const allowedKinds = options?.kinds ?? (includeHidden ? undefined : ["normal"]);
     const sessions = await sortChatSessionsForList(
       scope,
       await loadCachedChatSessions(scope),

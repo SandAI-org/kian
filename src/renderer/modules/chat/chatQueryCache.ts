@@ -26,15 +26,21 @@ const normalizeSessionKinds = (
 export const getChatSessionsQueryKey = (
   scopeKey: string,
   kinds?: ChatSessionKind[],
+  includeHidden?: boolean,
 ) => {
   const normalizedKinds = normalizeSessionKinds(kinds);
+  const visibilityKey = includeHidden ? "with-hidden" : undefined;
   if (
     !normalizedKinds ||
     (normalizedKinds.length === 1 && normalizedKinds[0] === "normal")
   ) {
-    return ["chat-sessions", scopeKey] as const;
+    return visibilityKey
+      ? (["chat-sessions", scopeKey, visibilityKey] as const)
+      : (["chat-sessions", scopeKey] as const);
   }
-  return ["chat-sessions", scopeKey, normalizedKinds.join(",")] as const;
+  return visibilityKey
+    ? (["chat-sessions", scopeKey, normalizedKinds.join(","), visibilityKey] as const)
+    : (["chat-sessions", scopeKey, normalizedKinds.join(",")] as const);
 };
 
 export const getChatMessagesQueryKey = (scopeKey: string, sessionId: string) =>
@@ -108,9 +114,10 @@ export const patchChatSessionList = (
   sessionId: string,
   updater: (session: ChatSessionDTO) => ChatSessionDTO,
   sessionKinds?: ChatSessionKind[],
+  includeHidden?: boolean,
 ): void => {
   queryClient.setQueryData<ChatSessionDTO[] | undefined>(
-    getChatSessionsQueryKey(getChatScopeKey(scope), sessionKinds),
+    getChatSessionsQueryKey(getChatScopeKey(scope), sessionKinds, includeHidden),
     (current) => {
       if (!current) return current;
 

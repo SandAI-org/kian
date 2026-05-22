@@ -14,6 +14,34 @@ export const chatScopeSchema = z.discriminatedUnion('type', [
   })
 ]);
 
+export const agentGroupCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(400).optional(),
+  memberProjectIds: z.array(z.string().min(1)).max(100).optional()
+});
+
+export const agentGroupUpdateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(400).optional().nullable()
+});
+
+export const agentGroupMembersSchema = z.object({
+  groupId: z.string().min(1),
+  projectIds: z.array(z.string().min(1)).max(100)
+});
+
+export const agentGroupMessageListSchema = z.object({
+  groupId: z.string().min(1),
+  limit: z.number().int().positive().max(100).optional(),
+  beforeCursor: z.string().min(1).optional().nullable()
+});
+
+export const agentGroupUserMessageSendSchema = z.object({
+  groupId: z.string().min(1),
+  content: z.string().trim().min(1).max(20_000)
+});
+
 export const projectCreateSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   description: z.string().max(400).optional(),
@@ -201,14 +229,15 @@ export const sessionCreateSchema = z.object({
   scope: chatScopeSchema,
   module: chatModuleSchema,
   title: z.string().max(100),
-  kind: z.enum(['normal', 'digital_avatar', 'channel_runtime']).optional(),
+  kind: z.enum(['normal', 'digital_avatar', 'channel_runtime', 'group_runtime']).optional(),
   hidden: z.boolean().optional(),
   metadataJson: z.string().optional()
 });
 
 export const chatListSessionsSchema = z.object({
   scope: chatScopeSchema,
-  kinds: z.array(z.enum(['normal', 'digital_avatar', 'channel_runtime'])).min(1).optional()
+  kinds: z.array(z.enum(['normal', 'digital_avatar', 'channel_runtime', 'group_runtime'])).min(1).optional(),
+  includeHidden: z.boolean().optional()
 });
 
 const httpUrlStringSchema = z
@@ -302,7 +331,8 @@ export const saveGeneralConfigSchema = z.object({
   linkOpenMode: z.enum(['builtin', 'system']).default('builtin'),
   mainSubModeEnabled: z.boolean().default(true),
   quickGuideDismissed: z.boolean().optional(),
-  chatInputShortcutTipDismissed: z.boolean().optional()
+  chatInputShortcutTipDismissed: z.boolean().optional(),
+  showHiddenSessions: z.boolean().optional()
 });
 
 export const saveModelProviderConfigSchema = z.object({

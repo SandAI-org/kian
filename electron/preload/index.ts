@@ -1,5 +1,9 @@
 import type {
   AgentModelDTO,
+  AgentGroupDTO,
+  AgentGroupMessageDTO,
+  AgentGroupMessagePageDTO,
+  AgentGroupTypingStateDTO,
   AgentProviderDTO,
   AppBuildResultDTO,
   BroadcastChannelDTO,
@@ -99,6 +103,64 @@ const api = {
     }) => invoke<ProjectDTO>("project:update", payload),
     delete: (id: string) => invoke<boolean>("project:delete", { id }),
   },
+  agentGroup: {
+    list: () => invoke<AgentGroupDTO[]>("agentGroup:list"),
+    create: (payload: {
+      name: string;
+      description?: string;
+      memberProjectIds?: string[];
+    }) =>
+      invoke<AgentGroupDTO>("agentGroup:create", payload),
+    update: (payload: {
+      id: string;
+      name?: string;
+      description?: string | null;
+    }) => invoke<AgentGroupDTO>("agentGroup:update", payload),
+    delete: (id: string) => invoke<boolean>("agentGroup:delete", { id }),
+    addMembers: (payload: { groupId: string; projectIds: string[] }) =>
+      invoke<AgentGroupDTO>("agentGroup:addMembers", payload),
+    removeMember: (payload: { groupId: string; projectIds: string[] }) =>
+      invoke<AgentGroupDTO>("agentGroup:removeMember", payload),
+  },
+  agentGroupMessage: {
+    list: (payload: {
+      groupId: string;
+      limit?: number;
+      beforeCursor?: string | null;
+    }) => invoke<AgentGroupMessagePageDTO>("agentGroupMessage:list", payload),
+    getTypingState: (payload: { groupId: string }) =>
+      invoke<AgentGroupTypingStateDTO>("agentGroupMessage:getTypingState", payload),
+    sendUserMessage: (payload: { groupId: string; content: string }) =>
+      invoke<AgentGroupMessageDTO>("agentGroupMessage:sendUserMessage", payload),
+    subscribeUpdated: (
+      handler: (event: { groupId: string; message: AgentGroupMessageDTO }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { groupId: string; message: AgentGroupMessageDTO },
+      ): void => {
+        handler(payload);
+      };
+      ipcRenderer.on("agentGroupMessage:updated", listener);
+      return (): void => {
+        ipcRenderer.removeListener("agentGroupMessage:updated", listener);
+      };
+    },
+    subscribeTypingUpdated: (
+      handler: (event: AgentGroupTypingStateDTO) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: AgentGroupTypingStateDTO,
+      ): void => {
+        handler(payload);
+      };
+      ipcRenderer.on("agentGroupMessage:typingUpdated", listener);
+      return (): void => {
+        ipcRenderer.removeListener("agentGroupMessage:typingUpdated", listener);
+      };
+    },
+  },
   docs: {
     list: (projectId: string) =>
       invoke<DocumentDTO[]>("docs:list", { projectId }),
@@ -170,7 +232,7 @@ const api = {
       scope: ChatScope;
       module: ModuleType | "main";
       title: string;
-      kind?: "normal" | "digital_avatar" | "channel_runtime";
+      kind?: "normal" | "digital_avatar" | "channel_runtime" | "group_runtime";
       hidden?: boolean;
       metadataJson?: string | null;
     }) => invoke<ChatSessionDTO>("chat:createSession", payload),
@@ -179,9 +241,15 @@ const api = {
     getSessions: (
       scope: ChatScope,
       options?: {
-        kinds?: ("normal" | "digital_avatar" | "channel_runtime")[];
+        kinds?: ("normal" | "digital_avatar" | "channel_runtime" | "group_runtime")[];
+        includeHidden?: boolean;
       },
-    ) => invoke<ChatSessionDTO[]>("chat:getSessions", { scope, kinds: options?.kinds }),
+    ) =>
+      invoke<ChatSessionDTO[]>("chat:getSessions", {
+        scope,
+        kinds: options?.kinds,
+        includeHidden: options?.includeHidden,
+      }),
     getMessages: (scope: ChatScope, sessionId: string) =>
       invoke<ChatMessageDTO[]>("chat:getMessages", { scope, sessionId }),
     getQueuedMessages: (scope: ChatScope, sessionId: string) =>

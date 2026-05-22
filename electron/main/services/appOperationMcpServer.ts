@@ -2,6 +2,7 @@ import { Type } from "@mariozechner/pi-ai";
 import type {
   ChatModuleType,
   ChatScope,
+  ChatThinkingLevel,
   DocumentDTO,
   ProjectDTO,
 } from "@shared/types";
@@ -9,6 +10,7 @@ import path from "node:path";
 import { appOperationEvents } from "./appOperationEvents";
 import type { CustomToolDef } from "./customTools";
 import { repositoryService } from "./repositoryService";
+import { settingsService } from "./settingsService";
 import { settingsRuntimeService } from "./settingsRuntimeService";
 import { WORKSPACE_ROOT } from "./workspacePaths";
 
@@ -156,6 +158,74 @@ const resolveProject = async (
     throw new Error("当前没有可用 Agent");
   }
   return projects[0];
+};
+
+const isChatThinkingLevel = (value: unknown): value is ChatThinkingLevel =>
+  value === "low" || value === "medium" || value === "high";
+
+const getOptionalString = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+const getAgentScope = (projectId: string): ChatScope => ({
+  type: "project",
+  projectId,
+});
+
+const parseModelKey = (
+  modelKey: string,
+): { provider: string; modelId: string } => {
+  const delimiterIndex = modelKey.indexOf(":");
+  const provider = modelKey.slice(0, delimiterIndex).trim();
+  const modelId = modelKey.slice(delimiterIndex + 1).trim();
+  if (delimiterIndex <= 0 || !provider || !modelId) {
+    throw new Error("默认模型格式必须是 provider:modelId");
+  }
+  return { provider, modelId };
+};
+
+const resolveAgentDefaultModel = async (rawModel?: string): Promise<string> => {
+  const status = await settingsService.getClaudeStatus();
+  const requestedModel = rawModel?.trim();
+  if (!requestedModel) {
+    const latestModel = status.allEnabledModels[0];
+    if (!latestModel) {
+      throw new Error("当前没有已启用的默认模型");
+    }
+    return `${latestModel.provider}:${latestModel.modelId}`;
+  }
+
+  const { provider, modelId } = parseModelKey(requestedModel);
+  const providerConfig = status.providers[provider];
+  if (!providerConfig?.enabled || !providerConfig.enabledModels.includes(modelId)) {
+    throw new Error(`默认模型未启用：${requestedModel}`);
+  }
+  return `${provider}:${modelId}`;
+};
+
+const resolveThinkingLevel = (
+  value: unknown,
+  fallback: ChatThinkingLevel,
+): ChatThinkingLevel => {
+  if (value === undefined) return fallback;
+  if (isChatThinkingLevel(value)) return value;
+  throw new Error("思考等级必须是 low、medium 或 high");
+};
+
+const applyAgentDefaults = async (input: {
+  projectId: string;
+  model?: string;
+  thinkingLevel?: ChatThinkingLevel;
+}): Promise<void> => {
+  const scope = getAgentScope(input.projectId);
+  if (input.model) {
+    await settingsService.setLastSelectedModel(scope, input.model);
+  }
+  if (input.thinkingLevel) {
+    await settingsService.setLastSelectedThinkingLevel(
+      scope,
+      input.thinkingLevel,
+    );
+  }
 };
 
 const resolveUniqueDocumentMatch = (
@@ -432,10 +502,39 @@ export const createAppOperationTools = (
       },
     },
     {
+      name: "ListAvailableModels",
+      label: "ListAvailableModels",
+      description:
+        "列出当前已启用的 Agent 模型，返回可用于 CreateAgent 和 UpdateAgent 的 provider:modelId。",
+      parameters: Type.Object({}),
+      async handler() {
+        try {
+          const status = await settingsService.getClaudeStatus();
+          if (status.allEnabledModels.length === 0) {
+            return { text: "当前没有已启用的 Agent 模型。" };
+          }
+
+          const lines = [
+            `当前已启用 ${status.allEnabledModels.length} 个 Agent 模型：`,
+            ...status.allEnabledModels.map((model, index) => {
+              const modelKey = `${model.provider}:${model.modelId}`;
+              return `${index + 1}. ${modelKey} · ${model.modelName}`;
+            }),
+          ];
+          return { text: lines.join("\n") };
+        } catch (error) {
+          return {
+            text: `ListAvailableModels failed: ${toErrorMessage(error)}`,
+            isError: true,
+          };
+        }
+      },
+    },
+    {
       name: "CreateAgent",
       label: "CreateAgent",
       description:
-        "新建一个智能体，name 应该基于上下文生成一个合理的像人一样的名字，例如用户明确要求使用的名字，而不是一个纯容器式的名字。若用户没有明确要求把当前任务或后续定时任务交给该 Agent，默认仍由主 Agent 继续执行。",
+        "新建一个智能体，name 应该基于上下文生成一个合理的像人一样的名字，例如用户明确要求使用的名字，而不是一个纯容器式的名字。可设置默认模型和思考等级；未指定默认模型时使用最新已启用模型，并使用 medium 思考等级。若用户没有明确要求把当前任务或后续定时任务交给该 Agent，默认仍由主 Agent 继续执行。",
       parameters: Type.Object({
         name: Type.Optional(
           Type.String({
@@ -447,15 +546,44 @@ export const createAppOperationTools = (
             description: "智能体的描述",
           }),
         ),
+        default_model: Type.Optional(
+          Type.String({
+            description:
+              "默认模型，格式为 provider:modelId；不传则使用最新已启用模型",
+          }),
+        ),
+        model: Type.Optional(
+          Type.String({
+            description: "兼容参数。默认模型，格式为 provider:modelId",
+          }),
+        ),
+        thinking_level: Type.Optional(
+          Type.Union(
+            [Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")],
+            { description: "默认思考等级：low | medium | high，默认 medium" },
+          ),
+        ),
       }),
       async handler(input) {
         try {
           const name = input.name as string | undefined;
           const description = input.description as string | undefined;
+          const defaultModel = await resolveAgentDefaultModel(
+            getOptionalString(input.default_model) ?? getOptionalString(input.model),
+          );
+          const thinkingLevel = resolveThinkingLevel(
+            input.thinking_level,
+            "medium",
+          );
           const project = await repositoryService.createProject({
             name,
             description: description?.trim() ? description : undefined,
             source: "agent",
+          });
+          await applyAgentDefaults({
+            projectId: project.id,
+            model: defaultModel,
+            thinkingLevel,
           });
 
           const workspaceDir = path.join(WORKSPACE_ROOT, project.id);
@@ -464,6 +592,8 @@ export const createAppOperationTools = (
               `Agent 已创建：${describeProject(project)}`,
               `Agent ID：${project.id}`,
               `工作目录：${workspaceDir}`,
+              `默认模型：${defaultModel}`,
+              `思考等级：${thinkingLevel}`,
               "如果用户没有明确指定目标 Agent，后续任务默认继续由主 Agent 处理。",
               "如需进入该 Agent 工作区，请调用 OpenAgent。",
             ].join("\n"),
@@ -471,6 +601,120 @@ export const createAppOperationTools = (
         } catch (error) {
           return {
             text: `CreateAgent failed: ${toErrorMessage(error)}`,
+            isError: true,
+          };
+        }
+      },
+    },
+    {
+      name: "UpdateAgent",
+      label: "UpdateAgent",
+      description:
+        "修改指定 Agent 的基础信息，包括名称、描述、默认模型和思考等级。不传的字段保持不变。",
+      parameters: Type.Object({
+        agent: Type.Optional(
+          Type.String({
+            description: "目标 Agent 的名称、ID 或关键词；不传则使用当前对话 Agent",
+          }),
+        ),
+        project_id: Type.Optional(
+          Type.String({
+            description: "兼容旧参数。可选，目标 Agent ID",
+          }),
+        ),
+        agent_id: Type.Optional(
+          Type.String({
+            description: "兼容旧参数。可选，目标 Agent ID",
+          }),
+        ),
+        name: Type.Optional(
+          Type.String({
+            description: "新的 Agent 名称",
+          }),
+        ),
+        description: Type.Optional(
+          Type.String({
+            description: "新的 Agent 描述；传空字符串可清空描述",
+          }),
+        ),
+        default_model: Type.Optional(
+          Type.String({
+            description: "默认模型，格式为 provider:modelId",
+          }),
+        ),
+        model: Type.Optional(
+          Type.String({
+            description: "兼容参数。默认模型，格式为 provider:modelId",
+          }),
+        ),
+        thinking_level: Type.Optional(
+          Type.Union(
+            [Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")],
+            { description: "思考等级：low | medium | high" },
+          ),
+        ),
+      }),
+      async handler(input) {
+        try {
+          const projectQuery =
+            getOptionalString(input.agent) ??
+            getOptionalString(input.agent_id) ??
+            getOptionalString(input.project_id);
+          const project = await resolveProject(currentProjectId, projectQuery);
+          if (project.id === MAIN_AGENT_SCOPE_ID) {
+            throw new Error("主 Agent 暂不支持修改基础信息");
+          }
+
+          const modelRequested =
+            input.default_model !== undefined || input.model !== undefined;
+          const defaultModel = modelRequested
+            ? await resolveAgentDefaultModel(
+                getOptionalString(input.default_model) ??
+                  getOptionalString(input.model),
+              )
+            : undefined;
+          const thinkingLevel =
+            input.thinking_level !== undefined
+              ? resolveThinkingLevel(input.thinking_level, "medium")
+              : undefined;
+
+          const name = getOptionalString(input.name);
+          const description = getOptionalString(input.description);
+          const projectUpdateRequested =
+            input.name !== undefined || input.description !== undefined;
+          const updatedProject = projectUpdateRequested
+            ? await repositoryService.updateProject({
+                id: project.id,
+                name,
+                description:
+                  input.description !== undefined
+                    ? description?.trim()
+                      ? description
+                      : null
+                    : undefined,
+              })
+            : project;
+
+          await applyAgentDefaults({
+            projectId: project.id,
+            model: defaultModel,
+            thinkingLevel,
+          });
+
+          const lines = [`Agent 已更新：${describeProject(updatedProject)}`];
+          if (defaultModel) {
+            lines.push(`默认模型：${defaultModel}`);
+          }
+          if (thinkingLevel) {
+            lines.push(`思考等级：${thinkingLevel}`);
+          }
+          if (!projectUpdateRequested && !defaultModel && !thinkingLevel) {
+            lines.push("未提供需要修改的字段。");
+          }
+          return { text: lines.join("\n") };
+        } catch (error) {
+          return {
+            text: `UpdateAgent failed: ${toErrorMessage(error)}`,
             isError: true,
           };
         }

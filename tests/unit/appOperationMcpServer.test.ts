@@ -3,6 +3,7 @@ import type { AppOperationEvent, ProjectDTO } from "../../src/shared/types";
 import { appOperationEvents } from "../../electron/main/services/appOperationEvents";
 import { createAppOperationTools } from "../../electron/main/services/appOperationMcpServer";
 import { repositoryService } from "../../electron/main/services/repositoryService";
+import { settingsService } from "../../electron/main/services/settingsService";
 import { settingsRuntimeService } from "../../electron/main/services/settingsRuntimeService";
 
 vi.mock("../../electron/main/services/repositoryService", () => ({
@@ -10,7 +11,16 @@ vi.mock("../../electron/main/services/repositoryService", () => ({
     listProjects: vi.fn(),
     getProjectById: vi.fn(),
     createProject: vi.fn(),
+    updateProject: vi.fn(),
     buildAppWorkspace: vi.fn(),
+  },
+}));
+
+vi.mock("../../electron/main/services/settingsService", () => ({
+  settingsService: {
+    getClaudeStatus: vi.fn(),
+    setLastSelectedModel: vi.fn(),
+    setLastSelectedThinkingLevel: vi.fn(),
   },
 }));
 
@@ -21,7 +31,34 @@ vi.mock("../../electron/main/services/settingsRuntimeService", () => ({
 }));
 
 const mockedRepositoryService = vi.mocked(repositoryService);
+const mockedSettingsService = vi.mocked(settingsService);
 const mockedSettingsRuntimeService = vi.mocked(settingsRuntimeService);
+
+const createClaudeStatus = () => ({
+  providers: {
+    openai: {
+      configured: true,
+      enabled: true,
+      apiKey: "sk-test",
+      customModels: [],
+      enabledModels: ["gpt-5.4"],
+    },
+  },
+  allEnabledModels: [
+    {
+      provider: "openai",
+      modelId: "gpt-5.4",
+      modelName: "GPT-5.4",
+    },
+    {
+      provider: "anthropic",
+      modelId: "claude-test",
+      modelName: "Claude Test",
+    },
+  ],
+  lastSelectedModel: undefined,
+  lastSelectedThinkingLevel: undefined,
+});
 
 const createProjectDto = (
   overrides: Partial<ProjectDTO> = {},
@@ -38,6 +75,7 @@ const createProjectDto = (
 describe("createAppOperationTools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedSettingsService.getClaudeStatus.mockResolvedValue(createClaudeStatus());
   });
 
   it("CreateAgent no longer exposes auto-open params and does not navigate", async () => {
@@ -76,13 +114,114 @@ describe("createAppOperationTools", () => {
           "Agent 已创建：阿青 (agent-a)",
           "Agent ID：agent-a",
           "工作目录：/Users/lei/KianWorkspaceTest/agent-a",
+          "默认模型：openai:gpt-5.4",
+          "思考等级：medium",
           "如果用户没有明确指定目标 Agent，后续任务默认继续由主 Agent 处理。",
           "如需进入该 Agent 工作区，请调用 OpenAgent。",
         ].join("\n"),
       });
+      expect(mockedSettingsService.setLastSelectedModel).toHaveBeenCalledWith(
+        { type: "project", projectId: "agent-a" },
+        "openai:gpt-5.4",
+      );
+      expect(
+        mockedSettingsService.setLastSelectedThinkingLevel,
+      ).toHaveBeenCalledWith({ type: "project", projectId: "agent-a" }, "medium");
     } finally {
       dispose();
     }
+  });
+
+  it("CreateAgent accepts explicit default model and thinking level", async () => {
+    const createdProject = createProjectDto();
+    mockedRepositoryService.createProject.mockResolvedValue(createdProject);
+
+    const tool = createAppOperationTools("current-agent", "main").find(
+      (item) => item.name === "CreateAgent",
+    );
+
+    expect(tool).toBeDefined();
+
+    const result = await tool!.handler({
+      name: "阿青",
+      default_model: "openai:gpt-5.4",
+      thinking_level: "high",
+    });
+
+    expect(result.text).toContain("默认模型：openai:gpt-5.4");
+    expect(result.text).toContain("思考等级：high");
+    expect(mockedSettingsService.setLastSelectedModel).toHaveBeenCalledWith(
+      { type: "project", projectId: "agent-a" },
+      "openai:gpt-5.4",
+    );
+    expect(mockedSettingsService.setLastSelectedThinkingLevel).toHaveBeenCalledWith(
+      { type: "project", projectId: "agent-a" },
+      "high",
+    );
+  });
+
+  it("UpdateAgent updates metadata and defaults", async () => {
+    mockedRepositoryService.listProjects.mockResolvedValue([createProjectDto()]);
+    mockedRepositoryService.updateProject.mockResolvedValue(
+      createProjectDto({
+        name: "阿青 Pro",
+        description: "新的描述",
+        updatedAt: "2026-03-11T10:00:00.000Z",
+      }),
+    );
+
+    const tool = createAppOperationTools("current-agent", "main").find(
+      (item) => item.name === "UpdateAgent",
+    );
+
+    expect(tool).toBeDefined();
+
+    const result = await tool!.handler({
+      agent: "阿青",
+      name: "阿青 Pro",
+      description: "新的描述",
+      default_model: "openai:gpt-5.4",
+      thinking_level: "low",
+    });
+
+    expect(mockedRepositoryService.updateProject).toHaveBeenCalledWith({
+      id: "agent-a",
+      name: "阿青 Pro",
+      description: "新的描述",
+    });
+    expect(mockedSettingsService.setLastSelectedModel).toHaveBeenCalledWith(
+      { type: "project", projectId: "agent-a" },
+      "openai:gpt-5.4",
+    );
+    expect(mockedSettingsService.setLastSelectedThinkingLevel).toHaveBeenCalledWith(
+      { type: "project", projectId: "agent-a" },
+      "low",
+    );
+    expect(result).toEqual({
+      text: [
+        "Agent 已更新：阿青 Pro (agent-a)",
+        "默认模型：openai:gpt-5.4",
+        "思考等级：low",
+      ].join("\n"),
+    });
+  });
+
+  it("ListAvailableModels returns enabled model keys for agent defaults", async () => {
+    const tool = createAppOperationTools("current-agent", "main").find(
+      (item) => item.name === "ListAvailableModels",
+    );
+
+    expect(tool).toBeDefined();
+
+    const result = await tool!.handler({});
+
+    expect(result).toEqual({
+      text: [
+        "当前已启用 2 个 Agent 模型：",
+        "1. openai:gpt-5.4 · GPT-5.4",
+        "2. anthropic:claude-test · Claude Test",
+      ].join("\n"),
+    });
   });
 
   it("OpenAgent resolves the target agent and emits navigate event", async () => {

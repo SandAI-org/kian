@@ -1106,6 +1106,8 @@ export const SettingsPage = () => {
           generalConfigQuery.data?.quickGuideDismissed ?? false,
         chatInputShortcutTipDismissed:
           generalConfigQuery.data?.chatInputShortcutTipDismissed ?? false,
+        showHiddenSessions:
+          generalConfigQuery.data?.showHiddenSessions ?? false,
       }),
   });
   const saveShortcutConfigMutation = useMutation({
@@ -2294,6 +2296,25 @@ export const SettingsPage = () => {
       updateDebugReleaseNotes,
       updateDebugVersion,
     ],
+  );
+
+  const handleShowHiddenSessionsChange = useCallback(
+    async (checked: boolean) => {
+      try {
+        const currentConfig =
+          generalConfigQuery.data ?? (await api.settings.getGeneralConfig());
+        await api.settings.saveGeneralConfig({
+          ...currentConfig,
+          showHiddenSessions: checked,
+        });
+        await generalConfigQuery.refetch();
+        void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+        message.success(t("调试选项已更新"));
+      } catch {
+        message.error(t("保存调试选项失败"));
+      }
+    },
+    [generalConfigQuery, queryClient, t],
   );
 
   const handleWaitForWeixinQrLogin = useCallback(async (sessionKey: string) => {
@@ -4096,6 +4117,33 @@ export const SettingsPage = () => {
                           >
                             {t("Debug")}
                           </Typography.Title>
+                          <div className="mb-4 rounded-xl border border-dashed border-[#b9c8df] bg-[#f8fbff] p-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <Typography.Text strong>
+                                  {t("会话调试")}
+                                </Typography.Text>
+                                <div className="mt-3 text-sm font-medium text-slate-700">
+                                  {t("显示隐藏的 session")}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {t(
+                                    "开启后，对话列表会显示隐藏 session，便于调试群聊 runtime。",
+                                  )}
+                                </div>
+                              </div>
+                              <Switch
+                                checked={
+                                  generalConfigQuery.data
+                                    ?.showHiddenSessions ?? false
+                                }
+                                loading={generalConfigQuery.isFetching}
+                                onChange={(checked) => {
+                                  void handleShowHiddenSessionsChange(checked);
+                                }}
+                              />
+                            </div>
+                          </div>
                           <div className="rounded-xl border border-dashed border-[#b9c8df] bg-[#f8fbff] p-4">
                             <div className="mb-3">
                               <Typography.Text strong>

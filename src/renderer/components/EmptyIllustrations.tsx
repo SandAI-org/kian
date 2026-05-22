@@ -398,3 +398,145 @@ export const IllustrationEmptyCronjob = ({ size = 96 }: { size?: number }) => (
     />
   </svg>
 );
+
+/** Empty group messages: a calm chat table waiting for the first reply */
+export const IllustrationEmptyGroupMessages = ({
+  size = 168,
+}: {
+  size?: number;
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 176 176"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <ellipse
+      cx="88"
+      cy="135"
+      rx="56"
+      ry="10"
+      fill="var(--empty-illustration-layer)"
+      opacity="0.62"
+    />
+    <rect
+      x="32"
+      y="44"
+      width="112"
+      height="80"
+      rx="18"
+      fill="var(--empty-illustration-panel)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.8"
+    />
+    <path
+      d="M54 124l-12 16 28-16"
+      fill="var(--empty-illustration-panel)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+    />
+    <rect
+      x="52"
+      y="62"
+      width="52"
+      height="12"
+      rx="6"
+      fill="var(--empty-illustration-paper)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.4"
+    />
+    <rect
+      x="52"
+      y="84"
+      width="72"
+      height="12"
+      rx="6"
+      fill="var(--empty-illustration-layer)"
+    />
+    <rect
+      x="82"
+      y="104"
+      width="42"
+      height="10"
+      rx="5"
+      fill="var(--empty-illustration-paper)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.4"
+    />
+    <circle cx="41" cy="62" r="9" fill="var(--empty-illustration-accent)" />
+    <circle cx="131" cy="104" r="9" fill="var(--empty-illustration-warm)" />
+    <circle cx="124" cy="38" r="11" fill="var(--empty-illustration-accent)" />
+    <path
+      d="M124 32.5v11M118.5 38h11"
+      stroke="var(--empty-illustration-contrast)"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    />
+    <circle cx="45" cy="38" r="4" fill="var(--empty-illustration-dot)" />
+    <circle cx="139" cy="70" r="3.5" fill="var(--empty-illustration-dot)" />
+  </svg>
+);
+
+/** Empty group members: a small roster ready for agents to join */
+export const IllustrationEmptyGroupMembers = ({
+  size = 132,
+}: {
+  size?: number;
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 132 132"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <ellipse
+      cx="66"
+      cy="108"
+      rx="38"
+      ry="7"
+      fill="var(--empty-illustration-layer)"
+      opacity="0.6"
+    />
+    <rect
+      x="35"
+      y="28"
+      width="62"
+      height="76"
+      rx="14"
+      fill="var(--empty-illustration-panel)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.6"
+    />
+    <circle
+      cx="66"
+      cy="55"
+      r="14"
+      fill="var(--empty-illustration-paper)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M45 90c3.8-12 12-18 21-18s17.2 6 21 18"
+      fill="var(--empty-illustration-paper)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <circle cx="31" cy="62" r="11" fill="var(--empty-illustration-layer-strong)" />
+    <circle cx="101" cy="62" r="11" fill="var(--empty-illustration-layer-strong)" />
+    <circle cx="31" cy="62" r="5" fill="var(--empty-illustration-dot)" />
+    <circle cx="101" cy="62" r="5" fill="var(--empty-illustration-dot)" />
+    <circle cx="93" cy="32" r="11" fill="var(--empty-illustration-accent)" />
+    <path
+      d="M93 26.5v11M87.5 32h11"
+      stroke="var(--empty-illustration-contrast)"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
