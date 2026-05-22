@@ -424,6 +424,7 @@ const EN_US_EXACT: Record<string, string> = {
   "加载群消息失败": "Failed to load group messages",
   "加载更早消息": "Load older messages",
   "发送群消息，使用 @Agent 名称点名": "Send a group message. Use @Agent name to mention someone",
+  "提及 Agent": "Mention Agent",
 };
 
 const KO_KR_EXACT: Record<string, string> = {
@@ -669,6 +670,7 @@ const KO_KR_EXACT: Record<string, string> = {
   "加载群消息失败": "그룹 메시지를 불러오지 못했습니다",
   "加载更早消息": "이전 메시지 불러오기",
   "发送群消息，使用 @Agent 名称点名": "그룹 메시지를 보내세요. @Agent 이름으로 멘션할 수 있습니다",
+  "提及 Agent": "에이전트 멘션",
 };
 
 const JA_JP_EXACT: Record<string, string> = {
@@ -915,6 +917,7 @@ const JA_JP_EXACT: Record<string, string> = {
   "加载群消息失败": "グループメッセージの読み込みに失敗しました",
   "加载更早消息": "以前のメッセージを読み込む",
   "发送群消息，使用 @Agent 名称点名": "グループメッセージを送信します。@Agent 名でメンションできます",
+  "提及 Agent": "エージェントをメンション",
 };
 
 const EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {

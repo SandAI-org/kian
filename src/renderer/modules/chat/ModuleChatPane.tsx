@@ -64,6 +64,7 @@ import {
   MouseEvent,
   ChangeEvent,
   ClipboardEvent,
+  cloneElement,
   isValidElement,
   memo,
   useCallback,
@@ -73,6 +74,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactElement,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -844,6 +846,97 @@ const FileReferenceCard = ({
   );
 };
 
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildMentionPattern = (mentionNames?: string[]): RegExp | null => {
+  const parts = [
+    ...new Set(mentionNames?.map((name) => name.trim()).filter(Boolean) ?? []),
+  ]
+    .sort((left, right) => right.length - left.length)
+    .map((name) => `@${escapeRegExp(name)}`);
+  if (parts.length === 0) return null;
+  return new RegExp(
+    `(^|[^\\p{L}\\p{N}_-])(${parts.join("|")})(?=$|[^\\p{L}\\p{N}_-])`,
+    "gu",
+  );
+};
+
+const renderMentionText = (
+  text: string,
+  pattern: RegExp,
+  keyPrefix: string,
+): ReactNode[] => {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  pattern.lastIndex = 0;
+
+  for (const match of text.matchAll(pattern)) {
+    const matchIndex = match.index ?? 0;
+    const leading = match[1] ?? "";
+    const mention = match[2] ?? "";
+    const mentionStart = matchIndex + leading.length;
+    if (mentionStart > lastIndex) {
+      nodes.push(text.slice(lastIndex, mentionStart));
+    }
+    nodes.push(
+      <span
+        key={`${keyPrefix}-${mentionStart}`}
+        className="chat-markdown__mention i18n-no-translate"
+      >
+        {mention}
+      </span>,
+    );
+    lastIndex = mentionStart + mention.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+  return nodes.length > 0 ? nodes : [text];
+};
+
+const renderMentionNodes = (
+  children: ReactNode,
+  pattern: RegExp | null,
+  keyPrefix = "mention",
+): ReactNode => {
+  if (!pattern) return children;
+  if (typeof children === "string") {
+    return renderMentionText(children, pattern, keyPrefix);
+  }
+  if (typeof children === "number") {
+    return renderMentionText(String(children), pattern, keyPrefix);
+  }
+  if (Array.isArray(children)) {
+    return children.map((child, index) =>
+      renderMentionNodes(child, pattern, `${keyPrefix}-${index}`),
+    );
+  }
+  if (!isValidElement(children)) return children;
+
+  const element = children as ReactElement<{
+    children?: ReactNode;
+    className?: string;
+  }>;
+  const className = element.props.className ?? "";
+  if (
+    element.type === "code" ||
+    element.type === "pre" ||
+    className.includes("markdown-code-block") ||
+    className.includes("chat-markdown__inline-code")
+  ) {
+    return children;
+  }
+  if (element.props.children === undefined) return children;
+
+  return cloneElement(
+    element,
+    undefined,
+    renderMentionNodes(element.props.children, pattern, keyPrefix),
+  );
+};
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -854,15 +947,21 @@ export const MarkdownMessage = memo(
     projectId,
     user,
     className,
+    mentionNames,
   }: {
     content: string;
     projectId?: string;
     user: boolean;
     className?: string;
+    mentionNames?: string[];
   }) => {
     const normalizedContent = useMemo(
       () => preprocessExtendedMediaMarkdown(content),
       [content],
+    );
+    const mentionPattern = useMemo(
+      () => buildMentionPattern(mentionNames),
+      [mentionNames],
     );
 
     return (
@@ -874,6 +973,12 @@ export const MarkdownMessage = memo(
           rehypePlugins={[rehypeKatex, rehypeHighlight]}
           urlTransform={(url) => url}
           components={{
+            p: ({ children }) => (
+              <p>{renderMentionNodes(children, mentionPattern, "p")}</p>
+            ),
+            li: ({ children }) => (
+              <li>{renderMentionNodes(children, mentionPattern, "li")}</li>
+            ),
             pre: ({ children }) => (
               <MarkdownPreBlock variant="chat">{children}</MarkdownPreBlock>
             ),
@@ -1014,6 +1119,7 @@ export const AssistantMessageContextMenu = memo(
     content,
     projectId,
     className,
+    mentionNames,
     resolvedTheme,
     saveAsImageLabel,
     saveSuccessLabel,
@@ -1028,6 +1134,7 @@ export const AssistantMessageContextMenu = memo(
     content: string;
     projectId?: string;
     className?: string;
+    mentionNames?: string[];
     resolvedTheme: AppResolvedTheme;
     saveAsImageLabel: string;
     saveSuccessLabel: string;
@@ -1129,6 +1236,7 @@ export const AssistantMessageContextMenu = memo(
         <MarkdownMessage
           content={content}
           projectId={projectId}
+          mentionNames={mentionNames}
           user={false}
         />
         {menuPosition

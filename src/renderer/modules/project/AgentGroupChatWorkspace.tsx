@@ -38,6 +38,7 @@ import {
   Typography,
   message as antdMessage,
 } from "antd";
+import type { TextAreaRef } from "antd/es/input/TextArea";
 import {
   useCallback,
   useEffect,
@@ -48,6 +49,7 @@ import {
   type ChangeEvent,
   type ClipboardEvent,
   type CSSProperties,
+  type KeyboardEvent,
 } from "react";
 
 interface AgentGroupChatWorkspaceProps {
@@ -112,6 +114,31 @@ const AGENT_COLOR_SPACE_SIZE = 360 * 20 * 14;
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 56;
 
 type AgentBubbleStyle = Pick<CSSProperties, "backgroundColor" | "borderColor">;
+type MentionTrigger = { start: number; query: string };
+type MentionPopupPosition = { left: number; top: number };
+
+const MENTION_POPUP_WIDTH = 320;
+const TEXTAREA_CARET_MIRROR_STYLE_PROPS = [
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "letter-spacing",
+  "line-height",
+  "text-transform",
+  "text-indent",
+  "text-rendering",
+  "text-align",
+  "padding-top",
+  "padding-right",
+  "padding-bottom",
+  "padding-left",
+  "border-top-width",
+  "border-right-width",
+  "border-bottom-width",
+  "border-left-width",
+  "box-sizing",
+] as const;
 
 const formatMessageTime = (isoString: string): string =>
   new Intl.DateTimeFormat(undefined, {
@@ -132,6 +159,69 @@ const getStableHash = (value: string): number => {
 const getAgentIdentityKey = (
   message: Pick<AgentGroupMessageDTO, "senderAgentId" | "senderAgentName" | "id">,
 ): string => message.senderAgentName || message.senderAgentId || message.id;
+
+const getMentionTrigger = (
+  text: string,
+  cursorPosition: number,
+): MentionTrigger | null => {
+  const cursor = Math.max(0, Math.min(cursorPosition, text.length));
+  const beforeCursor = text.slice(0, cursor);
+  const atIndex = beforeCursor.lastIndexOf("@");
+  if (atIndex < 0) return null;
+  const query = beforeCursor.slice(atIndex + 1);
+  if (/[\s\n]/.test(query)) return null;
+  return { start: atIndex, query };
+};
+
+const getTextAreaCaretPopupPosition = (
+  textArea: HTMLTextAreaElement,
+  container: HTMLElement,
+  cursorPosition: number,
+): MentionPopupPosition => {
+  const computedStyle = window.getComputedStyle(textArea);
+  const mirror = document.createElement("div");
+  mirror.style.position = "absolute";
+  mirror.style.left = "-9999px";
+  mirror.style.top = "0";
+  mirror.style.visibility = "hidden";
+  mirror.style.pointerEvents = "none";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.overflowWrap = "break-word";
+  mirror.style.wordBreak = computedStyle.wordBreak;
+  mirror.style.width = `${textArea.clientWidth}px`;
+  for (const prop of TEXTAREA_CARET_MIRROR_STYLE_PROPS) {
+    mirror.style.setProperty(prop, computedStyle.getPropertyValue(prop));
+  }
+
+  mirror.textContent = textArea.value.slice(0, cursorPosition);
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  mirror.append(marker);
+  document.body.append(mirror);
+
+  const containerRect = container.getBoundingClientRect();
+  const textAreaRect = textArea.getBoundingClientRect();
+  const popupWidth = Math.min(MENTION_POPUP_WIDTH, container.clientWidth);
+  const maxLeft = Math.max(0, container.clientWidth - popupWidth);
+  const left = Math.min(
+    Math.max(
+      0,
+      textAreaRect.left -
+        containerRect.left +
+        marker.offsetLeft -
+        textArea.scrollLeft,
+    ),
+    maxLeft,
+  );
+  const top =
+    textAreaRect.top -
+    containerRect.top +
+    marker.offsetTop -
+    textArea.scrollTop;
+
+  mirror.remove();
+  return { left, top };
+};
 
 const formatTypingAgentNames = (
   agents: AgentGroupTypingAgentDTO[],
@@ -228,10 +318,17 @@ export const AgentGroupChatWorkspace = ({
     string[]
   >([]);
   const [isComposing, setIsComposing] = useState(false);
+  const [caretPosition, setCaretPosition] = useState(0);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [mentionPopupPosition, setMentionPopupPosition] =
+    useState<MentionPopupPosition | null>(null);
   const [selectedThinkingLevel, setSelectedThinkingLevel] =
     useState<ChatThinkingLevel>("low");
   const inputContainerRef = useRef<HTMLDivElement | null>(null);
+  const inputTextAreaRef = useRef<TextAreaRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const caretPositionRef = useRef(0);
+  const mentionOptionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const pendingFilesRef = useRef<LocalChatFile[]>([]);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
   const isBottomAnchorVisibleRef = useRef(true);
@@ -251,9 +348,13 @@ export const AgentGroupChatWorkspace = ({
       })),
     [t],
   );
-  const members = group.memberProjectIds
-    .map((projectId) => projectById.get(projectId))
-    .filter((project): project is ProjectDTO => Boolean(project));
+  const members = useMemo(
+    () =>
+      group.memberProjectIds
+        .map((projectId) => projectById.get(projectId))
+        .filter((project): project is ProjectDTO => Boolean(project)),
+    [group.memberProjectIds, projectById],
+  );
   const selectableMemberIds = useMemo(
     () =>
       new Set(
@@ -311,6 +412,33 @@ export const AgentGroupChatWorkspace = ({
     if (typingAgents.length === 0) return "";
     return t(`${formatTypingAgentNames(typingAgents, language)} 正在思考...`);
   }, [language, t, typingAgents]);
+  const mentionNames = useMemo(
+    () => members.map((member) => member.name),
+    [members],
+  );
+  const activeMentionTrigger = useMemo(
+    () => getMentionTrigger(draft, caretPosition),
+    [caretPosition, draft],
+  );
+  const mentionSuggestions = useMemo(() => {
+    if (!activeMentionTrigger) return [];
+    const query = activeMentionTrigger.query.trim().toLowerCase();
+    return members
+      .filter((member) => member.name.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [activeMentionTrigger, members]);
+  const mentionSuggestionsOpen = mentionSuggestions.length > 0;
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [activeMentionTrigger?.query, group.id]);
+
+  useLayoutEffect(() => {
+    if (!mentionSuggestionsOpen) return;
+    mentionOptionRefs.current[activeMentionIndex]?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [activeMentionIndex, mentionSuggestionsOpen]);
 
   const loadLatestMessages = useCallback(async () => {
     setLoadingMessages(true);
@@ -460,6 +588,58 @@ export const AgentGroupChatWorkspace = ({
     },
     [getMessageViewport],
   );
+
+  const updateCaretPosition = useCallback((position: number): void => {
+    caretPositionRef.current = position;
+    setCaretPosition(position);
+  }, []);
+
+  const syncCaretFromTextArea = useCallback(
+    (textArea: HTMLTextAreaElement): void => {
+      updateCaretPosition(textArea.selectionStart ?? textArea.value.length);
+    },
+    [updateCaretPosition],
+  );
+
+  const selectMention = useCallback(
+    (member: ProjectDTO): void => {
+      const cursor = caretPositionRef.current;
+      const trigger = getMentionTrigger(draft, cursor);
+      if (!trigger) return;
+      const textArea = inputTextAreaRef.current?.resizableTextArea?.textArea;
+      const selectionEnd = textArea?.selectionEnd ?? cursor;
+      const mentionText = `@${member.name} `;
+      const nextDraft =
+        draft.slice(0, trigger.start) + mentionText + draft.slice(selectionEnd);
+      const nextCaretPosition = trigger.start + mentionText.length;
+      setDraft(nextDraft);
+      updateCaretPosition(nextCaretPosition);
+      setActiveMentionIndex(0);
+      requestAnimationFrame(() => {
+        inputTextAreaRef.current?.focus();
+        const currentTextArea =
+          inputTextAreaRef.current?.resizableTextArea?.textArea;
+        currentTextArea?.setSelectionRange(
+          nextCaretPosition,
+          nextCaretPosition,
+        );
+      });
+    },
+    [draft, updateCaretPosition],
+  );
+
+  useLayoutEffect(() => {
+    if (!mentionSuggestionsOpen) {
+      setMentionPopupPosition(null);
+      return;
+    }
+    const textArea = inputTextAreaRef.current?.resizableTextArea?.textArea;
+    const container = inputContainerRef.current;
+    if (!textArea || !container) return;
+    setMentionPopupPosition(
+      getTextAreaCaretPopupPosition(textArea, container, caretPosition),
+    );
+  }, [caretPosition, draft, mentionSuggestionsOpen]);
 
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") return;
@@ -722,6 +902,7 @@ export const AgentGroupChatWorkspace = ({
     const content = formatGroupDraftMessage(draft, files);
     if (!content || sendMutation.isPending) return;
     setDraft("");
+    updateCaretPosition(0);
     setPendingFiles((current) => {
       for (const file of current) {
         if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
@@ -731,7 +912,88 @@ export const AgentGroupChatWorkspace = ({
     sendMutation.mutate(content);
     forceScrollToBottomRef.current = true;
     isBottomAnchorVisibleRef.current = true;
-  }, [draft, pendingFiles, sendMutation]);
+  }, [draft, pendingFiles, sendMutation, updateCaretPosition]);
+
+  const handleDraftChange = useCallback(
+    (value: string, event?: ChangeEvent<HTMLTextAreaElement>): void => {
+      setDraft(value);
+      if (event) {
+        syncCaretFromTextArea(event.currentTarget);
+      } else {
+        updateCaretPosition(value.length);
+      }
+    },
+    [syncCaretFromTextArea, updateCaretPosition],
+  );
+
+  const handleCompositionEnd = useCallback(
+    (value: string): void => {
+      setIsComposing(false);
+      setDraft(value);
+      const textArea = inputTextAreaRef.current?.resizableTextArea?.textArea;
+      if (textArea) {
+        syncCaretFromTextArea(textArea);
+      }
+    },
+    [syncCaretFromTextArea],
+  );
+
+  const handleInputKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+      syncCaretFromTextArea(event.currentTarget);
+      if (event.nativeEvent.isComposing || isComposing) return;
+
+      if (mentionSuggestionsOpen) {
+        const isNextMentionKey =
+          event.key === "ArrowDown" ||
+          (event.ctrlKey && event.key.toLowerCase() === "n");
+        const isPreviousMentionKey =
+          event.key === "ArrowUp" ||
+          (event.ctrlKey && event.key.toLowerCase() === "p");
+        if (isNextMentionKey) {
+          event.preventDefault();
+          setActiveMentionIndex(
+            (index) => (index + 1) % mentionSuggestions.length,
+          );
+          return;
+        }
+        if (isPreviousMentionKey) {
+          event.preventDefault();
+          setActiveMentionIndex(
+            (index) =>
+              (index - 1 + mentionSuggestions.length) %
+              mentionSuggestions.length,
+          );
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          event.stopPropagation();
+          const selectedMember =
+            mentionSuggestions[
+              Math.min(activeMentionIndex, mentionSuggestions.length - 1)
+            ];
+          selectMention(selectedMember);
+          return;
+        }
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleSend();
+      }
+    },
+    [
+      activeMentionIndex,
+      handleSend,
+      isComposing,
+      mentionSuggestions,
+      mentionSuggestionsOpen,
+      selectMention,
+      syncCaretFromTextArea,
+    ],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-2xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.72)] shadow-[var(--shadow-panel)]">
@@ -845,6 +1107,7 @@ export const AgentGroupChatWorkspace = ({
                             <AssistantMessageContextMenu
                               content={item.content}
                               projectId={item.senderAgentId ?? undefined}
+                              mentionNames={mentionNames}
                               resolvedTheme={resolvedTheme}
                               saveAsImageLabel={t("保存为图片")}
                               saveSuccessLabel={t("图片已保存")}
@@ -863,6 +1126,7 @@ export const AgentGroupChatWorkspace = ({
                           ) : (
                             <MarkdownMessage
                               content={item.content}
+                              mentionNames={mentionNames}
                               user={isUser}
                             />
                           )}
@@ -889,22 +1153,59 @@ export const AgentGroupChatWorkspace = ({
             <ChatComposer
               variant="embedded"
               inputContainerRef={inputContainerRef}
+              inputTextAreaRef={inputTextAreaRef}
+              inputOverlay={
+                mentionSuggestionsOpen && mentionPopupPosition ? (
+                  <div
+                    className="absolute z-30 overflow-hidden rounded-lg border border-[var(--stroke)] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
+                    style={{
+                      left: mentionPopupPosition.left,
+                      top: mentionPopupPosition.top,
+                      width: `min(${MENTION_POPUP_WIDTH}px, 100%)`,
+                      transform: "translateY(calc(-100% - 8px))",
+                    }}
+                    role="listbox"
+                    aria-label={t("提及 Agent")}
+                  >
+                    <ScrollArea className="max-h-52 py-1">
+                      <div className="space-y-0.5 px-1">
+                        {mentionSuggestions.map((member, index) => (
+                          <button
+                            key={member.id}
+                            ref={(element) => {
+                              mentionOptionRefs.current[index] = element;
+                            }}
+                            type="button"
+                            role="option"
+                            aria-selected={index === activeMentionIndex}
+                            className={`i18n-no-translate flex w-full min-w-0 items-center rounded-md px-2.5 py-2 text-left text-sm font-medium ${
+                              index === activeMentionIndex
+                                ? "bg-[rgba(var(--primary-rgb),0.12)] text-[var(--primary)]"
+                                : "text-[var(--text)] hover:bg-[var(--surface-2)]"
+                            }`}
+                            onMouseEnter={() => setActiveMentionIndex(index)}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectMention(member)}
+                          >
+                            <span className="truncate">@{member.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                ) : null
+              }
               input={draft}
               isComposing={isComposing}
-              onInputChange={setDraft}
+              onInputChange={handleDraftChange}
               onCompositionStart={() => setIsComposing(true)}
-              onCompositionEnd={(value) => {
-                setIsComposing(false);
-                setDraft(value);
-              }}
-              onInputKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || isComposing) return;
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  handleSend();
-                }
-              }}
+              onCompositionEnd={handleCompositionEnd}
+              onInputKeyDown={handleInputKeyDown}
+              onInputKeyUp={(event) => syncCaretFromTextArea(event.currentTarget)}
+              onInputClick={(event) => syncCaretFromTextArea(event.currentTarget)}
+              onInputSelect={(event) =>
+                syncCaretFromTextArea(event.currentTarget)
+              }
               onInputPaste={handlePasteFiles}
               placeholder={t("发送群消息，使用 @Agent 名称点名")}
               fileInputRef={fileInputRef}

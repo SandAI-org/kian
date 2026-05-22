@@ -11,12 +11,15 @@ import {
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import type { ChatThinkingLevel } from "@shared/types";
 import { Button, Input, Tooltip } from "antd";
+import type { TextAreaRef } from "antd/es/input/TextArea";
 import type {
   ChangeEvent,
   ClipboardEvent,
   KeyboardEvent,
+  MouseEvent,
   ReactNode,
   RefObject,
+  SyntheticEvent,
 } from "react";
 
 export interface LocalChatFile {
@@ -65,12 +68,20 @@ interface ChatComposerProps {
   onDismissInputShortcutTip?: () => void;
   dismissShortcutTipLabel?: string;
   inputContainerRef: RefObject<HTMLDivElement | null>;
+  inputTextAreaRef?: RefObject<TextAreaRef | null>;
+  inputOverlay?: ReactNode;
   input: string;
   isComposing: boolean;
-  onInputChange: (value: string) => void;
+  onInputChange: (
+    value: string,
+    event?: ChangeEvent<HTMLTextAreaElement>,
+  ) => void;
   onCompositionStart: () => void;
   onCompositionEnd: (value: string) => void;
   onInputKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onInputKeyUp?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onInputClick?: (event: MouseEvent<HTMLTextAreaElement>) => void;
+  onInputSelect?: (event: SyntheticEvent<HTMLTextAreaElement>) => void;
   onInputPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   placeholder: string;
   fileInputRef?: RefObject<HTMLInputElement | null>;
@@ -111,12 +122,17 @@ export const ChatComposer = ({
   onDismissInputShortcutTip,
   dismissShortcutTipLabel = "",
   inputContainerRef,
+  inputTextAreaRef,
+  inputOverlay,
   input,
   isComposing,
   onInputChange,
   onCompositionStart,
   onCompositionEnd,
   onInputKeyDown,
+  onInputKeyUp,
+  onInputClick,
+  onInputSelect,
   onInputPaste,
   placeholder,
   fileInputRef,
@@ -258,16 +274,21 @@ export const ChatComposer = ({
           </div>
         ) : null
       ) : (
-        <div ref={inputContainerRef} className="min-h-[84px]">
+        <div ref={inputContainerRef} className="relative min-h-[84px]">
+          {inputOverlay}
           <Input.TextArea
+            ref={inputTextAreaRef}
             autoSize={{ minRows: 2, maxRows: 6 }}
             value={input}
-            onChange={(event) => onInputChange(event.target.value)}
+            onChange={(event) => onInputChange(event.target.value, event)}
             onCompositionStart={onCompositionStart}
             onCompositionEnd={(event) => {
               onCompositionEnd(event.currentTarget.value);
             }}
             onKeyDown={onInputKeyDown}
+            onKeyUp={onInputKeyUp}
+            onClick={onInputClick}
+            onSelect={onInputSelect}
             onPaste={onInputPaste}
             className="!border-0 !bg-transparent !px-0 !py-0 !shadow-none"
             placeholder={placeholder}
