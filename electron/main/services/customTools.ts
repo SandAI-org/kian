@@ -2,6 +2,7 @@ import type {
   ToolDefinition,
   AgentToolResult,
   AgentToolUpdateCallback,
+  ToolExecutionMode,
 } from "@mariozechner/pi-coding-agent";
 import type { TSchema } from "@mariozechner/pi-ai";
 
@@ -28,6 +29,7 @@ export interface CustomToolDef {
   label: string;
   description: string;
   parameters: TSchema;
+  executionMode?: ToolExecutionMode;
   handler: (input: Record<string, unknown>) => Promise<{
     text: string;
     isError?: boolean;
@@ -42,6 +44,7 @@ export const toToolDefinition = (def: CustomToolDef): ToolDefinition => ({
   label: def.label,
   description: def.description,
   parameters: def.parameters,
+  executionMode: def.executionMode,
   async execute(
     _toolCallId: string,
     params: Record<string, unknown>,

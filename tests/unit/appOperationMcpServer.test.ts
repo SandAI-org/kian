@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppOperationEvent, ProjectDTO } from "../../src/shared/types";
 import { appOperationEvents } from "../../electron/main/services/appOperationEvents";
 import { createAppOperationTools } from "../../electron/main/services/appOperationMcpServer";
+import { toToolDefinition } from "../../electron/main/services/customTools";
+import { agentGroupService } from "../../electron/main/services/agentGroupService";
 import { repositoryService } from "../../electron/main/services/repositoryService";
 import { settingsService } from "../../electron/main/services/settingsService";
 import { settingsRuntimeService } from "../../electron/main/services/settingsRuntimeService";
@@ -13,6 +15,12 @@ vi.mock("../../electron/main/services/repositoryService", () => ({
     createProject: vi.fn(),
     updateProject: vi.fn(),
     buildAppWorkspace: vi.fn(),
+  },
+}));
+
+vi.mock("../../electron/main/services/agentGroupService", () => ({
+  agentGroupService: {
+    createGroup: vi.fn(),
   },
 }));
 
@@ -31,6 +39,7 @@ vi.mock("../../electron/main/services/settingsRuntimeService", () => ({
 }));
 
 const mockedRepositoryService = vi.mocked(repositoryService);
+const mockedAgentGroupService = vi.mocked(agentGroupService);
 const mockedSettingsService = vi.mocked(settingsService);
 const mockedSettingsRuntimeService = vi.mocked(settingsRuntimeService);
 
@@ -76,6 +85,53 @@ describe("createAppOperationTools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedSettingsService.getClaudeStatus.mockResolvedValue(createClaudeStatus());
+  });
+
+  it("runs app operation tools sequentially in multi-tool turns", () => {
+    const tools = createAppOperationTools("current-agent", "main");
+    const createAgentTool = tools.find((item) => item.name === "CreateAgent");
+    const listAgentsTool = tools.find((item) => item.name === "ListAgents");
+
+    expect(createAgentTool?.executionMode).toBe("sequential");
+    expect(listAgentsTool?.executionMode).toBe("sequential");
+    expect(toToolDefinition(createAgentTool!).executionMode).toBe("sequential");
+    expect(toToolDefinition(listAgentsTool!).executionMode).toBe("sequential");
+  });
+
+  it("exposes CreateGroup as a normal app operation tool", async () => {
+    mockedAgentGroupService.createGroup.mockResolvedValue({
+      id: "g-team",
+      name: "Research Team",
+      description: "Work together",
+      memberProjectIds: ["agent-a", "agent-b"],
+      createdAt: "2026-03-10T10:00:00.000Z",
+      updatedAt: "2026-03-10T10:00:00.000Z",
+    });
+
+    const tool = createAppOperationTools("current-agent", "main").find(
+      (item) => item.name === "CreateGroup",
+    );
+
+    expect(tool).toBeDefined();
+
+    const result = await tool!.handler({
+      name: "Research Team",
+      description: "Work together",
+      memberProjectIds: ["agent-a", "agent-b"],
+    });
+
+    expect(mockedAgentGroupService.createGroup).toHaveBeenCalledWith({
+      name: "Research Team",
+      description: "Work together",
+      memberProjectIds: ["agent-a", "agent-b"],
+    });
+    expect(result).toEqual({
+      text: [
+        "群聊已创建：Research Team (g-team)",
+        "描述：Work together",
+        "成员 Agent ID：agent-a，agent-b",
+      ].join("\n"),
+    });
   });
 
   it("CreateAgent no longer exposes auto-open params and does not navigate", async () => {

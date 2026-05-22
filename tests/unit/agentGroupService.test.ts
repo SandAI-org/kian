@@ -309,30 +309,20 @@ describe("agentGroupService", () => {
     ]);
   });
 
-  it("CreateGroup creates a group with members", async () => {
-    const { repositoryService } = await import(
-      "../../electron/main/services/repositoryService"
-    );
+  it("keeps group runtime tools scoped to the current group", async () => {
     const { createAgentGroupTools } = await import(
       "../../electron/main/services/agentGroupService"
     );
-    const agent = await repositoryService.createProject({ name: "Alice" });
 
-    const createTool = createAgentGroupTools({
+    const toolNames = createAgentGroupTools({
       groupId: "g-current",
-      agentProjectId: agent.id,
-    }).find((tool) => tool.name === "CreateGroup");
-    const result = await createTool?.handler({
-      name: "New Team",
-      description: "Work together",
-      memberProjectIds: [agent.id],
-    });
-    const group = JSON.parse(result?.text ?? "{}");
+      agentProjectId: "agent-a",
+    }).map((tool) => tool.name);
 
-    expect(group).toMatchObject({
-      name: "New Team",
-      description: "Work together",
-      memberProjectIds: [agent.id],
-    });
+    expect(toolNames).toEqual([
+      "ListGroupMembers",
+      "ListGroupMessages",
+      "SendMessageToGroup",
+    ]);
   });
 });

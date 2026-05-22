@@ -824,33 +824,6 @@ export const createAgentGroupTools = (input: {
   agentProjectId: string;
 }): CustomToolDef[] => [
   {
-    name: "CreateGroup",
-    label: "CreateGroup",
-    description: "创建一个新的智能体群聊，可同时设置群名称、描述和成员。",
-    parameters: Type.Object({
-      name: Type.String({ description: "群组名称。" }),
-      description: Type.Optional(Type.String({ description: "群组描述。" })),
-      memberProjectIds: Type.Optional(
-        Type.Array(Type.String(), {
-          description: "要加入群组的 Agent 项目 ID 列表。",
-        }),
-      ),
-    }),
-    handler: async (params) => {
-      const group = await agentGroupService.createGroup({
-        name: typeof params.name === "string" ? params.name : "",
-        description:
-          typeof params.description === "string" ? params.description : undefined,
-        memberProjectIds: Array.isArray(params.memberProjectIds)
-          ? params.memberProjectIds.filter((projectId): projectId is string =>
-              typeof projectId === "string",
-            )
-          : undefined,
-      });
-      return { text: JSON.stringify(group, null, 2) };
-    },
-  },
-  {
     name: "ListGroupMembers",
     label: "ListGroupMembers",
     description: "查看当前智能体群聊中的所有成员。",

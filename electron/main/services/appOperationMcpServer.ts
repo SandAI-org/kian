@@ -8,6 +8,7 @@ import type {
 } from "@shared/types";
 import path from "node:path";
 import { appOperationEvents } from "./appOperationEvents";
+import { agentGroupService } from "./agentGroupService";
 import type { CustomToolDef } from "./customTools";
 import { repositoryService } from "./repositoryService";
 import { settingsService } from "./settingsService";
@@ -502,6 +503,59 @@ export const createAppOperationTools = (
       },
     },
     {
+      name: "CreateGroup",
+      label: "CreateGroup",
+      description:
+        "创建一个新的 Agent 群聊，用于让多个 Agent 在同一群中协作。先用 ListAgents 确认成员 Agent ID，再传入 memberProjectIds。",
+      parameters: Type.Object({
+        name: Type.String({ description: "群组名称。" }),
+        description: Type.Optional(Type.String({ description: "群组描述。" })),
+        memberProjectIds: Type.Optional(
+          Type.Array(Type.String(), {
+            description: "要加入群组的 Agent ID 列表。",
+          }),
+        ),
+      }),
+      async handler(input) {
+        try {
+          const name = typeof input.name === "string" ? input.name.trim() : "";
+          const description =
+            typeof input.description === "string"
+              ? input.description
+              : undefined;
+          const memberProjectIds = Array.isArray(input.memberProjectIds)
+            ? input.memberProjectIds.filter(
+                (projectId): projectId is string => typeof projectId === "string",
+              )
+            : undefined;
+          const group = await agentGroupService.createGroup({
+            name,
+            description,
+            memberProjectIds,
+          });
+
+          return {
+            text: [
+              `群聊已创建：${group.name} (${group.id})`,
+              group.description ? `描述：${group.description}` : undefined,
+              `成员 Agent ID：${
+                group.memberProjectIds.length > 0
+                  ? group.memberProjectIds.join("，")
+                  : "暂无"
+              }`,
+            ]
+              .filter((line): line is string => Boolean(line))
+              .join("\n"),
+          };
+        } catch (error) {
+          return {
+            text: `CreateGroup failed: ${toErrorMessage(error)}`,
+            isError: true,
+          };
+        }
+      },
+    },
+    {
       name: "ListAvailableModels",
       label: "ListAvailableModels",
       description:
@@ -825,9 +879,13 @@ export const createAppOperationTools = (
     },
   ];
 
-  if (scopeType === "project") {
-    return tools;
-  }
+  const availableTools =
+    scopeType === "project"
+      ? tools
+      : tools.filter((tool) => !projectAgentOnlyToolNames.has(tool.name));
 
-  return tools.filter((tool) => !projectAgentOnlyToolNames.has(tool.name));
+  return availableTools.map((tool) => ({
+    ...tool,
+    executionMode: "sequential" as const,
+  }));
 };
