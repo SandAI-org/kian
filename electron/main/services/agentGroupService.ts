@@ -45,6 +45,7 @@ const GROUPS_INDEX_PATH = path.join(GROUPS_ROOT, "groups.json");
 const MESSAGE_READ_CHUNK_BYTES = 16 * 1024;
 const DEFAULT_MESSAGE_LIMIT = 20;
 const MAX_MESSAGE_LIMIT = 100;
+const AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT = 20;
 const DISPATCH_DEBOUNCE_MS = 1000;
 const AGENT_SEND_COOLDOWN_MS = 3000;
 
@@ -470,7 +471,7 @@ const notifyAgent = async (input: {
 }): Promise<void> => {
   const latestMessages = await agentGroupService.listMessages({
     groupId: input.group.id,
-    limit: 5,
+    limit: AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT,
   });
   const attachments = await extractImageAttachmentsFromMessages(input.messages);
   const { chatService } = await import("./chatService");
@@ -498,7 +499,7 @@ const notifyAgent = async (input: {
     `本次合并通知包含的消息：`,
     formatGroupMessagesForPrompt(input.messages),
     ``,
-    `群里最新 5 条消息：`,
+    `群里最新 ${AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT} 条消息：`,
     formatGroupMessagesForPrompt(latestMessages.messages),
     ``,
     input.mentioned

@@ -6,6 +6,7 @@ import {
   RobotOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
+import { IllustrationEmptyTeamChatTarget } from "@renderer/components/EmptyIllustrations";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
@@ -21,7 +22,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Checkbox,
-  Empty,
   Form,
   Input,
   Modal,
@@ -525,7 +525,14 @@ export const ProjectListPage = () => {
           />
         ) : (
           <div className="flex h-full items-center justify-center rounded-2xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.72)]">
-            <Empty description={t("选择一个 Agent 或群组开始")} />
+            <div className="empty-state select-none px-6 text-center">
+              <div className="empty-state__icon">
+                <IllustrationEmptyTeamChatTarget size={168} />
+              </div>
+              <p className="m-0 text-sm font-semibold text-[var(--text-soft)]">
+                {t("创建群组或者智能体来聊天吧")}
+              </p>
+            </div>
           </div>
         )}
       </main>

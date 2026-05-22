@@ -540,3 +540,95 @@ export const IllustrationEmptyGroupMembers = ({
     />
   </svg>
 );
+
+/** Empty team chat target: groups and agents waiting to be created */
+export const IllustrationEmptyTeamChatTarget = ({
+  size = 168,
+}: {
+  size?: number;
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 176 176"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <ellipse
+      cx="88"
+      cy="137"
+      rx="58"
+      ry="10"
+      fill="var(--empty-illustration-layer)"
+      opacity="0.62"
+    />
+    <rect
+      x="40"
+      y="44"
+      width="96"
+      height="72"
+      rx="18"
+      fill="var(--empty-illustration-panel)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.8"
+    />
+    <path
+      d="M58 116l-12 16 28-16"
+      fill="var(--empty-illustration-panel)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+    />
+    <circle
+      cx="74"
+      cy="76"
+      r="14"
+      fill="var(--empty-illustration-paper)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M54 104c3.6-11 11.2-16.5 20-16.5S90.4 93 94 104"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      fill="none"
+    />
+    <rect
+      x="98"
+      y="62"
+      width="22"
+      height="20"
+      rx="7"
+      fill="var(--empty-illustration-paper)"
+      stroke="var(--empty-illustration-stroke)"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M104 57h10M109 57v-6"
+      stroke="var(--empty-illustration-stroke-strong)"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <circle cx="105" cy="72" r="2" fill="var(--empty-illustration-dot)" />
+    <circle cx="113" cy="72" r="2" fill="var(--empty-illustration-dot)" />
+    <rect
+      x="100"
+      y="92"
+      width="24"
+      height="6"
+      rx="3"
+      fill="var(--empty-illustration-layer)"
+    />
+    <circle cx="40" cy="50" r="8" fill="var(--empty-illustration-warm)" />
+    <circle cx="136" cy="108" r="8" fill="var(--empty-illustration-layer-strong)" />
+    <circle cx="126" cy="36" r="12" fill="var(--empty-illustration-accent)" />
+    <path
+      d="M126 30v12M120 36h12"
+      stroke="var(--empty-illustration-contrast)"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    />
+  </svg>
+);

@@ -232,6 +232,45 @@ describe("agentGroupService", () => {
     });
   });
 
+  it("includes the latest 20 group messages in agent notifications", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+    const { agentGroupService } = await import(
+      "../../electron/main/services/agentGroupService"
+    );
+    const alice = await repositoryService.createProject({ name: "Alice" });
+    const group = await agentGroupService.createGroup({ name: "Team" });
+
+    for (let index = 1; index <= 25; index += 1) {
+      await agentGroupService.sendUserMessage({
+        groupId: group.id,
+        content: `message-${index}`,
+      });
+    }
+    await vi.advanceTimersByTimeAsync(1001);
+
+    await agentGroupService.addMembers({
+      groupId: group.id,
+      projectIds: [alice.id],
+    });
+    await agentGroupService.sendUserMessage({
+      groupId: group.id,
+      content: "@Alice please check the latest context",
+    });
+    await vi.advanceTimersByTimeAsync(1001);
+    await vi.waitFor(() => {
+      expect(state.send).toHaveBeenCalledTimes(1);
+    });
+
+    const prompt = String(state.send.mock.calls[0]?.[0]?.message ?? "");
+    const latestSection = prompt.split("群里最新 20 条消息：")[1] ?? "";
+    expect(latestSection).not.toContain("- 用户：message-6\n");
+    expect(latestSection).toContain("- 用户：message-7\n");
+    expect(latestSection).toContain("- 用户：message-25\n");
+    expect(latestSection).toContain("@Alice please check the latest context");
+  });
+
   it("tracks typing agents while group notifications are running", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"
