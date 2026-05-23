@@ -396,20 +396,53 @@ const resolveRandomTargets = async (
   return shuffle(stalePool).slice(0, count);
 };
 
+const getGroupMessageSenderName = (message: AgentGroupMessageDTO): string =>
+  message.senderType === "agent"
+    ? message.senderAgentName ?? message.senderAgentId ?? "Agent"
+    : message.senderType === "user"
+      ? "用户"
+      : "系统";
+
 const formatGroupMessagesForPrompt = (
   messages: AgentGroupMessageDTO[],
-): string =>
-  messages
+  options: { includeTimestamp?: boolean } = {},
+): string => {
+  if (messages.length === 0) return "无";
+  const separator = options.includeTimestamp ? "\n\n" : "\n";
+  return messages
     .map((message) => {
-      const sender =
-        message.senderType === "agent"
-          ? message.senderAgentName ?? message.senderAgentId ?? "Agent"
-          : message.senderType === "user"
-            ? "用户"
-            : "系统";
-      return `- ${sender}：${message.content}`;
+      const sender = getGroupMessageSenderName(message);
+      const timestamp = options.includeTimestamp ? `(${message.createdAt})` : "";
+      if (options.includeTimestamp) {
+        return `## ${sender}${timestamp}：\n\n${message.content}`;
+      }
+      return `${sender}${timestamp}：${message.content}`;
     })
-    .join("\n");
+    .join(separator);
+};
+
+const splitGroupNotificationMessages = (
+  recentMessages: AgentGroupMessageDTO[],
+  triggeredMessages: AgentGroupMessageDTO[],
+): {
+  latestUserMessage: AgentGroupMessageDTO | null;
+  earlierMessages: AgentGroupMessageDTO[];
+} => {
+  const latestUserMessage =
+    [...triggeredMessages]
+      .reverse()
+      .find((message) => message.senderType === "user") ??
+    [...recentMessages]
+      .reverse()
+      .find((message) => message.senderType === "user") ??
+    null;
+  return {
+    latestUserMessage,
+    earlierMessages: recentMessages
+      .filter((message) => message.id !== latestUserMessage?.id)
+      .slice(-AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT),
+  };
+};
 
 const resolveGroupMessageAttachmentPath = (
   message: AgentGroupMessageDTO,
@@ -469,10 +502,14 @@ const notifyAgent = async (input: {
   messages: AgentGroupMessageDTO[];
   mentioned: boolean;
 }): Promise<void> => {
-  const latestMessages = await agentGroupService.listMessages({
+  const recentMessages = await agentGroupService.listMessages({
     groupId: input.group.id,
-    limit: AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT,
+    limit: MAX_MESSAGE_LIMIT,
   });
+  const { latestUserMessage, earlierMessages } = splitGroupNotificationMessages(
+    recentMessages.messages,
+    input.messages,
+  );
   const attachments = await extractImageAttachmentsFromMessages(input.messages);
   const { chatService } = await import("./chatService");
   const scope = { type: "project" as const, projectId: input.agent.id };
@@ -490,17 +527,21 @@ const notifyAgent = async (input: {
     }),
   });
   const message = [
-    `你收到了群聊通知。`,
+    `你收到了群聊消息。`,
     ``,
-    `群名称：${input.group.name}`,
-    `群描述：${input.group.description?.trim() || "暂无描述"}`,
-    `你是否被 @：${input.mentioned ? "是" : "否"}`,
+    `# 群信息`,
     ``,
-    `本次合并通知包含的消息：`,
-    formatGroupMessagesForPrompt(input.messages),
+    `- 群名称：${input.group.name}`,
+    `- 群描述：${input.group.description?.trim() || "暂无描述"}`,
+    `- 你是否被 @：${input.mentioned ? "是" : "否"}`,
     ``,
-    `群里最新 ${AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT} 条消息：`,
-    formatGroupMessagesForPrompt(latestMessages.messages),
+    `# 最新的用户消息`,
+    ``,
+    latestUserMessage?.content ?? "无",
+    ``,
+    `# 更早的 ${AGENT_NOTIFICATION_CONTEXT_MESSAGE_LIMIT} 条群消息：`,
+    ``,
+    formatGroupMessagesForPrompt(earlierMessages, { includeTimestamp: true }),
     ``,
     input.mentioned
       ? `你被明确 @ 了。请调用 SendMessageToGroup 在群里简洁回应，不要只在隐藏 session 中回复。`

@@ -216,14 +216,22 @@ describe("agentGroupService", () => {
         (payload as { message?: unknown }).message ?? "",
       );
       if (state.send.mock.calls.length === 1) {
-        expect(prompt).not.toContain("- Alice：Alice already checked.");
+        expect(prompt).not.toContain("Alice：Alice already checked.");
         await agentGroupService.sendAgentMessage({
           groupId: group.id,
           agentProjectId: alice.id,
           content: "Alice already checked.",
         });
       } else {
-        expect(prompt).toContain("- Alice：Alice already checked.");
+        const latestSection =
+          prompt
+            .split("# 最新的用户消息")[1]
+            ?.split("# 更早的 20 条群消息：")[0] ?? "";
+        const earlierSection = prompt.split("# 更早的 20 条群消息：")[1] ?? "";
+        expect(latestSection.trim()).toBe("@Alice @Bob please check this");
+        expect(earlierSection).toContain(
+          "## Alice(2026-05-17T10:00:00.000Z)：\n\nAlice already checked.",
+        );
       }
       return { assistantMessage: "", toolActions: [] };
     });
@@ -281,7 +289,7 @@ describe("agentGroupService", () => {
     });
   });
 
-  it("includes the latest 20 group messages in agent notifications", async () => {
+  it("formats agent notifications with the latest user message and 20 earlier group messages", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"
     );
@@ -313,11 +321,25 @@ describe("agentGroupService", () => {
     });
 
     const prompt = String(state.send.mock.calls[0]?.[0]?.message ?? "");
-    const latestSection = prompt.split("群里最新 20 条消息：")[1] ?? "";
-    expect(latestSection).not.toContain("- 用户：message-6\n");
-    expect(latestSection).toContain("- 用户：message-7\n");
-    expect(latestSection).toContain("- 用户：message-25\n");
-    expect(latestSection).toContain("@Alice please check the latest context");
+    const latestSection =
+      prompt
+        .split("# 最新的用户消息")[1]
+        ?.split("# 更早的 20 条群消息：")[0] ?? "";
+    const earlierSection = prompt.split("# 更早的 20 条群消息：")[1] ?? "";
+    expect(prompt).toContain("你收到了群聊消息。");
+    expect(prompt).toContain("# 群信息");
+    expect(prompt).toContain("- 群名称：Team");
+    expect(prompt).toContain("- 群描述：暂无描述");
+    expect(prompt).toContain("- 你是否被 @：是");
+    expect(latestSection.trim()).toBe("@Alice please check the latest context");
+    expect(earlierSection).not.toContain("message-5");
+    expect(earlierSection).toContain(
+      "## 用户(2026-05-17T10:00:00.000Z)：\n\nmessage-6",
+    );
+    expect(earlierSection).toContain(
+      "## 用户(2026-05-17T10:00:00.000Z)：\n\nmessage-25",
+    );
+    expect(earlierSection).not.toContain("@Alice please check the latest context");
   });
 
   it("tracks typing agents while group notifications are running", async () => {

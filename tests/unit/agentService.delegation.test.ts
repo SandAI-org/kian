@@ -54,6 +54,7 @@ vi.mock("@mariozechner/pi-ai", () => ({
     Union: (value: unknown) => value,
     Literal: (value: unknown) => value,
     Array: (value: unknown) => value,
+    Number: (value: unknown) => value,
   },
 }));
 
@@ -805,6 +806,47 @@ describe("agentService delegation reporting", () => {
 
     expect(templateLog?.[0]).toContain(
       "Selected system prompt template Markdown (development)\n\n# Avatar Prompt",
+    );
+  });
+
+  it("adds group reply guidance to group runtime system prompts", async () => {
+    const { logger } = await import("../../electron/main/services/logger");
+    const mockedLoggerInfo = vi.mocked(logger.info);
+    mockedLoggerInfo.mockClear();
+
+    state.getChatSession.mockResolvedValue({
+      id: "group-session",
+      module: "main",
+      kind: "group_runtime",
+      metadataJson: JSON.stringify({ groupId: "g-team" }),
+    });
+    state.buildSessionSystemPrompt
+      .mockReset()
+      .mockImplementation((prompt) => prompt);
+    state.prompt.mockReset().mockImplementation(async () => {
+      state.sessionListener?.({ type: "agent_end" });
+    });
+
+    const { agentService } =
+      await import("../../electron/main/services/agentService");
+
+    await agentService.send({
+      scope: { type: "project", projectId: "agent-a" },
+      module: "main",
+      sessionId: "group-session",
+      requestId: "group-request-system-prompt",
+      message: "测试群聊 system prompt",
+    });
+
+    const markdownLog = mockedLoggerInfo.mock.calls.find(
+      ([message]) =>
+        typeof message === "string" &&
+        message.includes("Final system prompt Markdown (development)"),
+    );
+
+    expect(markdownLog?.[0]).toContain("# 群聊协作规则");
+    expect(markdownLog?.[0]).toContain(
+      "针对当前的主题，需要在回复所有的其他人的消息的基础上发表自己的观点。",
     );
   });
 

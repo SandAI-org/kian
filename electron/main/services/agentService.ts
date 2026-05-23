@@ -330,6 +330,7 @@ const buildAgentGroupRuntimeInstructionSection = (
         "- 你正在一个多人 Agent 群聊中。",
         "- 群消息历史不是你的 LLM 上下文；需要了解群信息时使用 ListGroupMessages 和 ListGroupMembers。",
         "- 如果决定公开发言，必须调用 SendMessageToGroup；不要只在隐藏 session 中回复。",
+        "- 针对当前的主题，需要在回复所有的其他人的消息的基础上发表自己的观点。",
         "- 没有被 @ 时，如无必要不要回复。",
         "- 每次回复尽量简洁，避免重复最近观点。",
       ].join("\n")
