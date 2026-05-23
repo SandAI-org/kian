@@ -78,6 +78,7 @@ export interface WeixinUploadLocalFileOptions {
 export interface WeixinSendMediaOptions {
   toUserId: string;
   contextToken?: string;
+  fromUserId?: string;
   filePath?: string;
   remoteUrl?: string;
   fileName?: string;
@@ -233,6 +234,7 @@ const buildMediaReference = (uploaded: UploadedWeixinMedia) => ({
 
 const sendMessageItem = async (input: {
   toUserId: string;
+  fromUserId?: string;
   contextToken: string;
   item: MessageItem;
   apiOptions: WeixinApiOptions;
@@ -240,7 +242,7 @@ const sendMessageItem = async (input: {
   const clientId = generateClientId();
   const request: SendMessageReq = {
     msg: {
-      from_user_id: "",
+      from_user_id: input.fromUserId?.trim() ?? "",
       to_user_id: input.toUserId,
       client_id: clientId,
       message_type: MessageType.BOT,
@@ -456,6 +458,7 @@ export async function sendMedia(
           text_item: { text },
         },
         apiOptions: options.apiOptions,
+        ...(options.fromUserId ? { fromUserId: options.fromUserId } : {}),
       });
     }
 
@@ -482,6 +485,7 @@ export async function sendMedia(
       contextToken,
       item: mediaItem,
       apiOptions: options.apiOptions,
+      ...(options.fromUserId ? { fromUserId: options.fromUserId } : {}),
     });
     return lastResult;
   } finally {

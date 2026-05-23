@@ -239,7 +239,7 @@ export class WeixinAdapterClient extends TypedEventEmitter<WeixinAdapterEvents> 
     await sendMessage(
       {
         msg: {
-          from_user_id: "",
+          from_user_id: account.rawAccountId,
           to_user_id: options.toUserId,
           client_id: clientId,
           message_type: MessageType.BOT,
@@ -309,6 +309,7 @@ export class WeixinAdapterClient extends TypedEventEmitter<WeixinAdapterEvents> 
     return sendMediaImpl({
       toUserId: options.toUserId,
       contextToken,
+      fromUserId: account.rawAccountId,
       apiOptions: {
         baseUrl: account.baseUrl,
         token: account.token,
