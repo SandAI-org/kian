@@ -65,6 +65,8 @@ const OPEN_MAIN_AGENT_SESSION_CHANNEL = "window:open-main-agent-session";
 const api = {
   cronjob: {
     list: () => invoke<CronJobDTO[]>("cronjob:list"),
+    listWithLastExecution: () =>
+      invoke<CronJobDTO[]>("cronjob:listWithLastExecution"),
     setStatus: (payload: { id: string; status: "active" | "paused" }) =>
       invoke<CronJobDTO>("cronjob:setStatus", payload),
   },

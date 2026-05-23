@@ -90,7 +90,7 @@ export const CronjobPage = () => {
   const queryClient = useQueryClient();
   const cronjobQuery = useQuery({
     queryKey: ['cronjobs'],
-    queryFn: api.cronjob.list,
+    queryFn: api.cronjob.listWithLastExecution,
     refetchInterval: 5000
   });
   const toggleStatusMutation = useMutation({

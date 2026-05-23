@@ -38,15 +38,23 @@ interface CronJobFileItem {
 interface CronJobExecutionLogItem {
   executedAt: string;
   jobId: string;
+  cron?: string;
+  content?: string;
   status: CronJobLastExecutionDTO["status"];
   reason?: string | null;
   error?: string | null;
   sessionId?: string | null;
   assistantMessage?: string | null;
+  project?: {
+    id?: string | null;
+    name?: string | null;
+  } | null;
 }
 
 const nowISO = (): string => new Date().toISOString();
 const MAIN_AGENT_SCOPE_ID = "main-agent";
+const CRON_JOB_LOG_TAIL_BYTES = 256 * 1024;
+const CRON_JOB_LOG_TAIL_LINES = 200;
 
 const ensureDir = async (dirPath: string): Promise<void> => {
   await fs.mkdir(dirPath, { recursive: true });
@@ -2043,45 +2051,146 @@ const readRawCronJobItems = async (): Promise<unknown[]> => {
   return Array.isArray(raw) ? raw : [];
 };
 
-const readLatestCronJobExecutionByJobId = async (): Promise<
-  Map<string, CronJobLastExecutionDTO>
-> => {
+const readRecentCronJobExecutionLines = async (): Promise<string[]> => {
   const filePath = getCronJobLogPath();
   if (!(await pathExists(filePath))) {
-    return new Map();
+    return [];
   }
 
-  const raw = await fs.readFile(filePath, "utf8");
+  const stats = await fs.stat(filePath);
+  if (stats.size === 0) {
+    return [];
+  }
+
+  const length = Math.min(stats.size, CRON_JOB_LOG_TAIL_BYTES);
+  const start = Math.max(0, stats.size - length);
+  const handle = await fs.open(filePath, "r");
+
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, start);
+    const lines = buffer.subarray(0, bytesRead).toString("utf8").split(/\r?\n/);
+    if (start > 0) {
+      lines.shift();
+    }
+    return lines
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .slice(-CRON_JOB_LOG_TAIL_LINES);
+  } finally {
+    await handle.close();
+  }
+};
+
+const parseCronJobExecutionLogLine = (
+  line: string,
+): CronJobExecutionLogItem | null => {
+  try {
+    const parsed = JSON.parse(line) as Partial<CronJobExecutionLogItem>;
+    if (
+      typeof parsed.executedAt !== "string" ||
+      (parsed.status !== "dispatched" &&
+        parsed.status !== "skipped" &&
+        parsed.status !== "failed")
+    ) {
+      return null;
+    }
+
+    return {
+      executedAt: parsed.executedAt,
+      jobId: typeof parsed.jobId === "string" ? parsed.jobId : "",
+      cron: typeof parsed.cron === "string" ? parsed.cron : "",
+      content: typeof parsed.content === "string" ? parsed.content : "",
+      status: parsed.status,
+      reason: parsed.reason ?? null,
+      error: parsed.error ?? null,
+      sessionId: parsed.sessionId ?? null,
+      assistantMessage: parsed.assistantMessage ?? null,
+      project:
+        typeof parsed.project === "object" && parsed.project
+          ? parsed.project
+          : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const cronJobExecutionMatchesJob = (
+  execution: CronJobExecutionLogItem,
+  job: CronJobDTO,
+): boolean => {
+  const expectedProjectId = job.targetAgentId ?? MAIN_AGENT_SCOPE_ID;
+  const projectId =
+    typeof execution.project?.id === "string"
+      ? execution.project.id.trim()
+      : "";
+
+  if (
+    (execution.cron ?? "").trim() !== job.cron.trim() ||
+    (execution.content ?? "").trim() !== job.content.trim()
+  ) {
+    return false;
+  }
+
+  if (!projectId) {
+    return true;
+  }
+
+  if (job.targetAgentId) {
+    return projectId === expectedProjectId;
+  }
+
+  return projectId === MAIN_AGENT_SCOPE_ID;
+};
+
+const toCronJobLastExecution = (
+  execution: CronJobExecutionLogItem,
+): CronJobLastExecutionDTO => ({
+  executedAt: execution.executedAt,
+  status: execution.status,
+  reason: execution.reason ?? null,
+  error: execution.error ?? null,
+  sessionId: execution.sessionId ?? null,
+  assistantMessage: execution.assistantMessage ?? null,
+});
+
+const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
+  const jobs = await listCronJobDtos();
+  if (jobs.length === 0) {
+    return jobs;
+  }
+
+  const lines = await readRecentCronJobExecutionLines();
+  if (lines.length === 0) {
+    return jobs;
+  }
+
+  const pending = new Set(jobs.map((job) => job.id));
   const latestByJobId = new Map<string, CronJobLastExecutionDTO>();
 
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  for (const line of [...lines].reverse()) {
+    const execution = parseCronJobExecutionLogLine(line);
+    if (!execution) continue;
 
-    try {
-      const parsed = JSON.parse(trimmed) as Partial<CronJobExecutionLogItem>;
-      if (
-        typeof parsed.jobId !== "string" ||
-        typeof parsed.executedAt !== "string" ||
-        (parsed.status !== "dispatched" &&
-          parsed.status !== "skipped" &&
-          parsed.status !== "failed")
-      ) {
-        continue;
-      }
+    const job = jobs.find(
+      (candidate) =>
+        pending.has(candidate.id) &&
+        cronJobExecutionMatchesJob(execution, candidate),
+    );
+    if (!job) continue;
 
-      latestByJobId.set(parsed.jobId, {
-        executedAt: parsed.executedAt,
-        status: parsed.status,
-        reason: parsed.reason ?? null,
-        error: parsed.error ?? null,
-        sessionId: parsed.sessionId ?? null,
-        assistantMessage: parsed.assistantMessage ?? null,
-      });
-    } catch {}
+    latestByJobId.set(job.id, toCronJobLastExecution(execution));
+    pending.delete(job.id);
+    if (pending.size === 0) {
+      break;
+    }
   }
 
-  return latestByJobId;
+  return jobs.map((job) => ({
+    ...job,
+    lastExecution: latestByJobId.get(job.id) ?? null,
+  }));
 };
 
 const resolveCronJobTargetAgentName = async (
@@ -2115,6 +2224,11 @@ const toCronJobDto = async (
   targetAgentName: await resolveCronJobTargetAgentName(item.targetAgentId),
   lastExecution: lastExecution ?? null,
 });
+
+const listCronJobDtos = async (): Promise<CronJobDTO[]> => {
+  const rows = await readCronJobItems();
+  return Promise.all(rows.map((item, index) => toCronJobDto(item, index)));
+};
 
 const readProjectMeta = async (projectId: string): Promise<ProjectMetaFile> => {
   const filePath = getProjectMetaPath(projectId);
@@ -2468,14 +2582,11 @@ const updateChatSessionTimestamp = async (
 
 export const repositoryService = {
   async listCronJobs(): Promise<CronJobDTO[]> {
-    const rows = await readCronJobItems();
-    const latestExecutionByJobId = await readLatestCronJobExecutionByJobId();
-    return Promise.all(
-      rows.map((item, index) => {
-        const jobId = `cronjob-${index + 1}`;
-        return toCronJobDto(item, index, latestExecutionByJobId.get(jobId));
-      }),
-    );
+    return listCronJobDtos();
+  },
+
+  async listCronJobsWithLastExecution(): Promise<CronJobDTO[]> {
+    return listCronJobsWithRecentExecutions();
   },
 
   async setCronJobStatus(input: {
@@ -2498,7 +2609,6 @@ export const repositoryService = {
 
     await writeJson(getCronJobPath(), rows);
     const normalized = normalizeCronJobItems([rows[index]])[0];
-    const latestExecutionByJobId = await readLatestCronJobExecutionByJobId();
     return toCronJobDto(
       normalized ?? {
         cron: "",
@@ -2507,7 +2617,6 @@ export const repositoryService = {
         targetAgentId: null,
       },
       index,
-      latestExecutionByJobId.get(input.id),
     );
   },
 

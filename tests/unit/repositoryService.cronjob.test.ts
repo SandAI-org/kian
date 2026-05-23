@@ -144,7 +144,42 @@ describe("repositoryService cronjob", () => {
     });
   });
 
-  it("includes the latest execution feedback on cron job cards", async () => {
+  it("keeps basic cron job listing independent from execution logs", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "26 17 21 5 *",
+            content: "创建提醒文件",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob-log.jsonl"),
+      "{not valid json}\n",
+      "utf8",
+    );
+
+    const jobs = await repositoryService.listCronJobs();
+
+    expect(jobs[0]).toMatchObject({
+      id: "cronjob-1",
+      cron: "26 17 21 5 *",
+      content: "创建提醒文件",
+      lastExecution: null,
+    });
+  });
+
+  it("includes the latest matching execution feedback on cron job cards", async () => {
     const { repositoryService } =
       await import("../../electron/main/services/repositoryService");
 
@@ -181,8 +216,17 @@ describe("repositoryService cronjob", () => {
       sessionId: "session-cron",
       assistantMessage: "文件已创建",
     });
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T09:27:00.000Z",
+      jobId: "cronjob-1",
+      cron: "27 17 21 5 *",
+      content: "另一个任务",
+      status: "dispatched",
+      sessionId: "session-other",
+      assistantMessage: "不应匹配",
+    });
 
-    const jobs = await repositoryService.listCronJobs();
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
 
     expect(jobs[0]).toMatchObject({
       id: "cronjob-1",
@@ -191,6 +235,62 @@ describe("repositoryService cronjob", () => {
         status: "dispatched",
         sessionId: "session-cron",
         assistantMessage: "文件已创建",
+      },
+    });
+  });
+
+  it("uses execution project metadata to disambiguate matching cron jobs", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+    const agent = await repositoryService.createProject({
+      name: "阿青",
+    });
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+          },
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+            targetAgentId: agent.id,
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      projectId: agent.id,
+      projectName: "阿青",
+      sessionId: "session-agent",
+      assistantMessage: "日报已整理",
+    });
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0].lastExecution).toBeNull();
+    expect(jobs[1]).toMatchObject({
+      id: "cronjob-2",
+      targetAgentId: agent.id,
+      lastExecution: {
+        executedAt: "2026-05-21T10:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-agent",
+        assistantMessage: "日报已整理",
       },
     });
   });

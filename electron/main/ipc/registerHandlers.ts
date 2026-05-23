@@ -211,6 +211,9 @@ export const registerHandlers = (): void => {
   };
 
   handle('cronjob:list', z.object({}).optional(), async () => repositoryService.listCronJobs());
+  handle('cronjob:listWithLastExecution', z.object({}).optional(), async () =>
+    repositoryService.listCronJobsWithLastExecution()
+  );
   handle('cronjob:setStatus', cronjobSetStatusSchema, async (input) =>
     repositoryService.setCronJobStatus(input)
   );

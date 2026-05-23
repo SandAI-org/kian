@@ -187,11 +187,11 @@ export const applyChatHistoryUpdateToCache = (
         updatedAt: nextUpdatedAt,
       };
     });
-
-    void queryClient.invalidateQueries({
-      queryKey: sessionsQueryPrefix,
-    });
   }
+
+  void queryClient.invalidateQueries({
+    queryKey: sessionsQueryPrefix,
+  });
 
   if (!event.messageId.trim()) {
     return;
