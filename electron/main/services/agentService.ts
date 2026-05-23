@@ -1712,6 +1712,7 @@ const createOrResumeSession = async (
     projectName:
       project?.name ??
       (scope.type === "main" ? MAIN_AGENT_NAME : "未命名 Agent"),
+    projectDescription: project?.description,
     module: moduleName ?? "unknown",
     projectCwd,
     contextSnapshot,

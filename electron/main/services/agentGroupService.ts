@@ -564,23 +564,23 @@ const flushDispatch = async (groupId: string): Promise<void> => {
           ? await resolveRandomTargets(group, members, senderAgentIds)
           : [];
 
-    await Promise.all(
-      targets.map((agent) =>
-        notifyAgent({
+    for (const agent of targets) {
+      try {
+        await notifyAgent({
           group,
           agent,
           notificationId,
           messages: batch.messages,
           mentioned: mentionedIds.has(agent.id),
-        }).catch((error) => {
-          logger.warn("Agent group notification failed", {
-            groupId,
-            agentId: agent.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }),
-      ),
-    );
+        });
+      } catch (error) {
+        logger.warn("Agent group notification failed", {
+          groupId,
+          agentId: agent.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   } catch (error) {
     logger.warn("Agent group dispatch failed", {
       groupId,

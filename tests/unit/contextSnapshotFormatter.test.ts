@@ -6,6 +6,7 @@ describe("buildContextSnapshotSection", () => {
     const result = buildContextSnapshotSection({
       projectId: "p-2026-03-11-1",
       projectName: "Kian 应用",
+      projectDescription: "负责整理知识和开发应用",
       module: "docs",
       projectCwd: "/Users/lei/KianWorkspaceTest/p-2026-03-11-1",
       contextSnapshot: {
@@ -38,6 +39,7 @@ describe("buildContextSnapshotSection", () => {
 
     expect(result).toContain("# 核心功能模块摘要");
     expect(result).toContain("- Agent 名称：Kian 应用");
+    expect(result).toContain("- Agent 描述：负责整理知识和开发应用");
     expect(result).toContain("- Agent ID：p-2026-03-11-1");
     expect(result).toContain("- 当前模块：docs");
     expect(result).not.toContain("- Agent 工作区目录：");

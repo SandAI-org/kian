@@ -196,6 +196,55 @@ describe("agentGroupService", () => {
     expect(sessions[0].metadataJson).toContain(group.id);
   });
 
+  it("notifies mentioned agents sequentially so later agents see earlier group replies", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+    const { agentGroupService } = await import(
+      "../../electron/main/services/agentGroupService"
+    );
+    const alice = await repositoryService.createProject({ name: "Alice" });
+    const bob = await repositoryService.createProject({ name: "Bob" });
+    const group = await agentGroupService.createGroup({ name: "Team" });
+    await agentGroupService.addMembers({
+      groupId: group.id,
+      projectIds: [alice.id, bob.id],
+    });
+
+    state.send.mockImplementation(async (payload) => {
+      const prompt = String(
+        (payload as { message?: unknown }).message ?? "",
+      );
+      if (state.send.mock.calls.length === 1) {
+        expect(prompt).not.toContain("- Alice：Alice already checked.");
+        await agentGroupService.sendAgentMessage({
+          groupId: group.id,
+          agentProjectId: alice.id,
+          content: "Alice already checked.",
+        });
+      } else {
+        expect(prompt).toContain("- Alice：Alice already checked.");
+      }
+      return { assistantMessage: "", toolActions: [] };
+    });
+
+    await agentGroupService.sendUserMessage({
+      groupId: group.id,
+      content: "@Alice @Bob please check this",
+    });
+    await vi.advanceTimersByTimeAsync(1001);
+    await vi.waitFor(() => {
+      expect(state.send).toHaveBeenCalledTimes(2);
+    });
+
+    expect(state.send.mock.calls[0]?.[0]).toMatchObject({
+      scope: { type: "project", projectId: alice.id },
+    });
+    expect(state.send.mock.calls[1]?.[0]).toMatchObject({
+      scope: { type: "project", projectId: bob.id },
+    });
+  });
+
   it("passes image attachments from group messages to notified agents", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"

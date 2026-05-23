@@ -197,6 +197,7 @@ const buildModuleSummaryLines = (input: {
 export const buildContextSnapshotSection = (input: {
   projectId: string;
   projectName: string;
+  projectDescription?: string | null;
   module: string;
   projectCwd: string;
   contextSnapshot: unknown;
@@ -247,6 +248,7 @@ export const buildContextSnapshotSection = (input: {
     ...(includeAgentSummary
       ? [
           `- Agent 名称：${input.projectName}`,
+          `- Agent 描述：${input.projectDescription?.trim() || "未提供"}`,
           `- Agent ID：${input.projectId}`,
           `- 当前模块：${input.module}`,
           "",
