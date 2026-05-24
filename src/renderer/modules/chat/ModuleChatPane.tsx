@@ -17,7 +17,10 @@ import {
 } from "@renderer/modules/chat/ChatComposer";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { ScrollArea } from "@renderer/components/ScrollArea";
-import { RevealableImage } from "@renderer/components/RevealableImage";
+import {
+  RevealInFinderButton,
+  RevealableImage,
+} from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
@@ -1330,23 +1333,40 @@ export const MarkdownMessage = memo(
 
               if (mediaKind === "video") {
                 return (
-                  <video
-                    controls
-                    preload="metadata"
-                    className="chat-markdown__media chat-markdown__media--video"
+                  <div
+                    className="chat-markdown__media-reveal chat-markdown__media-reveal--video group/reveal"
                     style={mediaSizeStyle(width, height)}
-                    src={resolvedSource}
-                  />
+                  >
+                    <video
+                      controls
+                      preload="metadata"
+                      className="chat-markdown__media chat-markdown__media--video"
+                      src={resolvedSource}
+                    />
+                    <RevealInFinderButton
+                      filePath={resolveRevealableImagePath(rawSourcePath)}
+                      projectId={projectId}
+                    />
+                  </div>
                 );
               }
               if (mediaKind === "audio") {
                 return (
-                  <audio
-                    controls
-                    preload="metadata"
-                    className="chat-markdown__audio"
-                    src={resolvedSource}
-                  />
+                  <div
+                    className="chat-markdown__media-reveal chat-markdown__media-reveal--audio group/reveal"
+                    style={mediaSizeStyle(width, height)}
+                  >
+                    <audio
+                      controls
+                      preload="metadata"
+                      className="chat-markdown__audio"
+                      src={resolvedSource}
+                    />
+                    <RevealInFinderButton
+                      filePath={resolveRevealableImagePath(rawSourcePath)}
+                      projectId={projectId}
+                    />
+                  </div>
                 );
               }
 

@@ -1883,10 +1883,49 @@ a:focus-visible,
   max-height: 420px;
 }
 
+.chat-markdown__media-reveal {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  margin: 0.55em 0;
+}
+
+.chat-markdown__media-reveal--video {
+  width: min(100%, 640px);
+}
+
+.chat-markdown__media-reveal--audio {
+  width: min(100%, 420px);
+  box-sizing: border-box;
+  padding: 10px 48px 10px 12px;
+  border: 1px solid #dbe5f5;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(248, 251, 255, 0.96)),
+    #f8fbff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
+}
+
+.chat-markdown__media-reveal > .chat-markdown__media,
+.chat-markdown__media-reveal > .chat-markdown__audio {
+  width: 100%;
+  margin: 0;
+}
+
 .chat-markdown__audio {
   display: block;
   width: min(100%, 420px);
+  height: 34px;
   margin: 0.55em 0;
+}
+
+.chat-markdown__audio::-webkit-media-controls-enclosure {
+  border-radius: 999px;
+  background-color: #eef4fb;
+}
+
+.chat-markdown__audio::-webkit-media-controls-panel {
+  background-color: #eef4fb;
 }
 
 .chat-file-card {
@@ -3799,11 +3838,21 @@ a:focus-visible,
 }
 
 :root.theme-dark .chat-markdown__media,
+:root.theme-dark .chat-markdown__media-reveal--audio,
 :root.theme-dark .chat-file-card,
 :root.theme-dark .chat-file-preview,
 :root.theme-dark .chat-file-preview--light {
   border-color: #243244 !important;
   background: #0f172a !important;
+}
+
+:root.theme-dark .chat-markdown__media-reveal--audio {
+  box-shadow: 0 8px 22px rgba(2, 6, 23, 0.26);
+}
+
+:root.theme-dark .chat-markdown__audio::-webkit-media-controls-enclosure,
+:root.theme-dark .chat-markdown__audio::-webkit-media-controls-panel {
+  background-color: #111b2e;
 }
 
 :root.theme-dark .chat-file-card:hover {

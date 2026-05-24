@@ -19,25 +19,24 @@ interface RevealableImageProps {
   loading?: "eager" | "lazy";
 }
 
+interface RevealInFinderButtonProps {
+  filePath?: string | null;
+  projectId?: string;
+  documentPath?: string;
+}
+
 const isWindowsPlatform = (): boolean =>
   typeof navigator !== "undefined" && /win/i.test(navigator.platform);
 
 const joinClassName = (...values: Array<string | undefined | false>): string =>
   values.filter(Boolean).join(" ");
 
-export const RevealableImage = ({
-  src,
-  alt,
+export const RevealInFinderButton = ({
   filePath,
   projectId,
   documentPath,
-  className,
-  imageClassName,
-  style,
-  loading = "lazy",
-}: RevealableImageProps) => {
+}: RevealInFinderButtonProps) => {
   const { language } = useAppI18n();
-  const [loadFailed, setLoadFailed] = useState(false);
   const revealLabel = translateUiText(
     language,
     isMacPlatform()
@@ -46,11 +45,6 @@ export const RevealableImage = ({
         ? "在资源管理器中显示"
         : "在文件管理器中显示",
   );
-  const missingImageLabel = translateUiText(language, "图片不可用");
-
-  useEffect(() => {
-    setLoadFailed(false);
-  }, [src]);
 
   const handleShowInFinder = (event: MouseEvent<HTMLButtonElement>): void => {
     event.preventDefault();
@@ -65,6 +59,42 @@ export const RevealableImage = ({
       message.error(translateUiText(language, "显示文件位置失败"));
     });
   };
+
+  if (!filePath?.trim()) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      className="absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-[15px] text-white opacity-0 backdrop-blur-sm transition-[opacity,background-color] hover:bg-black/68 focus:opacity-100 group-hover/reveal:opacity-100"
+      title={revealLabel}
+      aria-label={revealLabel}
+      onClick={handleShowInFinder}
+    >
+      <FolderOpenOutlined />
+    </button>
+  );
+};
+
+export const RevealableImage = ({
+  src,
+  alt,
+  filePath,
+  projectId,
+  documentPath,
+  className,
+  imageClassName,
+  style,
+  loading = "lazy",
+}: RevealableImageProps) => {
+  const { language } = useAppI18n();
+  const [loadFailed, setLoadFailed] = useState(false);
+  const missingImageLabel = translateUiText(language, "图片不可用");
+
+  useEffect(() => {
+    setLoadFailed(false);
+  }, [src]);
 
   return (
     <div
@@ -98,15 +128,11 @@ export const RevealableImage = ({
         />
       )}
       {filePath?.trim() && !loadFailed ? (
-        <button
-          type="button"
-          className="absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-[15px] text-white opacity-0 backdrop-blur-sm transition-[opacity,background-color] hover:bg-black/68 focus:opacity-100 group-hover/reveal:opacity-100"
-          title={revealLabel}
-          aria-label={revealLabel}
-          onClick={handleShowInFinder}
-        >
-          <FolderOpenOutlined />
-        </button>
+        <RevealInFinderButton
+          filePath={filePath}
+          projectId={projectId}
+          documentPath={documentPath}
+        />
       ) : null}
     </div>
   );
