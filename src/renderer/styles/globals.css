@@ -195,6 +195,34 @@ a:focus-visible,
   }
 }
 
+.chat-composer-editor {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5715;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-composer-editor [data-slate-placeholder="true"] {
+  color: var(--muted-2) !important;
+  opacity: 1 !important;
+}
+
+.chat-composer-paragraph {
+  min-height: 1.5715em;
+}
+
+.chat-composer-mention-token {
+  display: inline-block;
+  vertical-align: baseline;
+  color: var(--primary);
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.18em;
+  white-space: nowrap;
+}
+
 .docs-editor-panel {
   border: 1px solid var(--stroke);
   background: var(--surface);

@@ -3,24 +3,45 @@ import {
   FileTextOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
-import { RevealableImage } from "@renderer/components/RevealableImage";
 import {
   CompactSelect,
   type CompactSelectOption,
 } from "@renderer/components/CompactSelect";
+import { RevealableImage } from "@renderer/components/RevealableImage";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import type { ChatThinkingLevel } from "@shared/types";
-import { Button, Input, Tooltip } from "antd";
-import type { TextAreaRef } from "antd/es/input/TextArea";
+import { Button, Tooltip } from "antd";
 import type {
-  ChangeEvent,
   ClipboardEvent,
   KeyboardEvent,
-  MouseEvent,
   ReactNode,
-  RefObject,
-  SyntheticEvent,
 } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  createEditor,
+  Editor,
+  Element as SlateElement,
+  Node as SlateNode,
+  Range,
+  Transforms,
+  type BaseEditor,
+  type Descendant,
+} from "slate";
+import { withHistory, type HistoryEditor } from "slate-history";
+import {
+  Editable,
+  ReactEditor,
+  Slate,
+  withReact,
+  type RenderElementProps,
+} from "slate-react";
 
 export interface LocalChatFile {
   key: string;
@@ -45,10 +66,147 @@ export interface QueuedComposerMessage {
   sourceName?: string;
 }
 
+export interface ChatMentionOption {
+  key: string;
+  label: string;
+  insertText: string;
+  replacementText?: string;
+  searchText?: string;
+  description?: string;
+}
+
+export interface ChatComposerEditorHelpers {
+  insertBreak: () => void;
+  focus: () => void;
+}
+
+type ChatComposerText = { text: string };
+type ChatMentionElement = {
+  type: "mention";
+  label: string;
+  insertText: string;
+  replacementText?: string;
+  children: ChatComposerText[];
+};
+type ChatParagraphElement = {
+  type: "paragraph";
+  children: Array<ChatComposerText | ChatMentionElement>;
+};
+type ChatComposerElement = ChatMentionElement | ChatParagraphElement;
+type ChatComposerEditor = BaseEditor & ReactEditor & HistoryEditor;
+type MentionTarget = { range: Range; query: string };
+type MentionPopupPosition = { left: number; top: number };
+
+declare module "slate" {
+  interface CustomTypes {
+    Editor: ChatComposerEditor;
+    Element: ChatComposerElement;
+    Text: ChatComposerText;
+  }
+}
+
+const MENTION_POPUP_WIDTH = 320;
+
+const createEmptyEditorValue = (): Descendant[] => [
+  {
+    type: "paragraph",
+    children: [{ text: "" }],
+  },
+];
+
+const deserializeEditorValue = (input: string): Descendant[] => {
+  if (!input) return createEmptyEditorValue();
+  return input.split("\n").map((line) => ({
+    type: "paragraph",
+    children: [{ text: line }],
+  }));
+};
+
+const serializeEditorNode = (node: SlateNode): string => {
+  if ("text" in node) return node.text;
+  if (SlateElement.isElement(node) && node.type === "mention") {
+    return node.replacementText ?? node.insertText;
+  }
+  return node.children.map((child) => serializeEditorNode(child)).join("");
+};
+
+const serializeEditorValue = (value: Descendant[]): string =>
+  value.map((node) => serializeEditorNode(node)).join("\n");
+
+const withMentions = (editor: ChatComposerEditor): ChatComposerEditor => {
+  const { isInline, isVoid } = editor;
+  editor.isInline = (element) =>
+    element.type === "mention" ? true : isInline(element);
+  editor.isVoid = (element) =>
+    element.type === "mention" ? true : isVoid(element);
+  return editor;
+};
+
+const createComposerEditor = (): ChatComposerEditor =>
+  withMentions(withHistory(withReact(createEditor())));
+
+const getMentionTarget = (editor: ChatComposerEditor): MentionTarget | null => {
+  const { selection } = editor;
+  if (!selection || !Range.isCollapsed(selection)) return null;
+
+  const blockEntry = Editor.above(editor, {
+    match: (node) => SlateElement.isElement(node) && node.type === "paragraph",
+  });
+  if (!blockEntry) return null;
+
+  const [, blockPath] = blockEntry;
+  const blockStart = Editor.start(editor, blockPath);
+  const beforeRange = Editor.range(editor, blockStart, selection.anchor);
+  const beforeText = Editor.string(editor, beforeRange);
+  const match = beforeText.match(/(?:^|\s)@([^\s@]*)$/u);
+  if (!match) return null;
+
+  const query = match[1] ?? "";
+  const mentionStartOffset = beforeText.length - query.length - 1;
+  const mentionStart =
+    mentionStartOffset === 0
+      ? blockStart
+      : Editor.after(editor, blockStart, {
+          distance: mentionStartOffset,
+          unit: "character",
+        });
+  if (!mentionStart) return null;
+
+  return {
+    range: Editor.range(editor, mentionStart, selection.anchor),
+    query,
+  };
+};
+
 const StopSquareIcon = (): ReactNode => (
   <span className="inline-flex h-[12px] w-[12px] items-center justify-center">
     <span className="inline-block h-[9px] w-[9px] rounded-[1px] bg-current" />
   </span>
+);
+
+const MentionElement = ({
+  attributes,
+  children,
+  element,
+}: RenderElementProps & { element: ChatMentionElement }) => (
+  <span
+    {...attributes}
+    contentEditable={false}
+    className="chat-composer-mention-token i18n-no-translate"
+    data-chat-mention-token="true"
+  >
+    {element.label}
+    {children}
+  </span>
+);
+
+const ParagraphElement = ({
+  attributes,
+  children,
+}: RenderElementProps) => (
+  <div {...attributes} className="chat-composer-paragraph">
+    {children}
+  </div>
 );
 
 interface ChatComposerProps {
@@ -67,25 +225,21 @@ interface ChatComposerProps {
   chatInputShortcutHint: ReactNode;
   onDismissInputShortcutTip?: () => void;
   dismissShortcutTipLabel?: string;
-  inputContainerRef: RefObject<HTMLDivElement | null>;
-  inputTextAreaRef?: RefObject<TextAreaRef | null>;
-  inputOverlay?: ReactNode;
+  inputContainerRef: React.RefObject<HTMLDivElement | null>;
   input: string;
-  isComposing: boolean;
-  onInputChange: (
-    value: string,
-    event?: ChangeEvent<HTMLTextAreaElement>,
+  onInputChange: (value: string) => void;
+  onCompositionStart?: () => void;
+  onCompositionEnd?: () => void;
+  onEditorKeyDown?: (
+    event: KeyboardEvent<HTMLDivElement>,
+    helpers: ChatComposerEditorHelpers,
   ) => void;
-  onCompositionStart: () => void;
-  onCompositionEnd: (value: string) => void;
-  onInputKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onInputKeyUp?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onInputClick?: (event: MouseEvent<HTMLTextAreaElement>) => void;
-  onInputSelect?: (event: SyntheticEvent<HTMLTextAreaElement>) => void;
-  onInputPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+  onInputPaste?: (event: ClipboardEvent<HTMLDivElement>) => void;
+  mentionOptions?: ChatMentionOption[];
+  mentionAriaLabel?: string;
   placeholder: string;
-  fileInputRef?: RefObject<HTMLInputElement | null>;
-  onSelectFiles?: (event: ChangeEvent<HTMLInputElement>) => void;
+  fileInputRef?: React.RefObject<HTMLInputElement | null>;
+  onSelectFiles?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   fileAccept?: string;
   addFileLabel?: string;
   removeFileLabel?: (fileName: string) => string;
@@ -122,18 +276,14 @@ export const ChatComposer = ({
   onDismissInputShortcutTip,
   dismissShortcutTipLabel = "",
   inputContainerRef,
-  inputTextAreaRef,
-  inputOverlay,
   input,
-  isComposing,
   onInputChange,
   onCompositionStart,
   onCompositionEnd,
-  onInputKeyDown,
-  onInputKeyUp,
-  onInputClick,
-  onInputSelect,
+  onEditorKeyDown,
   onInputPaste,
+  mentionOptions = [],
+  mentionAriaLabel = "",
   placeholder,
   fileInputRef,
   onSelectFiles,
@@ -159,12 +309,195 @@ export const ChatComposer = ({
   const showFilePicker = Boolean(fileInputRef && onSelectFiles && fileAccept);
   const showModelSelector =
     modelOptions.length > 0 || Boolean(selectedModel?.trim());
-  const disableModelSelector =
-    modelOptions.length <= 1 || !onModelChange;
+  const disableModelSelector = modelOptions.length <= 1 || !onModelChange;
   const containerClassName =
     variant === "embedded"
       ? "no-drag rounded-[24px] border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.92)] px-4 py-4"
       : "no-drag rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.92)] px-3 py-3 shadow-[var(--shadow-panel)]";
+  const lastEmittedValueRef = useRef(input);
+  const [editorVersion, setEditorVersion] = useState(0);
+  const editor = useMemo(() => createComposerEditor(), [editorVersion]);
+  const initialValue = useMemo(
+    () => deserializeEditorValue(input),
+    [editorVersion],
+  );
+  const [mentionTarget, setMentionTarget] = useState<MentionTarget | null>(
+    null,
+  );
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [mentionPopupPosition, setMentionPopupPosition] =
+    useState<MentionPopupPosition | null>(null);
+  const mentionOptionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  useEffect(() => {
+    if (input === lastEmittedValueRef.current) return;
+    lastEmittedValueRef.current = input;
+    setMentionTarget(null);
+    setMentionPopupPosition(null);
+    setEditorVersion((version) => version + 1);
+  }, [input]);
+
+  const filteredMentionOptions = useMemo(() => {
+    if (!mentionTarget) return [];
+    const query = mentionTarget.query.trim().toLowerCase();
+    return mentionOptions
+      .filter((option) =>
+        (option.searchText ?? option.label).toLowerCase().includes(query),
+      )
+      .slice(0, 8);
+  }, [mentionOptions, mentionTarget]);
+  const mentionSuggestionsOpen = filteredMentionOptions.length > 0;
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [mentionTarget?.query, mentionOptions]);
+
+  useLayoutEffect(() => {
+    if (!mentionSuggestionsOpen) return;
+    mentionOptionRefs.current[activeMentionIndex]?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [activeMentionIndex, mentionSuggestionsOpen]);
+
+  useLayoutEffect(() => {
+    if (!mentionSuggestionsOpen || !mentionTarget) {
+      setMentionPopupPosition(null);
+      return;
+    }
+
+    const container = inputContainerRef.current;
+    if (!container) return;
+
+    try {
+      const domRange = ReactEditor.toDOMRange(editor, mentionTarget.range);
+      const targetRect = domRange.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const popupWidth = Math.min(MENTION_POPUP_WIDTH, container.clientWidth);
+      const maxLeft = Math.max(0, container.clientWidth - popupWidth);
+      setMentionPopupPosition({
+        left: Math.min(
+          Math.max(0, targetRect.left - containerRect.left),
+          maxLeft,
+        ),
+        top: targetRect.top - containerRect.top,
+      });
+    } catch {
+      setMentionPopupPosition(null);
+    }
+  }, [
+    editor,
+    inputContainerRef,
+    mentionSuggestionsOpen,
+    mentionTarget,
+  ]);
+
+  const refreshMentionTarget = useCallback(() => {
+    setMentionTarget(getMentionTarget(editor));
+  }, [editor]);
+
+  const focusEditor = useCallback((): void => {
+    ReactEditor.focus(editor);
+    if (editor.selection) return;
+    Transforms.select(editor, Editor.end(editor, []));
+  }, [editor]);
+
+  const selectMention = useCallback(
+    (option: ChatMentionOption): void => {
+      if (!mentionTarget) return;
+      Transforms.select(editor, mentionTarget.range);
+      Transforms.insertNodes(editor, [
+        {
+          type: "mention",
+          label: option.label,
+          insertText: option.insertText,
+          replacementText: option.replacementText,
+          children: [{ text: "" }],
+        },
+        { text: " " },
+      ]);
+      setMentionTarget(null);
+      setMentionPopupPosition(null);
+      requestAnimationFrame(() => {
+        ReactEditor.focus(editor);
+      });
+    },
+    [editor, mentionTarget],
+  );
+
+  const helpers = useMemo<ChatComposerEditorHelpers>(
+    () => ({
+      insertBreak: () => editor.insertBreak(),
+      focus: focusEditor,
+    }),
+    [editor, focusEditor],
+  );
+
+  const renderElement = useCallback((props: RenderElementProps) => {
+    if (props.element.type === "mention") {
+      return (
+        <MentionElement
+          {...props}
+          element={props.element as ChatMentionElement}
+        />
+      );
+    }
+    return <ParagraphElement {...props} />;
+  }, []);
+
+  const handleSlateChange = (nextValue: Descendant[]): void => {
+    const nextSerializedValue = serializeEditorValue(nextValue);
+    if (nextSerializedValue !== lastEmittedValueRef.current) {
+      lastEmittedValueRef.current = nextSerializedValue;
+      onInputChange(nextSerializedValue);
+    }
+    refreshMentionTarget();
+  };
+
+  const handleEditableKeyDown = (
+    event: KeyboardEvent<HTMLDivElement>,
+  ): void => {
+    if (mentionSuggestionsOpen) {
+      const isNextMentionKey =
+        event.key === "ArrowDown" ||
+        (event.ctrlKey && event.key.toLowerCase() === "n");
+      const isPreviousMentionKey =
+        event.key === "ArrowUp" ||
+        (event.ctrlKey && event.key.toLowerCase() === "p");
+      if (isNextMentionKey) {
+        event.preventDefault();
+        setActiveMentionIndex(
+          (index) => (index + 1) % filteredMentionOptions.length,
+        );
+        return;
+      }
+      if (isPreviousMentionKey) {
+        event.preventDefault();
+        setActiveMentionIndex(
+          (index) =>
+            (index - 1 + filteredMentionOptions.length) %
+            filteredMentionOptions.length,
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        const selectedOption =
+          filteredMentionOptions[
+            Math.min(activeMentionIndex, filteredMentionOptions.length - 1)
+          ];
+        selectMention(selectedOption);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMentionTarget(null);
+        return;
+      }
+    }
+
+    onEditorKeyDown?.(event, helpers);
+  };
 
   return (
     <div className={containerClassName}>
@@ -275,24 +608,70 @@ export const ChatComposer = ({
         ) : null
       ) : (
         <div ref={inputContainerRef} className="relative min-h-[84px]">
-          {inputOverlay}
-          <Input.TextArea
-            ref={inputTextAreaRef}
-            autoSize={{ minRows: 2, maxRows: 6 }}
-            value={input}
-            onChange={(event) => onInputChange(event.target.value, event)}
-            onCompositionStart={onCompositionStart}
-            onCompositionEnd={(event) => {
-              onCompositionEnd(event.currentTarget.value);
-            }}
-            onKeyDown={onInputKeyDown}
-            onKeyUp={onInputKeyUp}
-            onClick={onInputClick}
-            onSelect={onInputSelect}
-            onPaste={onInputPaste}
-            className="!border-0 !bg-transparent !px-0 !py-0 !shadow-none"
-            placeholder={placeholder}
-          />
+          <Slate
+            key={editorVersion}
+            editor={editor}
+            initialValue={initialValue}
+            onChange={handleSlateChange}
+            onSelectionChange={refreshMentionTarget}
+          >
+            <Editable
+              data-chat-composer-editor="true"
+              renderElement={renderElement}
+              placeholder={placeholder}
+              className="chat-composer-editor i18n-no-translate min-h-[84px] outline-none"
+              onCompositionStart={onCompositionStart}
+              onCompositionEnd={onCompositionEnd}
+              onKeyDown={handleEditableKeyDown}
+              onPaste={onInputPaste}
+            />
+          </Slate>
+          {mentionSuggestionsOpen && mentionPopupPosition ? (
+            <div
+              className="absolute z-50 overflow-hidden rounded-lg border border-[var(--stroke)] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
+              style={{
+                left: mentionPopupPosition.left,
+                top: mentionPopupPosition.top,
+                width: `min(${MENTION_POPUP_WIDTH}px, 100%)`,
+                transform: "translateY(calc(-100% - 8px))",
+              }}
+              role="listbox"
+              aria-label={mentionAriaLabel}
+            >
+              <ScrollArea className="max-h-52 py-1">
+                <div className="space-y-0.5 px-1">
+                  {filteredMentionOptions.map((option, index) => (
+                    <button
+                      key={option.key}
+                      ref={(element) => {
+                        mentionOptionRefs.current[index] = element;
+                      }}
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeMentionIndex}
+                      className={`i18n-no-translate flex w-full min-w-0 flex-col rounded-md px-2.5 py-2 text-left text-sm ${
+                        index === activeMentionIndex
+                          ? "bg-[rgba(var(--primary-rgb),0.12)] text-[var(--primary)]"
+                          : "text-[var(--text)] hover:bg-[var(--surface-2)]"
+                      }`}
+                      onMouseEnter={() => setActiveMentionIndex(index)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectMention(option)}
+                    >
+                      <span className="max-w-full truncate font-medium">
+                        {option.label}
+                      </span>
+                      {option.description ? (
+                        <span className="max-w-full truncate text-xs font-normal text-[var(--muted)]">
+                          {option.description}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : null}
         </div>
       )}
 

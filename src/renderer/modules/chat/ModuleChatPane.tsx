@@ -11,6 +11,7 @@ import {
 import {
   CHAT_THINKING_LEVEL_VALUES,
   ChatComposer,
+  type ChatMentionOption,
   type LocalChatFile,
   type QueuedComposerMessage,
 } from "@renderer/modules/chat/ChatComposer";
@@ -39,6 +40,7 @@ import type {
   AgentProviderDTO,
   ChatScope,
   ChatThinkingLevel,
+  DocumentDTO,
 } from "@shared/types";
 import type { AppResolvedTheme } from "@shared/theme";
 import {
@@ -294,6 +296,17 @@ const LEGACY_CHAT_INPUT_SHORTCUT_TIP_DISMISSED_STORAGE_KEY =
   "kian.chat.input-shortcut-tip.dismissed";
 const MESSAGE_IMAGE_EXPORT_WIDTH = 920;
 type ExtendedMarkdownKind = MarkdownMediaKind | "file" | "attachment";
+
+const stripDocsPrefix = (rawPath: string): string => {
+  const normalized = rawPath.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (normalized.startsWith("docs/files/")) {
+    return normalized.slice("docs/files/".length);
+  }
+  if (normalized.startsWith("docs/")) {
+    return normalized.slice("docs/".length);
+  }
+  return normalized;
+};
 
 const isChatThinkingLevel = (value: string): value is ChatThinkingLevel =>
   value === "low" || value === "medium" || value === "high";
@@ -2243,6 +2256,28 @@ export const ModuleChatPane = ({
   );
   const hasEnabledModels = enabledModels.length > 0;
   const hasHydratedSelectedModel = !hasEnabledModels || Boolean(selectedModel);
+  const docsQuery = useQuery<DocumentDTO[]>({
+    queryKey: ["docs", docsQueryProjectId],
+    queryFn: () => api.docs.list(docsQueryProjectId),
+    enabled: Boolean(docsQueryProjectId),
+  });
+  const documentMentionOptions = useMemo<ChatMentionOption[]>(
+    () =>
+      (docsQuery.data ?? []).map((doc) => {
+        const documentPath = stripDocsPrefix(doc.id);
+        const mentionPath = `docs/${documentPath}`;
+        const title = doc.title.trim() || documentPath;
+        return {
+          key: doc.id,
+          label: `@${title}`,
+          description: documentPath,
+          insertText: `@${title}`,
+          replacementText: buildExtendedMarkdown("attachment", mentionPath),
+          searchText: `${title} ${documentPath}`,
+        };
+      }),
+    [docsQuery.data],
+  );
 
   useEffect(() => {
     if (claudeStatusQuery.data && !selectedModel) {
@@ -3062,7 +3097,7 @@ export const ModuleChatPane = ({
     event.target.value = "";
   };
 
-  const handlePasteFiles = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+  const handlePasteFiles = (event: ClipboardEvent<HTMLDivElement>): void => {
     const clipboardFiles = Array.from(event.clipboardData.files);
     const itemFiles = Array.from(event.clipboardData.items)
       .filter((item) => item.kind === "file")
@@ -3288,13 +3323,20 @@ export const ModuleChatPane = ({
   };
 
   const focusChatInput = useCallback((): void => {
-    const textarea = chatInputContainerRef.current?.querySelector("textarea");
-    if (!(textarea instanceof HTMLTextAreaElement)) {
+    const editorElement = chatInputContainerRef.current?.querySelector(
+      '[data-chat-composer-editor="true"]',
+    );
+    if (!(editorElement instanceof HTMLElement)) {
       return;
     }
-    textarea.focus();
-    const cursorPosition = textarea.value.length;
-    textarea.setSelectionRange(cursorPosition, cursorPosition);
+    editorElement.focus();
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(editorElement);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }, []);
 
   useEffect(() => {
@@ -3329,19 +3371,6 @@ export const ModuleChatPane = ({
       );
     };
   }, [acceptMainInputFocusEvents, chatVariant, focusChatInput]);
-
-  const insertNewlineAtCursor = useCallback((target: HTMLTextAreaElement) => {
-    const start = target.selectionStart ?? target.value.length;
-    const end = target.selectionEnd ?? target.value.length;
-    const nextValue =
-      target.value.slice(0, start) + "\n" + target.value.slice(end);
-    setInput(nextValue);
-    window.requestAnimationFrame(() => {
-      target.focus();
-      const nextCursorPosition = start + 1;
-      target.setSelectionRange(nextCursorPosition, nextCursorPosition);
-    });
-  }, []);
 
   const canSend =
     !readOnly &&
@@ -3434,15 +3463,13 @@ export const ModuleChatPane = ({
       dismissShortcutTipLabel={t("不再提示")}
       inputContainerRef={chatInputContainerRef}
       input={input}
-      isComposing={isComposing}
       onInputChange={setInput}
       onCompositionStart={() => setIsComposing(true)}
-      onCompositionEnd={(value) => {
+      onCompositionEnd={() => {
         setIsComposing(false);
-        setInput(value);
       }}
-      onInputKeyDown={(event) => {
-        if ((event.nativeEvent as KeyboardEvent).isComposing || isComposing) {
+      onEditorKeyDown={(event, helpers) => {
+        if (event.nativeEvent.isComposing || isComposing) {
           return;
         }
 
@@ -3473,10 +3500,12 @@ export const ModuleChatPane = ({
         ) {
           event.preventDefault();
           event.stopPropagation();
-          insertNewlineAtCursor(event.currentTarget);
+          helpers.insertBreak();
         }
       }}
       onInputPaste={handlePasteFiles}
+      mentionOptions={documentMentionOptions}
+      mentionAriaLabel={t("提及文档")}
       placeholder={
         canInterrupt
           ? t("继续发送消息修正我的行为...")
