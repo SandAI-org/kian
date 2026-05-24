@@ -53,8 +53,7 @@ interface CronJobExecutionLogItem {
 
 const nowISO = (): string => new Date().toISOString();
 const MAIN_AGENT_SCOPE_ID = "main-agent";
-const CRON_JOB_LOG_TAIL_BYTES = 256 * 1024;
-const CRON_JOB_LOG_TAIL_LINES = 200;
+const CRON_JOB_LOG_READ_CHUNK_BYTES = 256 * 1024;
 
 const ensureDir = async (dirPath: string): Promise<void> => {
   await fs.mkdir(dirPath, { recursive: true });
@@ -2051,32 +2050,46 @@ const readRawCronJobItems = async (): Promise<unknown[]> => {
   return Array.isArray(raw) ? raw : [];
 };
 
-const readRecentCronJobExecutionLines = async (): Promise<string[]> => {
+const readCronJobExecutionLinesFromEnd = async (
+  onLine: (line: string) => boolean,
+): Promise<void> => {
   const filePath = getCronJobLogPath();
   if (!(await pathExists(filePath))) {
-    return [];
+    return;
   }
 
   const stats = await fs.stat(filePath);
   if (stats.size === 0) {
-    return [];
+    return;
   }
 
-  const length = Math.min(stats.size, CRON_JOB_LOG_TAIL_BYTES);
-  const start = Math.max(0, stats.size - length);
   const handle = await fs.open(filePath, "r");
+  let position = stats.size;
+  let carry = "";
 
   try {
-    const buffer = Buffer.alloc(length);
-    const { bytesRead } = await handle.read(buffer, 0, length, start);
-    const lines = buffer.subarray(0, bytesRead).toString("utf8").split(/\r?\n/);
-    if (start > 0) {
-      lines.shift();
+    while (position > 0) {
+      const length = Math.min(position, CRON_JOB_LOG_READ_CHUNK_BYTES);
+      position -= length;
+
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, position);
+      const lines = `${buffer.subarray(0, bytesRead).toString("utf8")}${carry}`
+        .split(/\r?\n/);
+      carry = position > 0 ? (lines.shift() ?? "") : "";
+
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const line = lines[index].trim();
+        if (line && !onLine(line)) {
+          return;
+        }
+      }
     }
-    return lines
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .slice(-CRON_JOB_LOG_TAIL_LINES);
+
+    const line = carry.trim();
+    if (line) {
+      onLine(line);
+    }
   } finally {
     await handle.close();
   }
@@ -2161,17 +2174,12 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
     return jobs;
   }
 
-  const lines = await readRecentCronJobExecutionLines();
-  if (lines.length === 0) {
-    return jobs;
-  }
-
   const pending = new Set(jobs.map((job) => job.id));
   const latestByJobId = new Map<string, CronJobLastExecutionDTO>();
 
-  for (const line of [...lines].reverse()) {
+  await readCronJobExecutionLinesFromEnd((line) => {
     const execution = parseCronJobExecutionLogLine(line);
-    if (!execution) continue;
+    if (!execution) return true;
 
     const candidates = jobs.filter(
       (candidate) =>
@@ -2181,14 +2189,12 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
     const job =
       candidates.find((candidate) => candidate.id === execution.jobId) ??
       (candidates.length === 1 ? candidates[0] : null);
-    if (!job) continue;
+    if (!job) return true;
 
     latestByJobId.set(job.id, toCronJobLastExecution(execution));
     pending.delete(job.id);
-    if (pending.size === 0) {
-      break;
-    }
-  }
+    return pending.size > 0;
+  });
 
   return jobs.map((job) => ({
     ...job,

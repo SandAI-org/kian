@@ -356,4 +356,57 @@ describe("repositoryService cronjob", () => {
       },
     });
   });
+
+  it("finds the latest matching execution beyond the recent log window", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 9 * * *",
+            content: "生成日报",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T09:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 9 * * *",
+      content: "生成日报",
+      status: "dispatched",
+      sessionId: "session-report",
+      assistantMessage: "日报已生成",
+    });
+
+    for (let index = 0; index < 220; index += 1) {
+      await repositoryService.logCronJobExecution({
+        executedAt: `2026-05-21T10:${String(index % 60).padStart(2, "0")}:00.000Z`,
+        jobId: "cronjob-2",
+        cron: "0 10 * * *",
+        content: `无关任务 ${index}`,
+        status: "dispatched",
+        sessionId: `session-other-${index}`,
+      });
+    }
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0]).toMatchObject({
+      lastExecution: {
+        executedAt: "2026-05-21T09:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-report",
+        assistantMessage: "日报已生成",
+      },
+    });
+  });
 });
