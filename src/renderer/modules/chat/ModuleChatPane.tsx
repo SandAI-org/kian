@@ -281,7 +281,7 @@ const TEXT_FILE_EXTENSIONS = new Set([
   ".env",
 ]);
 const EXTENDED_MEDIA_PATTERN =
-  /@\[(image|video|audio|file|attachment)(?:\|([^\]]*))?\]\(([^)\n]+)\)/gi;
+  /@\[(image|video|audio|file|attachment|mention-file)(?:\|([^\]]*))?\]\(([^)\n]+)\)/gi;
 const CORRUPTED_NESTED_MEDIA_PATTERN =
   /([^\s()[\]]+)@\[(image|video|audio)\]\((\/[^)\n]+)\)/gi;
 const KIAN_MEDIA_PREFIX = "kian-media://";
@@ -296,6 +296,7 @@ const LEGACY_CHAT_INPUT_SHORTCUT_TIP_DISMISSED_STORAGE_KEY =
   "kian.chat.input-shortcut-tip.dismissed";
 const MESSAGE_IMAGE_EXPORT_WIDTH = 920;
 type ExtendedMarkdownKind = MarkdownMediaKind | "file" | "attachment";
+type ExtendedMarkdownTokenKind = ExtendedMarkdownKind | "mention-file";
 
 const stripDocsPrefix = (rawPath: string): string => {
   const normalized = rawPath.replace(/\\/g, "/").replace(/^\/+/, "");
@@ -416,9 +417,17 @@ const readFileAsBase64 = async (file: File): Promise<string> => {
 };
 
 const buildExtendedMarkdown = (
-  kind: ExtendedMarkdownKind,
+  kind: ExtendedMarkdownTokenKind,
   localPath: string,
-): string => `@[${kind}](${localPath})`;
+  hint?: string,
+): string => {
+  const normalizedHint = hint?.replace(/[\r\n\]]/g, " ").trim();
+  const hintSuffix = normalizedHint ? `|${normalizedHint}` : "";
+  return `@[${kind}${hintSuffix}](${localPath})`;
+};
+
+const buildMentionFileMarkdown = (localPath: string, label: string): string =>
+  buildExtendedMarkdown("mention-file", localPath, label);
 
 const formatDraftMessage = (text: string, files: LocalChatFile[]): string => {
   const base = text.trim();
@@ -471,13 +480,13 @@ const getMessageSortCreatedAt = (message: ChatMessageDTO): string =>
   message.createdAt;
 
 const encodeExtendedMediaToken = (
-  kind: ExtendedMarkdownKind,
+  kind: ExtendedMarkdownTokenKind,
   sourcePath: string,
 ): string => `${KIAN_MEDIA_PREFIX}${kind}/${encodeURIComponent(sourcePath)}`;
 
 const decodeExtendedMediaToken = (
   src: string,
-): { kind: ExtendedMarkdownKind; sourcePath: string } | null => {
+): { kind: ExtendedMarkdownTokenKind; sourcePath: string } | null => {
   if (!src.startsWith(KIAN_MEDIA_PREFIX)) return null;
   const tokenBody = src.slice(KIAN_MEDIA_PREFIX.length);
   const separator = tokenBody.indexOf("/");
@@ -489,7 +498,8 @@ const decodeExtendedMediaToken = (
     kind !== "video" &&
     kind !== "audio" &&
     kind !== "file" &&
-    kind !== "attachment"
+    kind !== "attachment" &&
+    kind !== "mention-file"
   )
     return null;
 
@@ -547,10 +557,19 @@ const preprocessExtendedMediaMarkdown = (content: string): string =>
   ).replace(
     EXTENDED_MEDIA_PATTERN,
     (_full, kindRaw: string, sizeRaw: string | undefined, pathRaw: string) => {
-      const kind = kindRaw.toLowerCase() as ExtendedMarkdownKind;
+      const kind = kindRaw.toLowerCase() as ExtendedMarkdownTokenKind;
       const localPath = stripWrappedPath(pathRaw);
       if (!localPath) return "";
       const token = encodeExtendedMediaToken(kind, localPath);
+      if (kind === "mention-file") {
+        const rawLabel = sizeRaw?.trim() || getPathFileName(localPath);
+        const label = rawLabel.startsWith("@") ? rawLabel : `@${rawLabel}`;
+        const escapedLabel = label
+          .replace(/\\/g, "\\\\")
+          .replace(/\[/g, "\\[")
+          .replace(/\]/g, "\\]");
+        return `[${escapedLabel}](${token})`;
+      }
       const sizeSuffix = sizeRaw ? `|${sizeRaw}` : "";
       if (kind === "file" || kind === "attachment") {
         return `[__kian_file__](${token})`;
@@ -937,7 +956,8 @@ const renderMentionNodes = (
     element.type === "code" ||
     element.type === "pre" ||
     className.includes("markdown-code-block") ||
-    className.includes("chat-markdown__inline-code")
+    className.includes("chat-markdown__inline-code") ||
+    className.includes("chat-composer-mention-token")
   ) {
     return children;
   }
@@ -1026,6 +1046,15 @@ export const MarkdownMessage = memo(
                   />
                 );
               }
+              if (extended?.kind === "mention-file") {
+                const label = extractTextFromReactNode(children).trim();
+                const fallbackLabel = `@${getPathFileName(extended.sourcePath)}`;
+                return (
+                  <span className="chat-composer-mention-token i18n-no-translate">
+                    {label || fallbackLabel}
+                  </span>
+                );
+              }
 
               const targetHref = resolveRenderableUrl(rawHref, projectId);
               if (!targetHref) {
@@ -1062,6 +1091,9 @@ export const MarkdownMessage = memo(
                   />
                 );
               }
+              if (extended?.kind === "mention-file") {
+                return null;
+              }
 
               const { cleanAlt, width, height } = parseSizeFromAlt(
                 String(alt ?? ""),
@@ -1069,10 +1101,14 @@ export const MarkdownMessage = memo(
               const altKind = cleanAlt.trim().toLowerCase();
               const rawSourcePath = extended?.sourcePath ?? source;
               const mediaKind =
-                extended?.kind ??
-                (altKind === "video" || altKind === "audio"
-                  ? altKind
-                  : (detectMarkdownMediaKindFromSource(rawSourcePath) ?? "image"));
+                extended?.kind === "image" ||
+                extended?.kind === "video" ||
+                extended?.kind === "audio"
+                  ? extended.kind
+                  : altKind === "video" || altKind === "audio"
+                    ? altKind
+                    : (detectMarkdownMediaKindFromSource(rawSourcePath) ??
+                      "image");
               const resolvedSource = resolveRenderableUrl(
                 rawSourcePath,
                 projectId,
@@ -2272,7 +2308,7 @@ export const ModuleChatPane = ({
           label: `@${title}`,
           description: documentPath,
           insertText: `@${title}`,
-          replacementText: buildExtendedMarkdown("attachment", mentionPath),
+          replacementText: buildMentionFileMarkdown(mentionPath, `@${title}`),
           searchText: `${title} ${documentPath}`,
         };
       }),

@@ -2166,6 +2166,11 @@ a:focus-visible,
   color: #ffffff;
 }
 
+.chat-markdown--user .chat-composer-mention-token {
+  color: #ffffff;
+  text-decoration-color: rgba(255, 255, 255, 0.9);
+}
+
 .chat-markdown--user .markdown-code-block--chat .markdown-code-block__pre,
 .chat-markdown--user .markdown-code-block--chat .markdown-code-block__pre code,
 .chat-markdown--user .markdown-code-block--chat .hljs {

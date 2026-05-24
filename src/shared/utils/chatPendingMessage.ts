@@ -2,7 +2,7 @@ import type { ChatMessageDTO } from '../types';
 
 const USER_REQUEST_METADATA_KIND = 'user_request';
 const EXTENDED_MEDIA_PATTERN =
-  /@\[(image|video|audio|file|attachment)(?:\|([^\]]*))?\]\(([^)\n]+)\)/gi;
+  /@\[(image|video|audio|file|attachment|mention-file)(?:\|([^\]]*))?\]\(([^)\n]+)\)/gi;
 
 const stripWrappedPath = (value: string): string => {
   const trimmed = value.trim();
