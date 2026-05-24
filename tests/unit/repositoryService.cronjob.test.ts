@@ -294,4 +294,66 @@ describe("repositoryService cronjob", () => {
       },
     });
   });
+
+  it("uses execution job IDs to disambiguate identical cron jobs", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+          },
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      sessionId: "session-first",
+      assistantMessage: "第一条任务完成",
+    });
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:01:00.000Z",
+      jobId: "cronjob-2",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      sessionId: "session-second",
+      assistantMessage: "第二条任务完成",
+    });
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0]).toMatchObject({
+      id: "cronjob-1",
+      lastExecution: {
+        sessionId: "session-first",
+        assistantMessage: "第一条任务完成",
+      },
+    });
+    expect(jobs[1]).toMatchObject({
+      id: "cronjob-2",
+      lastExecution: {
+        sessionId: "session-second",
+        assistantMessage: "第二条任务完成",
+      },
+    });
+  });
 });

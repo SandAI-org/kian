@@ -2173,11 +2173,14 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
     const execution = parseCronJobExecutionLogLine(line);
     if (!execution) continue;
 
-    const job = jobs.find(
+    const candidates = jobs.filter(
       (candidate) =>
         pending.has(candidate.id) &&
         cronJobExecutionMatchesJob(execution, candidate),
     );
+    const job =
+      candidates.find((candidate) => candidate.id === execution.jobId) ??
+      (candidates.length === 1 ? candidates[0] : null);
     if (!job) continue;
 
     latestByJobId.set(job.id, toCronJobLastExecution(execution));
