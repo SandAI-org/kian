@@ -11,6 +11,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
+  SaveOutlined,
   VideoCameraOutlined,
 } from "@ant-design/icons";
 import { CompactDropdown } from "@renderer/components/CompactDropdown";
@@ -828,6 +829,23 @@ export const DocsModule = ({
     },
   });
 
+  const saveAsMutation = useMutation({
+    mutationFn: (node: FileTreeNode) =>
+      api.file.saveAs({
+        filePath: node.path,
+        projectId,
+        defaultFileName: node.name,
+      }),
+    onSuccess: (savedPath) => {
+      if (savedPath) {
+        message.success(t("文件已另存"));
+      }
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : t("另存为失败"));
+    },
+  });
+
   const renameFileMutation = useMutation({
     mutationFn: async (payload: { id: string; title: string }) => {
       const updated = await api.docs.update({
@@ -1128,6 +1146,10 @@ export const DocsModule = ({
     }
   };
 
+  const handleSaveAsFile = (node: FileTreeNode): void => {
+    saveAsMutation.mutate(node);
+  };
+
   const handleDeleteFile = (node: FileTreeNode): void => {
     const targetPath = stripDocsPrefix(node.path);
     deleteMutation.mutate(targetPath);
@@ -1363,6 +1385,12 @@ export const DocsModule = ({
             ]
           : []),
         {
+          key: "save-as",
+          label: t("另存为"),
+          icon: <SaveOutlined />,
+          disabled: !actionable || saveAsMutation.isPending,
+        },
+        {
           key: "delete",
           label: t("删除"),
           icon: <DeleteOutlined />,
@@ -1389,6 +1417,10 @@ export const DocsModule = ({
           }
           if (key === "duplicate") {
             void handleDuplicateFile(node);
+            return;
+          }
+          if (key === "save-as") {
+            handleSaveAsFile(node);
             return;
           }
           if (key === "delete") {

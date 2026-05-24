@@ -4,6 +4,9 @@ import {
   CheckCircleFilled,
   DeleteOutlined,
   DownloadOutlined,
+  CloudDownloadOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
@@ -18,6 +21,8 @@ import {
   Drawer,
   Empty,
   Input,
+  Alert,
+  Modal,
   Space,
   Spin,
   Switch,
@@ -44,6 +49,12 @@ export const SkillsPage = () => {
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isAddRepositoryDrawerOpen, setIsAddRepositoryDrawerOpen] =
     useState(false);
+  const [isAddSkillModalOpen, setIsAddSkillModalOpen] = useState(false);
+  const [addSkillTab, setAddSkillTab] = useState("local");
+  const [localSourcePaths, setLocalSourcePaths] = useState<string[]>([]);
+  const [skillMarkdown, setSkillMarkdown] = useState("");
+  const [clawHubInput, setClawHubInput] = useState("");
+  const [addSkillError, setAddSkillError] = useState<string | null>(null);
 
   const configQuery = useQuery({
     queryKey: ["skills", "config"],
@@ -114,6 +125,93 @@ export const SkillsPage = () => {
     },
   });
 
+  const resetAddSkillForm = () => {
+    setLocalSourcePaths([]);
+    setSkillMarkdown("");
+    setClawHubInput("");
+    setAddSkillTab("local");
+    setAddSkillError(null);
+  };
+
+  const getAddSkillErrorMessage = (
+    error: unknown,
+    fallback: string,
+  ): string => (error instanceof Error ? t(error.message) : t(fallback));
+
+  const showInstallSuccess = (skills: Array<{ name: string }>) => {
+    if (skills.length === 1) {
+      message.success(t(`技能 ${skills[0]?.name ?? ""} 安装成功`));
+      return;
+    }
+    message.success(t(`已添加 ${skills.length} 个技能`));
+  };
+
+  const pickLocalSourcesMutation = useMutation({
+    mutationFn: api.skills.pickLocalSources,
+    onMutate: () => {
+      setAddSkillError(null);
+    },
+    onSuccess: (paths) => {
+      if (paths.length === 0) return;
+      setLocalSourcePaths((current) =>
+        Array.from(new Set([...current, ...paths])),
+      );
+    },
+    onError: (error) => {
+      const errorMessage = getAddSkillErrorMessage(error, "选择本地路径失败");
+      setAddSkillError(errorMessage);
+      message.error(errorMessage);
+    },
+  });
+
+  const installLocalSourcesMutation = useMutation({
+    mutationFn: (payload: { sourcePaths: string[] }) =>
+      api.skills.installLocalSources(payload),
+    onSuccess: async (skills) => {
+      showInstallSuccess(skills);
+      resetAddSkillForm();
+      setIsAddSkillModalOpen(false);
+      await refreshSkillQueries();
+    },
+    onError: (error) => {
+      const errorMessage = getAddSkillErrorMessage(error, "添加技能失败");
+      setAddSkillError(errorMessage);
+      message.error(errorMessage);
+    },
+  });
+
+  const installFromMarkdownMutation = useMutation({
+    mutationFn: (payload: { markdown: string }) =>
+      api.skills.installFromMarkdown(payload),
+    onSuccess: async (skill) => {
+      showInstallSuccess([skill]);
+      resetAddSkillForm();
+      setIsAddSkillModalOpen(false);
+      await refreshSkillQueries();
+    },
+    onError: (error) => {
+      const errorMessage = getAddSkillErrorMessage(error, "添加技能失败");
+      setAddSkillError(errorMessage);
+      message.error(errorMessage);
+    },
+  });
+
+  const installFromClawHubMutation = useMutation({
+    mutationFn: (payload: { input: string }) =>
+      api.skills.installFromClawHub(payload),
+    onSuccess: async (skills) => {
+      showInstallSuccess(skills);
+      resetAddSkillForm();
+      setIsAddSkillModalOpen(false);
+      await refreshSkillQueries();
+    },
+    onError: (error) => {
+      const errorMessage = getAddSkillErrorMessage(error, "添加技能失败");
+      setAddSkillError(errorMessage);
+      message.error(errorMessage);
+    },
+  });
+
   const uninstallMutation = useMutation({
     mutationFn: (payload: { skillId: string }) => api.skills.uninstall(payload),
     onSuccess: async (_, variables) => {
@@ -175,6 +273,46 @@ export const SkillsPage = () => {
     addRepositoryMutation.mutate(value);
   };
 
+  const isAddingSkill =
+    installLocalSourcesMutation.isPending ||
+    installFromMarkdownMutation.isPending ||
+    installFromClawHubMutation.isPending;
+
+  const onAddSkill = () => {
+    setAddSkillError(null);
+    if (addSkillTab === "local") {
+      if (localSourcePaths.length === 0) {
+        const errorMessage = t("请先选择本地文件或目录");
+        setAddSkillError(errorMessage);
+        message.warning(errorMessage);
+        return;
+      }
+      installLocalSourcesMutation.mutate({ sourcePaths: localSourcePaths });
+      return;
+    }
+
+    if (addSkillTab === "markdown") {
+      const markdown = skillMarkdown.trim();
+      if (!markdown) {
+        const errorMessage = t("请输入 SKILL.md 内容");
+        setAddSkillError(errorMessage);
+        message.warning(errorMessage);
+        return;
+      }
+      installFromMarkdownMutation.mutate({ markdown });
+      return;
+    }
+
+    const input = clawHubInput.trim();
+    if (!input) {
+      const errorMessage = t("请输入 ClawHub 名称或链接");
+      setAddSkillError(errorMessage);
+      message.warning(errorMessage);
+      return;
+    }
+    installFromClawHubMutation.mutate({ input });
+  };
+
   const installedSkills = installedQuery.data ?? [];
   const repositorySkills = repositorySkillsQuery.data ?? [];
   const isBuiltinInstalledSkill = (repositoryUrl: string): boolean =>
@@ -191,18 +329,32 @@ export const SkillsPage = () => {
     setIsAddRepositoryDrawerOpen(true);
   }, []);
 
+  const openAddSkillModal = useCallback(() => {
+    setAddSkillError(null);
+    setIsAddSkillModalOpen(true);
+  }, []);
+
   const headerActions = useMemo(
     () => (
-      <Button
-        type="primary"
-        icon={<PlusOutlined />}
-        className="!h-10 !rounded-full !px-5"
-        onClick={openAddRepositoryDrawer}
-      >
-        {translateUiText(language, "添加技能仓库")}
-      </Button>
+      <Space size={8}>
+        <Button
+          icon={<PlusOutlined />}
+          className="!h-10 !rounded-full !px-5"
+          onClick={openAddRepositoryDrawer}
+        >
+          {translateUiText(language, "添加技能仓库")}
+        </Button>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          className="!h-10 !rounded-full !px-5"
+          onClick={openAddSkillModal}
+        >
+          {translateUiText(language, "添加技能")}
+        </Button>
+      </Space>
     ),
-    [language, openAddRepositoryDrawer],
+    [language, openAddRepositoryDrawer, openAddSkillModal],
   );
 
   useEffect(() => {
@@ -483,6 +635,105 @@ export const SkillsPage = () => {
     },
   ];
 
+  const addSkillTabs = [
+    {
+      key: "local",
+      label: t("本地文件/目录"),
+      children: (
+        <div className="space-y-4">
+          <Typography.Paragraph className="!mb-0 !text-sm !leading-[1.7] !text-slate-600">
+            {t("选择 SKILL.md 文件、技能目录，或包含多个技能目录的文件夹")}
+          </Typography.Paragraph>
+          <Button
+            icon={<FolderOpenOutlined />}
+            loading={pickLocalSourcesMutation.isPending}
+            onClick={() => pickLocalSourcesMutation.mutate()}
+          >
+            {t("选择文件或目录")}
+          </Button>
+          {localSourcePaths.length > 0 ? (
+            <div className="rounded-lg border border-[var(--stroke-strong)] bg-[var(--surface)]">
+              <div className="border-b border-[var(--stroke)] px-3 py-2 text-xs font-medium text-[var(--muted)]">
+                {t("已选择的路径")}
+              </div>
+              <ScrollArea className="max-h-[180px]">
+                <div className="space-y-1 p-2">
+                  {localSourcePaths.map((sourcePath) => (
+                    <div
+                      key={sourcePath}
+                      className="flex items-center justify-between gap-2 rounded-md bg-[var(--surface-2)] px-2 py-1.5"
+                    >
+                      <Typography.Text
+                        className="min-w-0 !text-xs !text-[var(--text-soft)]"
+                        ellipsis
+                      >
+                        {sourcePath}
+                      </Typography.Text>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<DeleteOutlined />}
+                        aria-label={t("移除")}
+                        onClick={() =>
+                          setLocalSourcePaths((current) =>
+                            current.filter((item) => item !== sourcePath),
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={t("尚未选择本地文件或目录")}
+            />
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "markdown",
+      label: t("SKILL.md 内容"),
+      children: (
+        <div className="space-y-3">
+          <Typography.Paragraph className="!mb-0 !text-sm !leading-[1.7] !text-slate-600">
+            {t("粘贴完整的 SKILL.md 内容")}
+          </Typography.Paragraph>
+          <Input.TextArea
+            value={skillMarkdown}
+            onChange={(event) => setSkillMarkdown(event.target.value)}
+            placeholder={t("请输入 SKILL.md 内容")}
+            rows={12}
+            className="!font-mono !text-xs"
+          />
+        </div>
+      ),
+    },
+    {
+      key: "clawhub",
+      label: t("ClawHub"),
+      children: (
+        <div className="space-y-3">
+          <Typography.Paragraph className="!mb-0 !text-sm !leading-[1.7] !text-slate-600">
+            {t("输入 ClawHub 技能名称或链接")}
+          </Typography.Paragraph>
+          <Input
+            value={clawHubInput}
+            onChange={(event) => setClawHubInput(event.target.value)}
+            placeholder={t(
+              "例如：https://clawhub.ai/spclaudehome/skill-vetter 或 skill-vetter",
+            )}
+            prefix={<CloudDownloadOutlined className="text-slate-400" />}
+            onPressEnter={onAddSkill}
+          />
+        </div>
+      ),
+    },
+  ];
+
   return (
     <>
       <ScrollArea className="h-full">
@@ -496,6 +747,65 @@ export const SkillsPage = () => {
           />
         </div>
       </ScrollArea>
+      <Modal
+        title={t("添加技能")}
+        open={isAddSkillModalOpen}
+        onCancel={() => {
+          if (isAddingSkill) return;
+          setIsAddSkillModalOpen(false);
+          resetAddSkillForm();
+        }}
+        width={680}
+        destroyOnClose
+        maskClosable={!isAddingSkill}
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            <Button
+              disabled={isAddingSkill}
+              onClick={() => {
+                setIsAddSkillModalOpen(false);
+                resetAddSkillForm();
+              }}
+            >
+              {t("取消")}
+            </Button>
+            <Button
+              type="primary"
+              icon={
+                addSkillTab === "local" ? (
+                  <FolderOpenOutlined />
+                ) : addSkillTab === "markdown" ? (
+                  <FileTextOutlined />
+                ) : (
+                  <CloudDownloadOutlined />
+                )
+              }
+              loading={isAddingSkill}
+              onClick={onAddSkill}
+            >
+              {t("添加技能")}
+            </Button>
+          </div>
+        }
+      >
+        <Tabs
+          activeKey={addSkillTab}
+          onChange={(key) => {
+            setAddSkillTab(key);
+            setAddSkillError(null);
+          }}
+          items={addSkillTabs}
+          className="[&_.ant-tabs-nav]:!mb-4"
+        />
+        {addSkillError ? (
+          <Alert
+            type="error"
+            showIcon
+            message={addSkillError}
+            className="!mt-4"
+          />
+        ) : null}
+      </Modal>
       <Drawer
         title={t("添加技能仓库")}
         placement="right"

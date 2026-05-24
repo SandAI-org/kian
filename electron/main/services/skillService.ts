@@ -15,6 +15,9 @@ import { GLOBAL_CONFIG_DIR, INTERNAL_ROOT, WORKSPACE_ROOT } from "./workspacePat
 
 const BUILTIN_REPOSITORY_URL = "https://github.com/anthropics/skills";
 const BUILTIN_LOCAL_REPOSITORY_URL = "builtin://kian";
+const LOCAL_SKILL_REPOSITORY_URL = "local://kian";
+const CLAWHUB_DOWNLOAD_URL = "https://wry-manatee-359.convex.site/api/v1/download";
+const CLAWHUB_REPOSITORY_URL_PREFIX = "https://clawhub.ai";
 const SKILLS_CONFIG_PATH = path.join(INTERNAL_ROOT, "skills.json");
 const LEGACY_GLOBAL_SKILLS_DIR = path.join(WORKSPACE_ROOT, ".agents", "skills");
 const INSTALLED_SKILLS_DIR = path.join(INTERNAL_ROOT, "skills", "installed");
@@ -37,6 +40,7 @@ const SKILL_METADATA_SCHEMA_VERSION = 2;
 const GIT_COMMAND_TIMEOUT_MS = 60_000;
 const GIT_COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
 const ARCHIVE_DOWNLOAD_TIMEOUT_MS = 120_000;
+const SKILL_IMPORTS_TEMP_DIR = path.join(INTERNAL_ROOT, "skill-imports");
 const PROCESS_RESOURCES_PATH =
   typeof process.resourcesPath === "string" ? process.resourcesPath : "";
 const PROCESS_RESOURCES_APP_ASAR_PATH = PROCESS_RESOURCES_PATH
@@ -203,6 +207,12 @@ interface ActiveAgentSkillInfo {
   title: string;
   description: string;
   skillFilePath: string;
+}
+
+interface SkillSourceDir {
+  sourceDir: string;
+  skillName: string;
+  skillPath: string;
 }
 
 interface GitHubRepositoryRef {
@@ -537,6 +547,124 @@ const resolveCachedSkillSourceDir = async (
   }
 
   return sourceDir;
+};
+
+const createTempImportDir = async (prefix: string): Promise<string> => {
+  await ensureDir(SKILL_IMPORTS_TEMP_DIR);
+  return fs.mkdtemp(path.join(SKILL_IMPORTS_TEMP_DIR, `${prefix}-`));
+};
+
+const collectSkillSourceDirsFromDirectory = async (
+  rootDir: string,
+): Promise<SkillSourceDir[]> => {
+  if (await pathExists(path.join(rootDir, SKILL_FILE))) {
+    const skillName = path.basename(rootDir);
+    return [
+      {
+        sourceDir: rootDir,
+        skillName,
+        skillPath: skillName,
+      },
+    ];
+  }
+
+  const sources: SkillSourceDir[] = [];
+  const walk = async (
+    currentDir: string,
+    relativePath: string,
+  ): Promise<void> => {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    const hasSkillFile = entries.some(
+      (entry) => entry.isFile() && entry.name === SKILL_FILE,
+    );
+
+    if (hasSkillFile && relativePath) {
+      sources.push({
+        sourceDir: currentDir,
+        skillName: path.posix.basename(relativePath),
+        skillPath: normalizeSkillPath(relativePath),
+      });
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const nextRelativePath = relativePath
+        ? `${relativePath}/${entry.name}`
+        : entry.name;
+      await walk(path.join(currentDir, entry.name), nextRelativePath);
+    }
+  };
+
+  await walk(rootDir, "");
+  return sources;
+};
+
+const collectSkillSourceDirsFromPath = async (
+  sourcePath: string,
+): Promise<SkillSourceDir[]> => {
+  const normalizedPath = path.resolve(sourcePath.trim());
+  const stats = await fs.stat(normalizedPath).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("本地路径不存在");
+    }
+    throw error;
+  });
+
+  if (stats.isFile()) {
+    if (path.basename(normalizedPath) !== SKILL_FILE) {
+      throw new Error("请选择 SKILL.md 文件或包含 SKILL.md 的目录");
+    }
+
+    const sourceDir = path.dirname(normalizedPath);
+    const skillName = path.basename(sourceDir);
+    return [
+      {
+        sourceDir,
+        skillName,
+        skillPath: skillName,
+      },
+    ];
+  }
+
+  if (!stats.isDirectory()) {
+    throw new Error("请选择 SKILL.md 文件或包含 SKILL.md 的目录");
+  }
+
+  return collectSkillSourceDirsFromDirectory(normalizedPath);
+};
+
+const parseClawHubSlug = (input: string): string => {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error("ClawHub 名称或链接不能为空");
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error("ClawHub 链接格式不正确");
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== "clawhub.ai" && hostname !== "www.clawhub.ai") {
+      throw new Error("ClawHub 链接必须来自 clawhub.ai");
+    }
+
+    const slug =
+      parsed.pathname.split("/").filter(Boolean).at(-1)?.trim() ?? "";
+    if (!slug) {
+      throw new Error("ClawHub 链接缺少技能名称");
+    }
+    return slug;
+  }
+
+  return trimmed.replace(/^\/+/, "").replace(/\/+$/, "");
 };
 
 const buildSkillId = (repositoryUrl: string, skillPath: string): string =>
@@ -1386,6 +1514,74 @@ const installLocalSkillDirectory = async (input: {
   return targetDir;
 };
 
+const installSkillDirectoryFromSource = async (input: {
+  sourceDir: string;
+  repositoryUrl: string;
+  skillPath: string;
+  skillName?: string;
+  addRepositoryToConfig?: boolean;
+}): Promise<InstalledSkillDTO> => {
+  const normalizedSkillPath = normalizeSkillPath(input.skillPath);
+  const sourceStat = await fs.stat(input.sourceDir);
+  if (!sourceStat.isDirectory()) {
+    throw new Error("技能路径不是目录，无法安装该技能");
+  }
+
+  if (!(await pathExists(path.join(input.sourceDir, SKILL_FILE)))) {
+    throw new Error("未找到 SKILL.md，无法安装该技能");
+  }
+
+  const skillName =
+    input.skillName?.trim() || path.posix.basename(normalizedSkillPath);
+  const skillId = buildSkillId(input.repositoryUrl, normalizedSkillPath);
+  const targetDir = getSkillDirByName(skillName);
+  const existingMeta = await readInstalledSkillMetaRecord(targetDir);
+  if (existingMeta && existingMeta.id !== skillId) {
+    throw new Error(`已存在同名技能目录：${skillName}。请先卸载同名技能后再安装。`);
+  }
+
+  await fs.rm(targetDir, { recursive: true, force: true });
+  const defaultVisibility = await readSkillDefaultVisibility(input.sourceDir);
+  const installedAt =
+    existingMeta?.id === skillId
+      ? existingMeta.installedAt
+      : new Date().toISOString();
+  const meta: InstalledSkillMetaFile = {
+    id: skillId,
+    name: skillName,
+    repositoryUrl: input.repositoryUrl,
+    skillPath: normalizedSkillPath,
+    installedAt,
+    ...resolveSkillVisibility(existingMeta ?? {}, defaultVisibility),
+  };
+  const installPath = await installLocalSkillDirectory({
+    sourceDir: input.sourceDir,
+    skillName,
+    meta,
+  });
+  await removeDuplicateSkillDirs(skillId, installPath);
+
+  if (input.addRepositoryToConfig) {
+    const config = await readSkillsConfig();
+    if (!config.repositories.includes(input.repositoryUrl)) {
+      config.repositories.push(input.repositoryUrl);
+      await writeSkillsConfig(config);
+    }
+  }
+
+  const presentation = await resolveInstalledSkillPresentation({
+    ...meta,
+    installPath,
+  });
+  return toInstalledSkillDTO(
+    {
+      ...meta,
+      installPath,
+    },
+    presentation,
+  );
+};
+
 const removeDuplicateSkillDirs = async (
   skillId: string,
   keepInstallPath: string,
@@ -1748,52 +1944,131 @@ export const skillService = {
       normalizedSkillPath,
     );
 
-    const skillId = buildSkillId(repository.canonicalUrl, normalizedSkillPath);
-    const skillName = path.posix.basename(normalizedSkillPath);
-    const targetDir = getSkillDirByName(skillName);
-    const existingMeta = await readInstalledSkillMetaRecord(targetDir);
-    if (existingMeta && existingMeta.id !== skillId) {
-      throw new Error(`已存在同名技能目录：${skillName}。请先卸载同名技能后再安装。`);
-    }
-
-    await fs.rm(targetDir, { recursive: true, force: true });
-    const defaultVisibility = await readSkillDefaultVisibility(sourceDir);
-    const installedAt =
-      existingMeta?.id === skillId
-        ? existingMeta.installedAt
-        : new Date().toISOString();
-    const meta: InstalledSkillMetaFile = {
-      id: skillId,
-      name: skillName,
+    return installSkillDirectoryFromSource({
+      sourceDir,
       repositoryUrl: repository.canonicalUrl,
       skillPath: normalizedSkillPath,
-      installedAt,
-      ...resolveSkillVisibility(existingMeta ?? {}, defaultVisibility),
-    };
-    const installPath = await installLocalSkillDirectory({
-      sourceDir,
-      skillName,
-      meta,
+      addRepositoryToConfig: true,
     });
-    await removeDuplicateSkillDirs(skillId, installPath);
+  },
 
-    const config = await readSkillsConfig();
-    if (!config.repositories.includes(repository.canonicalUrl)) {
-      config.repositories.push(repository.canonicalUrl);
-      await writeSkillsConfig(config);
+  async installLocalSkillSources(input: {
+    sourcePaths: string[];
+  }): Promise<InstalledSkillDTO[]> {
+    await migrateLegacyInstalledSkills();
+    const sourceMap = new Map<string, SkillSourceDir>();
+    for (const sourcePath of input.sourcePaths) {
+      const sources = await collectSkillSourceDirsFromPath(sourcePath);
+      for (const source of sources) {
+        sourceMap.set(path.resolve(source.sourceDir), source);
+      }
     }
 
-    const presentation = await resolveInstalledSkillPresentation({
-      ...meta,
-      installPath,
-    });
-    return toInstalledSkillDTO(
-      {
-        ...meta,
-        installPath,
-      },
-      presentation,
-    );
+    const sources = Array.from(sourceMap.values());
+    if (sources.length === 0) {
+      throw new Error("未找到可安装的技能（需要 SKILL.md）");
+    }
+
+    const installed: InstalledSkillDTO[] = [];
+    for (const source of sources) {
+      installed.push(
+        await installSkillDirectoryFromSource({
+          sourceDir: source.sourceDir,
+          repositoryUrl: LOCAL_SKILL_REPOSITORY_URL,
+          skillPath: source.skillPath,
+          skillName: source.skillName,
+        }),
+      );
+    }
+    return installed;
+  },
+
+  async installSkillFromMarkdown(input: {
+    markdown: string;
+  }): Promise<InstalledSkillDTO> {
+    await migrateLegacyInstalledSkills();
+    const markdown = input.markdown.trim();
+    const metadata = extractSkillMetadataFromMarkdown(markdown);
+    const skillName = metadata.title.trim();
+    if (!skillName) {
+      throw new Error("SKILL.md 内容缺少 name、title 或一级标题");
+    }
+
+    const tempDir = await createTempImportDir("markdown");
+    const sourceDir = path.join(tempDir, sanitizeDirName(skillName));
+    try {
+      await ensureDir(sourceDir);
+      await fs.writeFile(
+        path.join(sourceDir, SKILL_FILE),
+        `${markdown}\n`,
+        "utf8",
+      );
+      return await installSkillDirectoryFromSource({
+        sourceDir,
+        repositoryUrl: LOCAL_SKILL_REPOSITORY_URL,
+        skillPath: skillName,
+        skillName,
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  },
+
+  async installClawHubSkill(input: {
+    input: string;
+  }): Promise<InstalledSkillDTO[]> {
+    await migrateLegacyInstalledSkills();
+    if (!(await hasCommand("tar"))) {
+      throw new Error("未检测到 tar 命令，无法解压 ClawHub 技能包");
+    }
+
+    const slug = parseClawHubSlug(input.input);
+    const tempDir = await createTempImportDir("clawhub");
+    const archivePath = path.join(tempDir, `${sanitizeDirName(slug)}.zip`);
+    const extractDir = path.join(tempDir, "extract");
+    try {
+      await ensureDir(extractDir);
+      const downloadUrl = `${CLAWHUB_DOWNLOAD_URL}?slug=${encodeURIComponent(
+        slug,
+      )}`;
+      const response = await fetch(downloadUrl, {
+        signal: AbortSignal.timeout(ARCHIVE_DOWNLOAD_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const details = await response.text().catch(() => "");
+        throw new Error(
+          `下载 ClawHub 技能包失败（${response.status}）${
+            details.trim() ? `：${details.trim()}` : ""
+          }`,
+        );
+      }
+
+      const archiveBuffer = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(archivePath, archiveBuffer);
+      await runCommand("tar", ["-xf", archivePath, "-C", extractDir]);
+
+      const sources = await collectSkillSourceDirsFromDirectory(extractDir);
+      if (sources.length === 0) {
+        throw new Error("ClawHub 技能包中未找到 SKILL.md");
+      }
+
+      const repositoryUrl = `${CLAWHUB_REPOSITORY_URL_PREFIX}/${slug}`;
+      const installed: InstalledSkillDTO[] = [];
+      for (const source of sources) {
+        const singleSkill = sources.length === 1;
+        installed.push(
+          await installSkillDirectoryFromSource({
+            sourceDir: source.sourceDir,
+            repositoryUrl,
+            skillPath: singleSkill ? slug : `${slug}/${source.skillPath}`,
+            skillName: singleSkill ? slug : source.skillName,
+          }),
+        );
+      }
+      return installed;
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   },
 
   async updateInstalledSkillVisibility(input: {

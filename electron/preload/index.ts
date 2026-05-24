@@ -371,6 +371,12 @@ const api = {
     ) => invoke<boolean>("file:open", { filePath, projectId, documentPath }),
     savePng: (payload: { defaultFileName: string; dataUrl: string }) =>
       invoke<string | null>("file:savePng", payload),
+    saveAs: (payload: {
+      filePath: string;
+      projectId?: string;
+      documentPath?: string;
+      defaultFileName?: string;
+    }) => invoke<string | null>("file:saveAs", payload),
   },
   clipboard: {
     writeText: (text: string) => {
@@ -526,6 +532,14 @@ const api = {
       }),
     install: (payload: { repositoryUrl: string; skillPath: string }) =>
       invoke<InstalledSkillDTO>("skills:install", payload),
+    pickLocalSources: () =>
+      invoke<string[]>("skills:pickLocalSources"),
+    installLocalSources: (payload: { sourcePaths: string[] }) =>
+      invoke<InstalledSkillDTO[]>("skills:installLocalSources", payload),
+    installFromMarkdown: (payload: { markdown: string }) =>
+      invoke<InstalledSkillDTO>("skills:installFromMarkdown", payload),
+    installFromClawHub: (payload: { input: string }) =>
+      invoke<InstalledSkillDTO[]>("skills:installFromClawHub", payload),
     updateVisibility: (payload: {
       skillId: string;
       mainAgentVisible: boolean;

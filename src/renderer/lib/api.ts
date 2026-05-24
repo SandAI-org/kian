@@ -261,7 +261,13 @@ export const api = {
     savePng: async (payload: {
       defaultFileName: string;
       dataUrl: string;
-    }): Promise<string | null> => unwrap(await window.api.file.savePng(payload))
+    }): Promise<string | null> => unwrap(await window.api.file.savePng(payload)),
+    saveAs: async (payload: {
+      filePath: string;
+      projectId?: string;
+      documentPath?: string;
+      defaultFileName?: string;
+    }): Promise<string | null> => unwrap(await window.api.file.saveAs(payload))
   },
   clipboard: {
     writeText: async (text: string): Promise<boolean> => window.api.clipboard.writeText(text),
@@ -397,6 +403,14 @@ export const api = {
       unwrap(await window.api.skills.refreshRepositoryMetadata(repositoryUrl)),
     install: async (payload: { repositoryUrl: string; skillPath: string }): Promise<InstalledSkillDTO> =>
       unwrap(await window.api.skills.install(payload)),
+    pickLocalSources: async (): Promise<string[]> =>
+      unwrap(await window.api.skills.pickLocalSources()),
+    installLocalSources: async (payload: { sourcePaths: string[] }): Promise<InstalledSkillDTO[]> =>
+      unwrap(await window.api.skills.installLocalSources(payload)),
+    installFromMarkdown: async (payload: { markdown: string }): Promise<InstalledSkillDTO> =>
+      unwrap(await window.api.skills.installFromMarkdown(payload)),
+    installFromClawHub: async (payload: { input: string }): Promise<InstalledSkillDTO[]> =>
+      unwrap(await window.api.skills.installFromClawHub(payload)),
     updateVisibility: async (payload: {
       skillId: string;
       mainAgentVisible: boolean;

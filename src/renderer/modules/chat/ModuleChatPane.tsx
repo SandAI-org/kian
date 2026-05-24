@@ -785,6 +785,11 @@ const FileReferenceCard = ({
   forceCardOnly?: boolean;
   attachment?: boolean;
 }) => {
+  const { language } = useAppI18n();
+  const t = useCallback(
+    (value: string) => translateUiText(language, value),
+    [language],
+  );
   const fileName = useMemo(() => getPathFileName(sourcePath), [sourcePath]);
   const isTextPreview = useMemo(
     () => !forceCardOnly && isTextFilePath(sourcePath),
@@ -797,6 +802,23 @@ const FileReferenceCard = ({
   const [previewText, setPreviewText] = useState<string>("");
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!menuPosition) return;
+    const closeMenu = (): void => setMenuPosition(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("keydown", closeMenu);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("blur", closeMenu);
+      window.removeEventListener("keydown", closeMenu);
+    };
+  }, [menuPosition]);
 
   useEffect(() => {
     if (!isTextPreview || !resolvedSource) {
@@ -816,7 +838,7 @@ const FileReferenceCard = ({
       })
       .catch((error) => {
         if (error instanceof Error && error.name === "AbortError") return;
-        setPreviewError(error instanceof Error ? error.message : "预览失败");
+        setPreviewError(error instanceof Error ? error.message : t("预览失败"));
       })
       .finally(() => {
         setLoadingPreview(false);
@@ -825,56 +847,245 @@ const FileReferenceCard = ({
     return () => {
       controller.abort();
     };
-  }, [isTextPreview, resolvedSource]);
+  }, [isTextPreview, resolvedSource, t]);
 
   const handleShowInFinder = (): void => {
+    setMenuPosition(null);
     void api.file.showInFinder(sourcePath, projectId).catch((error) => {
       message.error(
-        error instanceof Error ? error.message : "无法在 Finder 中打开文件",
+        error instanceof Error ? error.message : t("无法在 Finder 中打开文件"),
       );
     });
   };
 
+  const handleOpenFile = (): void => {
+    setMenuPosition(null);
+    void api.file.open(sourcePath, projectId).catch((error) => {
+      message.error(
+        error instanceof Error ? error.message : t("打开系统预览失败"),
+      );
+    });
+  };
+
+  const handleSaveAs = (): void => {
+    setMenuPosition(null);
+    void api.file
+      .saveAs({ filePath: sourcePath, projectId, defaultFileName: fileName })
+      .then((savedPath) => {
+        if (savedPath) {
+          message.success(t("文件已另存"));
+        }
+      })
+      .catch((error) => {
+        message.error(error instanceof Error ? error.message : t("另存为失败"));
+      });
+  };
+
+  const handleFileNameContextMenu = (
+    event: MouseEvent<HTMLElement>,
+  ): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMenuPosition({ x: event.clientX, y: event.clientY });
+  };
+
+  const fileActionMenu = menuPosition
+    ? createPortal(
+        <div
+          className="chat-message-context-menu"
+          style={{ left: menuPosition.x, top: menuPosition.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <button type="button" onClick={handleOpenFile}>
+            <FileOutlined />
+            {t("打开")}
+          </button>
+          <button type="button" onClick={handleShowInFinder}>
+            <FolderOpenOutlined />
+            {t("在 Finder 中查看")}
+          </button>
+          <button type="button" onClick={handleSaveAs}>
+            <SaveOutlined />
+            {t("另存为")}
+          </button>
+        </div>,
+        document.body,
+      )
+    : null;
+
   if (isTextPreview) {
     return (
-      <div
-        className={`chat-file-preview chat-file-preview--light ${user ? "chat-file-preview--user" : ""}`}
-      >
-        <div className="chat-file-preview__header">
-          <span className="chat-file-preview__title">{fileName}</span>
-          <button
-            type="button"
-            className="chat-file-preview__finder"
-            onClick={handleShowInFinder}
-          >
-            <FolderOpenOutlined />在 Finder 中查看
-          </button>
+      <>
+        <div
+          className={`chat-file-preview chat-file-preview--light ${user ? "chat-file-preview--user" : ""}`}
+        >
+          <div className="chat-file-preview__header">
+            <span
+              className="chat-file-preview__title"
+              onContextMenu={handleFileNameContextMenu}
+            >
+              {fileName}
+            </span>
+            <button
+              type="button"
+              className="chat-file-preview__finder"
+              onClick={handleShowInFinder}
+            >
+              <FolderOpenOutlined />
+              {t("在 Finder 中查看")}
+            </button>
+          </div>
+          <ScrollArea className="chat-file-preview__scroll">
+            <pre className="chat-file-preview__content">
+              {loadingPreview
+                ? t("正在加载文本预览...")
+                : previewError || previewText || t("文件为空")}
+            </pre>
+          </ScrollArea>
         </div>
-        <ScrollArea className="chat-file-preview__scroll">
-          <pre className="chat-file-preview__content">
-            {loadingPreview
-              ? "正在加载文本预览..."
-              : previewError || previewText || "文件为空"}
-          </pre>
-        </ScrollArea>
-      </div>
+        {fileActionMenu}
+      </>
     );
   }
 
   return (
-    <button
-      type="button"
-      className={`chat-file-card ${user ? "chat-file-card--user" : ""}`}
-      onClick={handleShowInFinder}
-    >
-      <span className="chat-file-card__icon">
-        {attachment ? <PushpinOutlined /> : <FileOutlined />}
+    <>
+      <button
+        type="button"
+        className={`chat-file-card ${user ? "chat-file-card--user" : ""}`}
+        onClick={handleShowInFinder}
+      >
+        <span className="chat-file-card__icon">
+          {attachment ? <PushpinOutlined /> : <FileOutlined />}
+        </span>
+        <span className="chat-file-card__body">
+          <span
+            className="chat-file-card__name"
+            onContextMenu={handleFileNameContextMenu}
+          >
+            {fileName}
+          </span>
+          <span className="chat-file-card__hint">
+            {t("点击在 Finder 中查看")}
+          </span>
+        </span>
+      </button>
+      {fileActionMenu}
+    </>
+  );
+};
+
+const InlineFileReferenceToken = ({
+  sourcePath,
+  projectId,
+  label,
+}: {
+  sourcePath: string;
+  projectId?: string;
+  label: string;
+}) => {
+  const { language } = useAppI18n();
+  const t = useCallback(
+    (value: string) => translateUiText(language, value),
+    [language],
+  );
+  const fileName = useMemo(() => getPathFileName(sourcePath), [sourcePath]);
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!menuPosition) return;
+    const closeMenu = (): void => setMenuPosition(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("keydown", closeMenu);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("blur", closeMenu);
+      window.removeEventListener("keydown", closeMenu);
+    };
+  }, [menuPosition]);
+
+  const handleContextMenu = (event: MouseEvent<HTMLSpanElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMenuPosition({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleOpenFile = (): void => {
+    setMenuPosition(null);
+    void api.file.open(sourcePath, projectId).catch((error) => {
+      message.error(
+        error instanceof Error ? error.message : t("打开系统预览失败"),
+      );
+    });
+  };
+
+  const handleShowInFinder = (): void => {
+    setMenuPosition(null);
+    void api.file.showInFinder(sourcePath, projectId).catch((error) => {
+      message.error(
+        error instanceof Error ? error.message : t("无法在 Finder 中打开文件"),
+      );
+    });
+  };
+
+  const handleSaveAs = (): void => {
+    setMenuPosition(null);
+    void api.file
+      .saveAs({ filePath: sourcePath, projectId, defaultFileName: fileName })
+      .then((savedPath) => {
+        if (savedPath) {
+          message.success(t("文件已另存"));
+        }
+      })
+      .catch((error) => {
+        message.error(error instanceof Error ? error.message : t("另存为失败"));
+      });
+  };
+
+  return (
+    <>
+      <span
+        className="chat-composer-mention-token i18n-no-translate"
+        onContextMenu={handleContextMenu}
+      >
+        {label}
       </span>
-      <span className="chat-file-card__body">
-        <span className="chat-file-card__name">{fileName}</span>
-        <span className="chat-file-card__hint">点击在 Finder 中查看</span>
-      </span>
-    </button>
+      {menuPosition
+        ? createPortal(
+            <div
+              className="chat-message-context-menu"
+              style={{ left: menuPosition.x, top: menuPosition.y }}
+              onClick={(event) => event.stopPropagation()}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <button type="button" onClick={handleOpenFile}>
+                <FileOutlined />
+                {t("打开")}
+              </button>
+              <button type="button" onClick={handleShowInFinder}>
+                <FolderOpenOutlined />
+                {t("在 Finder 中查看")}
+              </button>
+              <button type="button" onClick={handleSaveAs}>
+                <SaveOutlined />
+                {t("另存为")}
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 };
 
@@ -1050,9 +1261,11 @@ export const MarkdownMessage = memo(
                 const label = extractTextFromReactNode(children).trim();
                 const fallbackLabel = `@${getPathFileName(extended.sourcePath)}`;
                 return (
-                  <span className="chat-composer-mention-token i18n-no-translate">
-                    {label || fallbackLabel}
-                  </span>
+                  <InlineFileReferenceToken
+                    sourcePath={extended.sourcePath}
+                    projectId={projectId}
+                    label={label || fallbackLabel}
+                  />
                 );
               }
 

@@ -327,4 +327,61 @@ describe("skillService active visibility", () => {
       true,
     );
   });
+
+  it("installs a skill from pasted SKILL.md content", async () => {
+    const { skillService } = await import(
+      "../../electron/main/services/skillService"
+    );
+
+    const installed = await skillService.installSkillFromMarkdown({
+      markdown: [
+        "---",
+        "name: pasted-skill",
+        "description: Added from markdown",
+        "---",
+        "",
+        "# pasted-skill",
+      ].join("\n"),
+    });
+
+    expect(installed.name).toBe("pasted-skill");
+    expect(installed.description).toBe("Added from markdown");
+    await expect(
+      fs.access(path.join(installed.installPath, "SKILL.md")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("installs one or more skills from local files and directories", async () => {
+    const { skillService } = await import(
+      "../../electron/main/services/skillService"
+    );
+
+    const sourceRoot = path.join(tempRoot, "local-skills");
+    await fs.mkdir(path.join(sourceRoot, "alpha"), { recursive: true });
+    await fs.mkdir(path.join(sourceRoot, "nested", "beta"), { recursive: true });
+    await fs.writeFile(
+      path.join(sourceRoot, "alpha", "SKILL.md"),
+      "---\nname: alpha\ndescription: Alpha skill\n---\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sourceRoot, "nested", "beta", "SKILL.md"),
+      "---\nname: beta\ndescription: Beta skill\n---\n",
+      "utf8",
+    );
+
+    const installed = await skillService.installLocalSkillSources({
+      sourcePaths: [sourceRoot],
+    });
+
+    expect(installed.map((skill) => skill.name).sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    for (const skill of installed) {
+      await expect(
+        fs.access(path.join(skill.installPath, "SKILL.md")),
+      ).resolves.toBeUndefined();
+    }
+  });
 });

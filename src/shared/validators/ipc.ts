@@ -203,6 +203,13 @@ export const fileSavePngSchema = z.object({
   dataUrl: z.string().startsWith('data:image/png;base64,')
 });
 
+export const fileSaveAsSchema = z.object({
+  filePath: z.string().min(1),
+  projectId: z.string().min(1).optional(),
+  documentPath: z.string().min(1).max(240).optional(),
+  defaultFileName: z.string().trim().min(1).max(255).optional()
+});
+
 export const filePickForUploadSchema = z.object({}).optional();
 
 export const fileSavePastedUploadSchema = z.object({
@@ -587,6 +594,18 @@ export const skillRepositorySchema = z.object({
 export const skillInstallSchema = z.object({
   repositoryUrl: z.string().trim().min(1).max(500),
   skillPath: z.string().trim().min(1).max(500)
+});
+
+export const skillLocalSourcesInstallSchema = z.object({
+  sourcePaths: z.array(z.string().trim().min(1).max(1000)).min(1).max(50)
+});
+
+export const skillMarkdownInstallSchema = z.object({
+  markdown: z.string().trim().min(1).max(500_000)
+});
+
+export const skillClawHubInstallSchema = z.object({
+  input: z.string().trim().min(1).max(500)
 });
 
 export const skillUninstallSchema = z.object({

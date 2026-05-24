@@ -28,6 +28,7 @@ import {
   docUpdateSchema,
   fileOpenSchema,
   filePickForUploadSchema,
+  fileSaveAsSchema,
   fileSavePastedUploadSchema,
   fileSavePngSchema,
   fileShowInFinderSchema,
@@ -35,6 +36,9 @@ import {
   projectCreateSchema,
   projectUpdateSchema,
   skillInstallSchema,
+  skillClawHubInstallSchema,
+  skillLocalSourcesInstallSchema,
+  skillMarkdownInstallSchema,
   skillRepositorySchema,
   skillUninstallSchema,
   skillVisibilityUpdateSchema,
@@ -130,9 +134,13 @@ const translateDialogText = (
       return ({
         '选择要发送的文件': 'Choose Files to Send',
         '保存消息图片': 'Save Message Image',
+        '另存为': 'Save As',
+        '保存文件': 'Save File',
         '保存': 'Save',
+        '选择': 'Choose',
         'PNG 图片': 'PNG Image',
         '添加': 'Add',
+        '选择技能文件或目录': 'Choose Skill File or Folder',
         '支持的文件': 'Supported Files',
         '所有文件': 'All Files',
       } as Record<string, string>)[value] ?? value;
@@ -140,9 +148,13 @@ const translateDialogText = (
       return ({
         '选择要发送的文件': '보낼 파일 선택',
         '保存消息图片': '메시지 이미지 저장',
+        '另存为': '다른 이름으로 저장',
+        '保存文件': '파일 저장',
         '保存': '저장',
+        '选择': '선택',
         'PNG 图片': 'PNG 이미지',
         '添加': '추가',
+        '选择技能文件或目录': '스킬 파일 또는 폴더 선택',
         '支持的文件': '지원되는 파일',
         '所有文件': '모든 파일',
       } as Record<string, string>)[value] ?? value;
@@ -150,9 +162,13 @@ const translateDialogText = (
       return ({
         '选择要发送的文件': '送信するファイルを選択',
         '保存消息图片': 'メッセージ画像を保存',
+        '另存为': '名前を付けて保存',
+        '保存文件': 'ファイルを保存',
         '保存': '保存',
+        '选择': '選択',
         'PNG 图片': 'PNG 画像',
         '添加': '追加',
+        '选择技能文件或目录': 'スキルファイルまたはフォルダーを選択',
         '支持的文件': '対応ファイル',
         '所有文件': 'すべてのファイル',
       } as Record<string, string>)[value] ?? value;
@@ -402,7 +418,7 @@ export const registerHandlers = (): void => {
     } catch (error) {
       logger.error('IPC failed: chat:sendMessage', error);
       if (error instanceof Error && error.name === 'ZodError') {
-        return err('VALIDATION_ERROR', error.message);
+        return err('VALIDATION_ERROR', '输入校验失败，请检查填写内容', error.message);
       }
       return err('UNKNOWN_ERROR', error instanceof Error ? error.message : 'unknown error');
     }
@@ -490,6 +506,26 @@ export const registerHandlers = (): void => {
       throw new Error(`系统预览打开失败: ${result}`);
     }
     return true;
+  });
+  handle('file:saveAs', fileSaveAsSchema, async (input) => {
+    const targetPath = resolveFileTargetPath(input);
+    await fs.access(targetPath);
+    const language = (await settingsService.getGeneralConfig()).language;
+    const result = await dialog.showSaveDialog({
+      title: translateDialogText(language, '另存为'),
+      buttonLabel: translateDialogText(language, '保存'),
+      defaultPath: input.defaultFileName ?? path.basename(targetPath),
+      filters: [
+        { name: translateDialogText(language, '保存文件'), extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+    if (path.resolve(result.filePath) !== path.resolve(targetPath)) {
+      await fs.copyFile(targetPath, result.filePath);
+    }
+    return result.filePath;
   });
   handle('file:savePng', fileSavePngSchema, async (input) => {
     const language = (await settingsService.getGeneralConfig()).language;
@@ -771,6 +807,61 @@ export const registerHandlers = (): void => {
     agentService.clearAllSessions();
     return skill;
   });
+  handle('skills:pickLocalSources', z.object({}).optional(), async () => {
+    const language = (await settingsService.getGeneralConfig()).language;
+    const result = await dialog.showOpenDialog({
+      title: translateDialogText(language, '选择技能文件或目录'),
+      buttonLabel: translateDialogText(language, '选择'),
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
+      filters: [
+        {
+          name: 'SKILL.md',
+          extensions: ['md'],
+        },
+        { name: translateDialogText(language, '所有文件'), extensions: ['*'] }
+      ]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(result.filePaths.map((filePath) => path.resolve(filePath))),
+    );
+  });
+  handle(
+    'skills:installLocalSources',
+    skillLocalSourcesInstallSchema,
+    async (input) => {
+      const skills = await skillService.installLocalSkillSources({
+        sourcePaths: input.sourcePaths
+      });
+      agentService.clearAllSessions();
+      return skills;
+    }
+  );
+  handle(
+    'skills:installFromMarkdown',
+    skillMarkdownInstallSchema,
+    async (input) => {
+      const skill = await skillService.installSkillFromMarkdown({
+        markdown: input.markdown
+      });
+      agentService.clearAllSessions();
+      return skill;
+    }
+  );
+  handle(
+    'skills:installFromClawHub',
+    skillClawHubInstallSchema,
+    async (input) => {
+      const skills = await skillService.installClawHubSkill({
+        input: input.input
+      });
+      agentService.clearAllSessions();
+      return skills;
+    }
+  );
   handle('skills:updateVisibility', skillVisibilityUpdateSchema, async (input) => {
     const skill = await skillService.updateInstalledSkillVisibility({
       skillId: input.skillId,

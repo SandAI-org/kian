@@ -128,6 +128,12 @@ const EN_US_EXACT: Record<string, string> = {
   "保存为图片": "Save as Image",
   "图片已保存": "Image saved",
   "保存图片失败": "Failed to save image",
+  "另存为": "Save As",
+  "文件已另存": "File saved as",
+  "另存为失败": "Failed to save as",
+  "打开": "Open",
+  "输入校验失败，请检查填写内容":
+    "Validation failed. Please check your input.",
   "保存图片到剪贴板": "Save Image to Clipboard",
   "图片已保存到剪贴板": "Image saved to clipboard",
   "保存图片到剪贴板失败": "Failed to save image to clipboard",
@@ -1111,6 +1117,39 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   "添加": "Add",
   "添加仓库": "Add Repository",
   "添加技能仓库": "Add Skill Repository",
+  "添加技能": "Add Skill",
+  "本地文件/目录": "Local File/Folder",
+  "SKILL.md 内容": "SKILL.md Content",
+  "选择 SKILL.md 文件、技能目录，或包含多个技能目录的文件夹":
+    "Choose a SKILL.md file, a skill folder, or a folder containing multiple skill folders",
+  "选择文件或目录": "Choose File or Folder",
+  "已选择的路径": "Selected Paths",
+  "尚未选择本地文件或目录": "No local file or folder selected",
+  "粘贴完整的 SKILL.md 内容": "Paste the complete SKILL.md content",
+  "请输入 SKILL.md 内容": "Enter SKILL.md content",
+  "输入 ClawHub 技能名称或链接": "Enter a ClawHub skill name or link",
+  "例如：https://clawhub.ai/spclaudehome/skill-vetter 或 skill-vetter":
+    "Example: https://clawhub.ai/spclaudehome/skill-vetter or skill-vetter",
+  "请先选择本地文件或目录": "Choose a local file or folder first",
+  "请输入 ClawHub 名称或链接": "Enter a ClawHub name or link",
+  "选择本地路径失败": "Failed to choose local path",
+  "添加技能失败": "Failed to add skill",
+  "本地路径不存在": "Local path does not exist",
+  "请选择 SKILL.md 文件或包含 SKILL.md 的目录":
+    "Choose a SKILL.md file or a folder containing SKILL.md",
+  "未找到可安装的技能（需要 SKILL.md）":
+    "No installable skill was found (SKILL.md required)",
+  "SKILL.md 内容缺少 name、title 或一级标题":
+    "SKILL.md content is missing name, title, or an H1 heading",
+  "未检测到 tar 命令，无法解压 ClawHub 技能包":
+    "Tar was not found, so the ClawHub skill package cannot be extracted",
+  "ClawHub 名称或链接不能为空": "ClawHub name or link cannot be empty",
+  "ClawHub 链接格式不正确": "ClawHub link format is invalid",
+  "ClawHub 链接必须来自 clawhub.ai":
+    "ClawHub links must come from clawhub.ai",
+  "ClawHub 链接缺少技能名称": "ClawHub link is missing a skill name",
+  "ClawHub 技能包中未找到 SKILL.md":
+    "No SKILL.md was found in the ClawHub skill package",
   "添加 MCP 服务失败": "Failed to add MCP service",
     "状态：": "Status:",
     "子智能体": "Sub Agent",
@@ -1536,9 +1575,15 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "예: https://example.com/mcp",
     "例如：npx -y @modelcontextprotocol/server-filesystem":
       "예: npx -y @modelcontextprotocol/server-filesystem",
-    "保存修改": "변경 사항 저장",
-    "保存失败": "저장 실패",
-    "修改对话名称失败": "대화 이름 변경 실패",
+  "保存修改": "변경 사항 저장",
+  "保存失败": "저장 실패",
+  "另存为": "다른 이름으로 저장",
+  "文件已另存": "파일을 다른 이름으로 저장했습니다",
+  "另存为失败": "다른 이름으로 저장하지 못했습니다",
+  "打开": "열기",
+  "输入校验失败，请检查填写内容":
+    "입력값을 확인해 주세요.",
+  "修改对话名称失败": "대화 이름 변경 실패",
     "停止任务失败": "작업 중지 실패",
     "停止运行中的任务失败，已取消退出。":
       "실행 중인 작업을 중지하지 못해 종료를 취소했습니다.",
@@ -1804,10 +1849,43 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "在文件管理器中显示": "파일 관리자에서 표시",
     "显示文件位置失败": "파일 위치를 표시하지 못했습니다",
     "图片不可用": "이미지를 사용할 수 없습니다",
-    "添加": "추가",
-    "添加仓库": "저장소 추가",
-    "添加技能仓库": "스킬 저장소 추가",
-    "添加 MCP 服务失败": "MCP 서비스 추가 실패",
+  "添加": "추가",
+  "添加仓库": "저장소 추가",
+  "添加技能仓库": "스킬 저장소 추가",
+  "添加技能": "스킬 추가",
+  "本地文件/目录": "로컬 파일/폴더",
+  "SKILL.md 内容": "SKILL.md 내용",
+  "选择 SKILL.md 文件、技能目录，或包含多个技能目录的文件夹":
+    "SKILL.md 파일, 스킬 폴더 또는 여러 스킬 폴더가 들어 있는 폴더를 선택하세요",
+  "选择文件或目录": "파일 또는 폴더 선택",
+  "已选择的路径": "선택한 경로",
+  "尚未选择本地文件或目录": "선택한 로컬 파일 또는 폴더가 없습니다",
+  "粘贴完整的 SKILL.md 内容": "전체 SKILL.md 내용을 붙여넣으세요",
+  "请输入 SKILL.md 内容": "SKILL.md 내용을 입력하세요",
+  "输入 ClawHub 技能名称或链接": "ClawHub 스킬 이름 또는 링크를 입력하세요",
+  "例如：https://clawhub.ai/spclaudehome/skill-vetter 或 skill-vetter":
+    "예: https://clawhub.ai/spclaudehome/skill-vetter 또는 skill-vetter",
+  "请先选择本地文件或目录": "먼저 로컬 파일 또는 폴더를 선택하세요",
+  "请输入 ClawHub 名称或链接": "ClawHub 이름 또는 링크를 입력하세요",
+  "选择本地路径失败": "로컬 경로 선택 실패",
+  "添加技能失败": "스킬 추가 실패",
+  "本地路径不存在": "로컬 경로가 없습니다",
+  "请选择 SKILL.md 文件或包含 SKILL.md 的目录":
+    "SKILL.md 파일 또는 SKILL.md가 들어 있는 폴더를 선택하세요",
+  "未找到可安装的技能（需要 SKILL.md）":
+    "설치 가능한 스킬을 찾지 못했습니다(SKILL.md 필요)",
+  "SKILL.md 内容缺少 name、title 或一级标题":
+    "SKILL.md 내용에 name, title 또는 1단계 제목이 없습니다",
+  "未检测到 tar 命令，无法解压 ClawHub 技能包":
+    "tar 명령을 찾지 못해 ClawHub 스킬 패키지를 압축 해제할 수 없습니다",
+  "ClawHub 名称或链接不能为空": "ClawHub 이름 또는 링크는 비워 둘 수 없습니다",
+  "ClawHub 链接格式不正确": "ClawHub 링크 형식이 올바르지 않습니다",
+  "ClawHub 链接必须来自 clawhub.ai":
+    "ClawHub 링크는 clawhub.ai에서 온 링크여야 합니다",
+  "ClawHub 链接缺少技能名称": "ClawHub 링크에 스킬 이름이 없습니다",
+  "ClawHub 技能包中未找到 SKILL.md":
+    "ClawHub 스킬 패키지에서 SKILL.md를 찾지 못했습니다",
+  "添加 MCP 服务失败": "MCP 서비스 추가 실패",
     "渠道名称": "채널 이름",
     "点击使用系统预览打开": "클릭하여 시스템 미리보기로 열기",
     "状态：": "상태:",
@@ -2260,6 +2338,12 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "例: npx -y @modelcontextprotocol/server-filesystem",
     "保存修改": "変更を保存",
     "保存失败": "保存に失敗しました",
+    "另存为": "名前を付けて保存",
+    "文件已另存": "ファイルを保存しました",
+    "另存为失败": "名前を付けて保存できませんでした",
+    "打开": "開く",
+    "输入校验失败，请检查填写内容":
+      "入力内容を確認してください。",
     "修改对话名称失败": "会話名の変更に失敗しました",
     "停止任务失败": "タスクの停止に失敗しました",
     "停止运行中的任务失败，已取消退出。":
@@ -2529,10 +2613,43 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "在文件管理器中显示": "ファイルマネージャーで表示",
     "显示文件位置失败": "ファイルの場所を表示できませんでした",
     "图片不可用": "画像を表示できません",
-    "添加": "追加",
-    "添加仓库": "リポジトリを追加",
-    "添加技能仓库": "スキルリポジトリを追加",
-    "添加 MCP 服务失败": "MCP サービスの追加に失敗しました",
+  "添加": "追加",
+  "添加仓库": "リポジトリを追加",
+  "添加技能仓库": "スキルリポジトリを追加",
+  "添加技能": "スキルを追加",
+  "本地文件/目录": "ローカルファイル/フォルダー",
+  "SKILL.md 内容": "SKILL.md の内容",
+  "选择 SKILL.md 文件、技能目录，或包含多个技能目录的文件夹":
+    "SKILL.md ファイル、スキルフォルダー、または複数のスキルフォルダーを含むフォルダーを選択してください",
+  "选择文件或目录": "ファイルまたはフォルダーを選択",
+  "已选择的路径": "選択済みのパス",
+  "尚未选择本地文件或目录": "ローカルファイルまたはフォルダーが未選択です",
+  "粘贴完整的 SKILL.md 内容": "完全な SKILL.md の内容を貼り付けてください",
+  "请输入 SKILL.md 内容": "SKILL.md の内容を入力してください",
+  "输入 ClawHub 技能名称或链接": "ClawHub スキル名またはリンクを入力してください",
+  "例如：https://clawhub.ai/spclaudehome/skill-vetter 或 skill-vetter":
+    "例: https://clawhub.ai/spclaudehome/skill-vetter または skill-vetter",
+  "请先选择本地文件或目录": "先にローカルファイルまたはフォルダーを選択してください",
+  "请输入 ClawHub 名称或链接": "ClawHub 名またはリンクを入力してください",
+  "选择本地路径失败": "ローカルパスの選択に失敗しました",
+  "添加技能失败": "スキルの追加に失敗しました",
+  "本地路径不存在": "ローカルパスが存在しません",
+  "请选择 SKILL.md 文件或包含 SKILL.md 的目录":
+    "SKILL.md ファイル、または SKILL.md を含むフォルダーを選択してください",
+  "未找到可安装的技能（需要 SKILL.md）":
+    "インストール可能なスキルが見つかりませんでした（SKILL.md が必要です）",
+  "SKILL.md 内容缺少 name、title 或一级标题":
+    "SKILL.md の内容に name、title、または H1 見出しがありません",
+  "未检测到 tar 命令，无法解压 ClawHub 技能包":
+    "tar コマンドが見つからないため、ClawHub スキルパッケージを展開できません",
+  "ClawHub 名称或链接不能为空": "ClawHub 名またはリンクは空にできません",
+  "ClawHub 链接格式不正确": "ClawHub リンク形式が正しくありません",
+  "ClawHub 链接必须来自 clawhub.ai":
+    "ClawHub リンクは clawhub.ai のものである必要があります",
+  "ClawHub 链接缺少技能名称": "ClawHub リンクにスキル名がありません",
+  "ClawHub 技能包中未找到 SKILL.md":
+    "ClawHub スキルパッケージ内に SKILL.md が見つかりません",
+  "添加 MCP 服务失败": "MCP サービスの追加に失敗しました",
     "渠道名称": "チャネル名",
     "点击使用系统预览打开":
       "クリックしてシステムプレビューで開く",
@@ -2982,6 +3099,10 @@ const EN_US_PATTERNS: PatternTranslation[] = [
     render: (value) => `Installed skill ${value}`,
   },
   {
+    pattern: /^已添加 (\d+) 个技能$/,
+    render: (value) => `Added ${value} skills`,
+  },
+  {
     pattern: /^技能 (.+) 已卸载$/,
     render: (value) => `Uninstalled skill ${value}`,
   },
@@ -3004,6 +3125,13 @@ const EN_US_PATTERNS: PatternTranslation[] = [
       details?.trim()
         ? `Failed to download repository archive (${status}): ${details.trim()}`
         : `Failed to download repository archive (${status})`,
+  },
+  {
+    pattern: /^下载 ClawHub 技能包失败（(\d+)）(?::|：)?(.*)$/,
+    render: (status, details) =>
+      details?.trim()
+        ? `Failed to download ClawHub skill package (${status}): ${details.trim()}`
+        : `Failed to download ClawHub skill package (${status})`,
   },
   {
     pattern: /^仓库归档解压失败：(.+)$/,
@@ -3174,6 +3302,10 @@ const KO_KR_PATTERNS: PatternTranslation[] = [
     render: (value) => `스킬 ${value} 설치 완료`,
   },
   {
+    pattern: /^已添加 (\d+) 个技能$/,
+    render: (value) => `스킬 ${value}개 추가 완료`,
+  },
+  {
     pattern: /^技能 (.+) 已卸载$/,
     render: (value) => `스킬 ${value} 제거 완료`,
   },
@@ -3196,6 +3328,13 @@ const KO_KR_PATTERNS: PatternTranslation[] = [
       details?.trim()
         ? `저장소 아카이브 다운로드 실패 (${status}): ${details.trim()}`
         : `저장소 아카이브 다운로드 실패 (${status})`,
+  },
+  {
+    pattern: /^下载 ClawHub 技能包失败（(\d+)）(?::|：)?(.*)$/,
+    render: (status, details) =>
+      details?.trim()
+        ? `ClawHub 스킬 패키지 다운로드 실패 (${status}): ${details.trim()}`
+        : `ClawHub 스킬 패키지 다운로드 실패 (${status})`,
   },
   {
     pattern: /^仓库归档解压失败：(.+)$/,
@@ -3342,6 +3481,10 @@ const JA_JP_PATTERNS: PatternTranslation[] = [
     render: (value) => `スキル ${value} をインストールしました`,
   },
   {
+    pattern: /^已添加 (\d+) 个技能$/,
+    render: (value) => `${value} 件のスキルを追加しました`,
+  },
+  {
     pattern: /^技能 (.+) 已卸载$/,
     render: (value) => `スキル ${value} をアンインストールしました`,
   },
@@ -3365,6 +3508,13 @@ const JA_JP_PATTERNS: PatternTranslation[] = [
       details?.trim()
         ? `リポジトリアーカイブのダウンロードに失敗しました (${status}): ${details.trim()}`
         : `リポジトリアーカイブのダウンロードに失敗しました (${status})`,
+  },
+  {
+    pattern: /^下载 ClawHub 技能包失败（(\d+)）(?::|：)?(.*)$/,
+    render: (status, details) =>
+      details?.trim()
+        ? `ClawHub スキルパッケージのダウンロードに失敗しました (${status}): ${details.trim()}`
+        : `ClawHub スキルパッケージのダウンロードに失敗しました (${status})`,
   },
   {
     pattern: /^仓库归档解压失败：(.+)$/,
