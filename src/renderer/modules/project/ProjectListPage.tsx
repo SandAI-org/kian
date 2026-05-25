@@ -431,11 +431,11 @@ export const ProjectListPage = () => {
 
   return (
     <div className="flex h-full min-h-0 gap-4 px-5 pb-5">
-      <aside className="flex h-full w-72 shrink-0 flex-col rounded-2xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.72)] p-3 shadow-[var(--shadow-panel)]">
-        <ScrollArea className="min-h-0 flex-1 pr-1">
-          <div className="space-y-5">
+      <aside className="flex h-full w-72 shrink-0 flex-col rounded-2xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.72)] py-3 shadow-[var(--shadow-panel)]">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-5 pl-3 pr-4">
             <section>
-              <div className="mb-2 flex items-center justify-between gap-2 px-1">
+              <div className="sticky top-0 z-10 mb-2 flex items-center justify-between gap-2 bg-[rgba(var(--surface-rgb),0.92)] px-1 py-1 backdrop-blur">
                 <Typography.Text className="!text-xs !font-bold !uppercase !tracking-wide !text-[var(--muted)]">
                   {t("群组")}
                 </Typography.Text>
@@ -469,7 +469,7 @@ export const ProjectListPage = () => {
             </section>
 
             <section>
-              <div className="mb-2 flex items-center justify-between gap-2 px-1">
+              <div className="sticky top-0 z-10 mb-2 flex items-center justify-between gap-2 bg-[rgba(var(--surface-rgb),0.92)] px-1 py-1 backdrop-blur">
                 <Typography.Text className="!text-xs !font-bold !uppercase !tracking-wide !text-[var(--muted)]">
                   {t("全部 Agent")}
                 </Typography.Text>
