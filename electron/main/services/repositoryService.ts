@@ -2065,7 +2065,7 @@ const readCronJobExecutionLinesFromEnd = async (
 
   const handle = await fs.open(filePath, "r");
   let position = stats.size;
-  let carry = "";
+  let carry: Buffer = Buffer.alloc(0);
 
   try {
     while (position > 0) {
@@ -2074,21 +2074,36 @@ const readCronJobExecutionLinesFromEnd = async (
 
       const buffer = Buffer.alloc(length);
       const { bytesRead } = await handle.read(buffer, 0, length, position);
-      const lines = `${buffer.subarray(0, bytesRead).toString("utf8")}${carry}`
-        .split(/\r?\n/);
-      carry = position > 0 ? (lines.shift() ?? "") : "";
+      const chunk = buffer.subarray(0, bytesRead);
+      const combined =
+        carry.length > 0 ? Buffer.concat([chunk, carry]) : chunk;
+      const segments: Buffer[] = [];
+      let lineStart = 0;
+      for (let index = 0; index < combined.length; index += 1) {
+        if (combined[index] !== 10) continue;
+        segments.push(combined.subarray(lineStart, index));
+        lineStart = index + 1;
+      }
+      segments.push(combined.subarray(lineStart));
 
-      for (let index = lines.length - 1; index >= 0; index -= 1) {
-        const line = lines[index].trim();
+      let firstCompleteLineIndex = 0;
+      if (position > 0) {
+        carry = segments[0] ?? Buffer.alloc(0);
+        firstCompleteLineIndex = 1;
+      } else {
+        carry = Buffer.alloc(0);
+      }
+
+      for (
+        let index = segments.length - 1;
+        index >= firstCompleteLineIndex;
+        index -= 1
+      ) {
+        const line = segments[index].toString("utf8").trim();
         if (line && !onLine(line)) {
           return;
         }
       }
-    }
-
-    const line = carry.trim();
-    if (line) {
-      onLine(line);
     }
   } finally {
     await handle.close();

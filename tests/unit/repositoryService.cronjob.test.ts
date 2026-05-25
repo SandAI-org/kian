@@ -409,4 +409,65 @@ describe("repositoryService cronjob", () => {
       },
     });
   });
+
+  it("preserves multibyte cron log lines split across read chunks", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 9 * * *",
+            content: "生成日报",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const matchingLine = `${JSON.stringify({
+      executedAt: "2026-05-21T09:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 9 * * *",
+      content: "生成日报",
+      status: "dispatched",
+      reason: null,
+      error: null,
+      project: {
+        id: null,
+        name: null,
+      },
+      sessionId: "session-report",
+      assistantMessage: "日报已生成",
+    })}\n`;
+    const lineBytes = Buffer.byteLength(matchingLine, "utf8");
+    const splitOffset =
+      Buffer.byteLength(
+        matchingLine.slice(0, matchingLine.indexOf("生成日报")),
+        "utf8",
+      ) + 1;
+    const fillerLength = 256 * 1024 - lineBytes + splitOffset;
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob-log.jsonl"),
+      `${matchingLine}${" ".repeat(fillerLength - 1)}\n`,
+      "utf8",
+    );
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0]).toMatchObject({
+      lastExecution: {
+        executedAt: "2026-05-21T09:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-report",
+        assistantMessage: "日报已生成",
+      },
+    });
+  });
 });
