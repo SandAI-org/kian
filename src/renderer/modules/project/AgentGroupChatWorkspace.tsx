@@ -11,7 +11,6 @@ import {
 } from "@renderer/components/EmptyIllustrations";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import {
   CHAT_THINKING_LEVEL_VALUES,
@@ -205,11 +204,7 @@ export const AgentGroupChatWorkspace = ({
   group,
   projects,
 }: AgentGroupChatWorkspaceProps) => {
-  const { language, resolvedTheme } = useAppI18n();
-  const t = useCallback(
-    (value: string): string => translateUiText(language, value),
-    [language],
-  );
+  const { language, resolvedTheme, t } = useAppI18n();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<AgentGroupMessageDTO[]>([]);
   const [typingAgents, setTypingAgents] = useState<AgentGroupTypingAgentDTO[]>(
@@ -859,7 +854,7 @@ export const AgentGroupChatWorkspace = ({
                       >
                         {!isUser ? (
                           <div className="mb-1 flex max-w-[88%] items-center gap-2 text-xs text-[var(--muted)]">
-                            <span className="i18n-no-translate">
+                            <span>
                               {senderName}
                             </span>
                             <span>{formatMessageTime(item.createdAt)}</span>
@@ -988,7 +983,7 @@ export const AgentGroupChatWorkspace = ({
                       className="group flex items-center justify-between gap-2 rounded-lg px-2 py-2 hover:bg-[var(--surface)]"
                     >
                       <div className="min-w-0">
-                        <div className="i18n-no-translate truncate text-sm font-medium text-[var(--text)]">
+                        <div className="truncate text-sm font-medium text-[var(--text)]">
                           {member.name}
                         </div>
                       </div>
@@ -1100,7 +1095,7 @@ export const AgentGroupChatWorkspace = ({
                       }
                     >
                       <span className="ml-1 flex min-w-0">
-                        <span className="i18n-no-translate truncate text-sm font-medium text-[var(--text)]">
+                        <span className="truncate text-sm font-medium text-[var(--text)]">
                           {project.name}
                         </span>
                       </span>
@@ -1188,7 +1183,7 @@ export const AgentGroupChatWorkspace = ({
                       }
                     >
                       <span className="ml-1 flex min-w-0">
-                        <span className="i18n-no-translate truncate text-sm font-medium text-[var(--text)]">
+                        <span className="truncate text-sm font-medium text-[var(--text)]">
                           {project.name}
                         </span>
                       </span>

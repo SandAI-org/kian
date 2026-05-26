@@ -3,7 +3,6 @@ import { Input, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { SearchOutlined } from '@ant-design/icons';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
-import { translateUiText } from '@renderer/i18n/uiTranslations';
 import type { AssetDTO } from '@shared/types';
 import { api } from '@renderer/lib/api';
 import { ScrollArea } from '@renderer/components/ScrollArea';
@@ -18,7 +17,7 @@ type AssetTagFilter = 'user' | 'generated';
 
 const ASSET_TAG_FILTER_OPTIONS: Array<{ value: AssetTagFilter; label: string }> = [
   { value: 'user', label: '用户' },
-  { value: 'generated', label: 'AI 生成' }
+  { value: 'generated', label: 'AI 生成' },
 ];
 
 const parseAssetTags = (asset: AssetDTO): string[] => {
@@ -32,19 +31,19 @@ const parseAssetTags = (asset: AssetDTO): string[] => {
 };
 
 
-const getAssetTypeLabel = (type: AssetDTO['type']): string => {
-  if (type === 'image') return '图片';
-  if (type === 'video') return '视频';
-  if (type === 'audio') return '音频';
-  return '文件';
+const getAssetTypeLabel = (type: AssetDTO['type'], t: (value: string) => string): string => {
+  if (type === 'image') return t('图片');
+  if (type === 'video') return t('视频');
+  if (type === 'audio') return t('音频');
+  return t('文件');
 };
 
-const getAssetSourceTag = (tags: string[]): string | null => {
+const getAssetSourceTag = (tags: string[], t: (value: string) => string): string | null => {
   if (tags.includes('generated')) {
-    return 'AI 生成';
+    return t('AI 生成');
   }
   if (tags.includes('user')) {
-    return '用户';
+    return t('用户');
   }
   return null;
 };
@@ -66,8 +65,7 @@ const resolveAssetPreviewUrl = (rawPath?: string | null): string => {
   return '';
 };
 export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const [search, setSearch] = useState('');
   const [selectedTagFilters, setSelectedTagFilters] = useState<AssetTagFilter[]>([]);
 
@@ -119,7 +117,7 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <Input
           prefix={<SearchOutlined className="text-slate-400" />}
-          placeholder="搜索素材"
+          placeholder={t('搜索素材')}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="!w-56 sm:!w-72 [&_.ant-input]:!text-[12px] [&_.ant-input-prefix]:!text-[12px]"
@@ -139,7 +137,7 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
                     : 'border-[#d9e2f0] bg-white/80 text-slate-600 hover:border-slate-400 hover:text-slate-800'
                 }`}
               >
-                {item.label}
+                {t(item.label)}
               </button>
             );
           })}
@@ -148,7 +146,7 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
 
       {assetsQuery.isLoading ? (
         <div className="asset-empty-wrap">
-          <div className="asset-loading">素材加载中...</div>
+          <div className="asset-loading">{t('素材加载中...')}</div>
         </div>
       ) : assets.length === 0 ? (
         <div className="asset-empty-wrap">
@@ -199,8 +197,8 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
               </svg>
             </div>
             <div className="asset-empty__text">
-              <p className="asset-empty__title">暂无素材</p>
-              <p className="asset-empty__hint">所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“</p>
+              <p className="asset-empty__title">{t('暂无素材')}</p>
+              <p className="asset-empty__hint">{t('所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“')}</p>
             </div>
           </div>
         </div>
@@ -209,7 +207,7 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {assets.map((asset) => {
               const tags = parseAssetTags(asset);
-              const sourceTag = getAssetSourceTag(tags);
+              const sourceTag = getAssetSourceTag(tags, t);
               const previewUrl =
                 asset.type === 'image' ? resolveAssetPreviewUrl(asset.absolutePath ?? asset.path) : '';
               return (
@@ -219,7 +217,7 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
                     className="group relative block w-full overflow-hidden bg-[#f2f5fb] text-left"
                     style={{ aspectRatio: '16 / 9' }}
                     onClick={() => handleOpenAsset(asset)}
-                    title="点击使用系统预览打开"
+                    title={t('点击使用系统预览打开')}
                   >
                     {previewUrl ? (
                       <RevealableImage
@@ -231,13 +229,13 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
-                        {getAssetTypeLabel(asset.type)}
+                        {getAssetTypeLabel(asset.type, t)}
                       </div>
                     )}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between p-2">
                       {sourceTag ? <span className="rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white shadow-sm backdrop-blur-sm">{sourceTag}</span> : <span />}
                       <span className="rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
-                        {getAssetTypeLabel(asset.type)}
+                        {getAssetTypeLabel(asset.type, t)}
                       </span>
                     </div>
                   </button>

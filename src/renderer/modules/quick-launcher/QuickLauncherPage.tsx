@@ -1,6 +1,5 @@
 import { CloseOutlined, DesktopOutlined } from "@ant-design/icons";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import {
   QUICK_LAUNCHER_NEW_SESSION_EVENT,
@@ -26,11 +25,7 @@ const QUICK_LAUNCHER_MAX_TIMELINE_HEIGHT = 420;
 const QUICK_LAUNCHER_ACTIVE_HEIGHT = 520;
 
 export const QuickLauncherPage = () => {
-  const { language } = useAppI18n();
-  const t = useCallback(
-    (value: string) => translateUiText(language, value),
-    [language],
-  );
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const [currentSessionId, setCurrentSessionId] = useState<string>();
   const [resetToken, setResetToken] = useState(0);
@@ -348,7 +343,7 @@ export const QuickLauncherPage = () => {
               aria-label={t("关闭")}
               onClick={closeLauncher}
             />
-            <div className="i18n-no-translate min-w-0 truncate text-center text-[12px] font-semibold tracking-[0.01em] text-slate-700">
+            <div className="min-w-0 truncate text-center text-[12px] font-semibold tracking-[0.01em] text-slate-700">
               {sessionTitle}
             </div>
             <Tooltip title={t("在主聊天中打开")} placement="left">

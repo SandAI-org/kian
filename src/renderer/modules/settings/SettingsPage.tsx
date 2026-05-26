@@ -7,7 +7,6 @@ import {
 import type { MainLayoutOutletContext } from "@renderer/app/MainLayout";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
 import { DEFAULT_APP_LANGUAGE, type AppLanguage } from "@shared/i18n";
@@ -612,12 +611,14 @@ const ModelSwitchGrid = ({
   search,
   value = [],
   onChange,
+  t,
 }: {
   items: ModelSwitchGridItem[];
   empty: string;
   search?: string;
   value?: string[];
   onChange?: (value: string[]) => void;
+  t: (value: string) => string;
 }) => {
   const toggle = (id: string, checked: boolean) => {
     const next = checked ? [...value, id] : value.filter((v) => v !== id);
@@ -639,11 +640,11 @@ const ModelSwitchGrid = ({
   });
 
   if (items.length === 0) {
-    return <Typography.Text type="secondary">{empty}</Typography.Text>;
+    return <Typography.Text type="secondary">{t(empty)}</Typography.Text>;
   }
 
   if (sorted.length === 0) {
-    return <Typography.Text type="secondary">无匹配模型</Typography.Text>;
+    return <Typography.Text type="secondary">{t("无匹配模型")}</Typography.Text>;
   }
 
   return (
@@ -820,12 +821,8 @@ const ShortcutCaptureInput = ({
 };
 
 export const SettingsPage = () => {
-  const { language } = useAppI18n();
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
-  const t = useCallback(
-    (value: string): string => translateUiText(language, value),
-    [language],
-  );
   const { setHeaderActions } = useOutletContext<MainLayoutOutletContext>();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -2485,12 +2482,12 @@ export const SettingsPage = () => {
       ...current,
       {
         id: String(nextId),
-        name: translateUiText(language, `广播渠道 ${nextId}`),
+        name: t(`广播渠道 ${nextId}`),
         type: "feishu",
         webhook: "",
       },
     ]);
-  }, [broadcastChannelsDraft, language]);
+  }, [broadcastChannelsDraft, t]);
 
   const handleUpdateBroadcastChannel = useCallback(
     (channelId: string, field: "name" | "type" | "webhook", value: string) => {
@@ -2535,11 +2532,11 @@ export const SettingsPage = () => {
           className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${isConfigSaving ? "bg-[#2f6ff7]" : "bg-[#22c55e]"}`}
         />
         <Typography.Text className="!text-[12px] !leading-[1.2] !text-slate-600">
-          {isConfigSaving ? "配置保存中" : "配置已经保存"}
+          {t(isConfigSaving ? "配置保存中" : "配置已经保存")}
         </Typography.Text>
       </div>
     );
-  }, [isConfigSaving]);
+  }, [isConfigSaving, t]);
 
   useEffect(() => {
     setHeaderActions(settingsHeaderActions);
@@ -2597,12 +2594,12 @@ export const SettingsPage = () => {
           items={[
             {
               key: "general",
-              label: "通用",
+              label: t("通用"),
               children: (
                 <ScrollArea className="h-full">
                   <div className="px-5 pb-5">
                     <Typography.Title level={4} className="!text-slate-900">
-                      通用
+                      {t("通用")}
                     </Typography.Title>
 
                     <Form
@@ -2624,8 +2621,8 @@ export const SettingsPage = () => {
 
                       <Form.Item
                         name="workspaceRoot"
-                        label="数据存放目录"
-                        extra="修改后需要重启应用才能生效。默认：~/KianWorkspace"
+                        label={t("数据存放目录")}
+                        extra={t("修改后需要重启应用才能生效。默认：~/KianWorkspace")}
                         rules={[
                           { required: true, message: t("数据存放目录不能为空") },
                         ]}
@@ -2635,30 +2632,28 @@ export const SettingsPage = () => {
 
                       <Form.Item
                         name="language"
-                        label="语言"
-                        extra="选择界面显示语言。"
+                        label={t("语言")}
+                        extra={t("选择界面显示语言。")}
                       >
                         <Select
-                          className="i18n-no-translate"
-                          popupClassName="i18n-no-translate"
                           options={[
-                            { label: "中文 (简体)", value: "zh-CN" },
-                            { label: "English", value: "en-US" },
-                            { label: "한국어", value: "ko-KR" },
-                            { label: "日本語", value: "ja-JP" },
+                            { label: t("中文"), value: "zh-CN" },
+                            { label: t("英文"), value: "en-US" },
+                            { label: t("韩文"), value: "ko-KR" },
+                            { label: t("日文"), value: "ja-JP" },
                           ]}
                         />
                       </Form.Item>
 
                       <Form.Item
                         name="linkOpenMode"
-                        label="打开链接的方式"
-                        extra="选择应用内打开，或交给系统默认浏览器处理。"
+                        label={t("打开链接的方式")}
+                        extra={t("选择应用内打开，或交给系统默认浏览器处理。")}
                       >
                         <Select
                           options={[
-                            { label: "内置浏览器", value: "builtin" },
-                            { label: "系统默认浏览器", value: "system" },
+                            { label: t("内置浏览器"), value: "builtin" },
+                            { label: t("系统默认浏览器"), value: "system" },
                           ]}
                         />
                       </Form.Item>
@@ -2669,7 +2664,7 @@ export const SettingsPage = () => {
             },
             {
               key: "shortcuts",
-              label: "快捷键",
+              label: t("快捷键"),
               children: (
                 <ScrollArea className="h-full">
                   <div className="px-5 pb-5">
@@ -2733,7 +2728,7 @@ export const SettingsPage = () => {
             },
             {
               key: "agent",
-              label: "语言模型",
+              label: t("语言模型"),
               children: (
                 <div className="agent-settings-pane">
                   <div className="agent-settings-pane__header">
@@ -2845,8 +2840,8 @@ export const SettingsPage = () => {
                             <div className="provider-switcher__content">
                               <Form.Item name="enabled" valuePropName="checked">
                                 <Switch
-                                  checkedChildren="已启用"
-                                  unCheckedChildren="未启用"
+                                  checkedChildren={t("已启用")}
+                                  unCheckedChildren={t("未启用")}
                                 />
                               </Form.Item>
 
@@ -2957,7 +2952,7 @@ export const SettingsPage = () => {
                                         prefix={
                                           <SearchOutlined className="text-slate-400" />
                                         }
-                                        placeholder="搜索模型"
+                                        placeholder={t("搜索模型")}
                                         allowClear
                                         value={agentModelSearch}
                                         onChange={(e) =>
@@ -2986,6 +2981,7 @@ export const SettingsPage = () => {
                                   />
                                 ) : (
                                   <ModelSwitchGrid
+                                    t={t}
                                     search={agentModelSearch}
                                     items={availableAgentModels.map(
                                       (m) => ({
@@ -3012,16 +3008,15 @@ export const SettingsPage = () => {
             },
             {
               key: "model",
-              label: "音视频模型",
+              label: t("音视频模型"),
               children: (
                 <ScrollArea className="h-full">
                   <div className="px-5 pb-5">
                     <Typography.Title level={4} className="!text-slate-900">
-                      音视频模型
+                      {t("音视频模型")}
                     </Typography.Title>
                     <Typography.Paragraph className="!text-slate-600">
-                      当前支持 fal Provider。你可以配置 fal API
-                      Key，并启用可用于生图/生视频的模型。
+                      {t("当前支持 fal Provider。你可以配置 fal API Key，并启用可用于生图/生视频的模型。")}
                     </Typography.Paragraph>
 
                     <Form
@@ -3039,7 +3034,7 @@ export const SettingsPage = () => {
                           "fal API Key",
                           providerTokenFilled,
                         )}
-                        extra="留空表示保持当前凭证不变"
+                        extra={t("留空表示保持当前凭证不变")}
                         rules={[
                           {
                             validator: async (_, value) => {
@@ -3070,7 +3065,7 @@ export const SettingsPage = () => {
                               prefix={
                                 <SearchOutlined className="text-slate-400" />
                               }
-                              placeholder="搜索模型"
+                              placeholder={t("搜索模型")}
                               allowClear
                               value={providerModelSearch}
                               onChange={(e) =>
@@ -3095,6 +3090,7 @@ export const SettingsPage = () => {
                         ]}
                       >
                         <ModelSwitchGrid
+                          t={t}
                           search={providerModelSearch}
                           items={(providerStatusQuery.data?.models ?? []).map(
                             (model) => ({
@@ -3103,7 +3099,7 @@ export const SettingsPage = () => {
                               description: t(model.modelDescription),
                             }),
                           )}
-                          empty="暂无可用模型"
+                          empty={t("暂无可用模型")}
                         />
                       </Form.Item>
                     </Form>
@@ -3113,16 +3109,15 @@ export const SettingsPage = () => {
             },
             {
               key: "channels",
-              label: "渠道",
+              label: t("渠道"),
               children: (
                 <ScrollArea className="h-full">
                   <div className="px-5 pb-5">
                     <Typography.Title level={4} className="!text-slate-900">
-                      渠道
+                      {t("渠道")}
                     </Typography.Title>
                     <Typography.Paragraph className="!text-slate-600">
-                      所有渠道消息统一发送到主 Agent，子智能体
-                      聊天仍可在桌面端查看。
+                      {t("所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。")}
                     </Typography.Paragraph>
 
                     <Tabs
@@ -3145,8 +3140,8 @@ export const SettingsPage = () => {
                             >
                               <Form.Item name="enabled" valuePropName="checked">
                                 <Switch
-                                  checkedChildren="已启用"
-                                  unCheckedChildren="未启用"
+                                  checkedChildren={t("已启用")}
+                                  unCheckedChildren={t("未启用")}
                                 />
                               </Form.Item>
 
@@ -3158,7 +3153,7 @@ export const SettingsPage = () => {
                                       "Telegram Bot Token",
                                       telegramTokenFilled,
                                     )}
-                                    extra="留空表示保持当前凭证不变"
+                                    extra={t("留空表示保持当前凭证不变")}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
@@ -3271,8 +3266,8 @@ export const SettingsPage = () => {
                             >
                               <Form.Item name="enabled" valuePropName="checked">
                                 <Switch
-                                  checkedChildren="已启用"
-                                  unCheckedChildren="未启用"
+                                  checkedChildren={t("已启用")}
+                                  unCheckedChildren={t("未启用")}
                                 />
                               </Form.Item>
 
@@ -3284,7 +3279,7 @@ export const SettingsPage = () => {
                                       "Discord Bot Token",
                                       discordTokenFilled,
                                     )}
-                                    extra="留空表示保持当前凭证不变"
+                                    extra={t("留空表示保持当前凭证不变")}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
@@ -3362,7 +3357,7 @@ export const SettingsPage = () => {
                                       "允许服务器 ID",
                                       discordServerIdsFilled,
                                     )}
-                                    extra="输入多个服务器 ID，每个 ID 按回车生成标签。"
+                                    extra={t("输入多个服务器 ID，每个 ID 按回车生成标签。")}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
@@ -3401,7 +3396,7 @@ export const SettingsPage = () => {
                                       mode="tags"
                                       open={false}
                                       tokenSeparators={[",", " ", "\n"]}
-                                      placeholder="输入服务器 ID 后按回车"
+                                      placeholder={t("输入服务器 ID 后按回车")}
                                     />
                                   </Form.Item>
 
@@ -3411,7 +3406,7 @@ export const SettingsPage = () => {
                                       "允许频道 ID",
                                       discordChannelIdsFilled,
                                     )}
-                                    extra="输入多个频道 ID，每个 ID 按回车生成标签。"
+                                    extra={t("输入多个频道 ID，每个 ID 按回车生成标签。")}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
@@ -3448,7 +3443,7 @@ export const SettingsPage = () => {
                                       mode="tags"
                                       open={false}
                                       tokenSeparators={[",", " ", "\n"]}
-                                      placeholder="输入频道 ID 后按回车"
+                                      placeholder={t("输入频道 ID 后按回车")}
                                     />
                                   </Form.Item>
 
@@ -3482,7 +3477,7 @@ export const SettingsPage = () => {
                         },
                         {
                           key: "feishu",
-                          label: "飞书",
+                          label: t("飞书"),
                           children: (
                             <Form
                               form={feishuForm}
@@ -3496,8 +3491,8 @@ export const SettingsPage = () => {
                             >
                               <Form.Item name="enabled" valuePropName="checked">
                                 <Switch
-                                  checkedChildren="已启用"
-                                  unCheckedChildren="未启用"
+                                  checkedChildren={t("已启用")}
+                                  unCheckedChildren={t("未启用")}
                                 />
                               </Form.Item>
 
@@ -3509,7 +3504,7 @@ export const SettingsPage = () => {
                                       "飞书应用 AppID",
                                       feishuAppIdFilled,
                                     )}
-                                    extra="留空表示保持当前凭证不变"
+                                    extra={t("留空表示保持当前凭证不变")}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
@@ -3538,7 +3533,7 @@ export const SettingsPage = () => {
                                       "飞书应用 AppSecret",
                                       feishuAppSecretFilled,
                                     )}
-                                    extra="留空表示保持当前凭证不变"
+                                    extra={t("留空表示保持当前凭证不变")}
                                     rules={[
                                       {
                                         validator: async (_, value) => {
@@ -3648,7 +3643,7 @@ export const SettingsPage = () => {
                         },
                         {
                           key: "weixin",
-                          label: "微信",
+                          label: t("微信"),
                           children: (
                             <Form
                               form={weixinForm}
@@ -3660,8 +3655,8 @@ export const SettingsPage = () => {
                             >
                               <Form.Item name="enabled" valuePropName="checked">
                                 <Switch
-                                  checkedChildren="已启用"
-                                  unCheckedChildren="未启用"
+                                  checkedChildren={t("已启用")}
+                                  unCheckedChildren={t("未启用")}
                                 />
                               </Form.Item>
 
@@ -3861,7 +3856,7 @@ export const SettingsPage = () => {
             },
             {
               key: "broadcast",
-              label: "广播渠道",
+              label: t("广播渠道"),
               children: (
                 <ScrollArea className="h-full">
                   <div className="px-5 pb-5">
@@ -3870,27 +3865,27 @@ export const SettingsPage = () => {
                         level={4}
                         className="!mb-0 !text-slate-900"
                       >
-                        广播渠道
+                        {t("广播渠道")}
                       </Typography.Title>
                       <div className="flex items-center gap-2">
                         <Button onClick={handleAddBroadcastChannel}>
-                          新增渠道
+                          {t("新增渠道")}
                         </Button>
                       </div>
                     </div>
 
                     <Typography.Paragraph className="!text-slate-600">
-                      使用哪个渠道广播消息，Kian 说了算。
+                      {t("使用哪个渠道广播消息，Kian 说了算。")}
                     </Typography.Paragraph>
 
                     {broadcastChannelsQuery.isLoading ? (
                       <Typography.Text type="secondary">
-                        正在加载广播渠道...
+                        {t("正在加载广播渠道...")}
                       </Typography.Text>
                     ) : broadcastChannelsDraft.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
                         <Typography.Text type="secondary">
-                          还没有广播渠道，点击“新增渠道”开始配置。
+                          {t("还没有广播渠道，点击“新增渠道”开始配置。")}
                         </Typography.Text>
                       </div>
                     ) : (
@@ -3911,13 +3906,13 @@ export const SettingsPage = () => {
                                   handleRemoveBroadcastChannel(channel.id)
                                 }
                               >
-                                删除
+                                {t("删除")}
                               </Button>
                             </div>
                             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                               <Input
                                 value={channel.name}
-                                placeholder="渠道名称"
+                                placeholder={t("渠道名称")}
                                 onChange={(event) =>
                                   handleUpdateBroadcastChannel(
                                     channel.id,
@@ -3936,8 +3931,8 @@ export const SettingsPage = () => {
                                   )
                                 }
                                 options={[
-                                  { label: "飞书", value: "feishu" },
-                                  { label: "企业微信", value: "wechat" },
+                                  { label: t("飞书"), value: "feishu" },
+                                  { label: t("企业微信"), value: "wechat" },
                                 ]}
                               />
                             </div>
@@ -4223,7 +4218,7 @@ export const SettingsPage = () => {
                                 onClick={() => {
                                   void handleDebugUpdateStatus("downloaded", {
                                     progressPercent: 100,
-                                    message: "新版本已下载完成，可以安装",
+                                    message: t("新版本已下载完成，可以安装"),
                                   });
                                 }}
                               >
@@ -4244,7 +4239,7 @@ export const SettingsPage = () => {
                                 loading={debugUpdateMutation.isPending}
                                 onClick={() => {
                                   void handleDebugUpdateStatus("failed", {
-                                    message: "检查更新失败",
+                                    message: t("检查更新失败"),
                                   });
                                 }}
                               >

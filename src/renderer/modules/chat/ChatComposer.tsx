@@ -192,7 +192,7 @@ const MentionElement = ({
   <span
     {...attributes}
     contentEditable={false}
-    className="chat-composer-mention-token i18n-no-translate"
+    className="chat-composer-mention-token"
     data-chat-mention-token="true"
   >
     {element.label}
@@ -619,7 +619,7 @@ export const ChatComposer = ({
               data-chat-composer-editor="true"
               renderElement={renderElement}
               placeholder={placeholder}
-              className="chat-composer-editor i18n-no-translate min-h-[84px] outline-none"
+              className="chat-composer-editor min-h-[84px] outline-none"
               onCompositionStart={onCompositionStart}
               onCompositionEnd={onCompositionEnd}
               onKeyDown={handleEditableKeyDown}
@@ -649,7 +649,7 @@ export const ChatComposer = ({
                       type="button"
                       role="option"
                       aria-selected={index === activeMentionIndex}
-                      className={`i18n-no-translate flex w-full min-w-0 flex-col rounded-md px-2.5 py-2 text-left text-sm ${
+                      className={`flex w-full min-w-0 flex-col rounded-md px-2.5 py-2 text-left text-sm ${
                         index === activeMentionIndex
                           ? "bg-[rgba(var(--primary-rgb),0.12)] text-[var(--primary)]"
                           : "text-[var(--text)] hover:bg-[var(--surface-2)]"

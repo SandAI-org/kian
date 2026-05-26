@@ -1,7 +1,6 @@
 import type { MainLayoutOutletContext } from "@renderer/app/MainLayout";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import type { McpServerDTO, McpTransportType } from "@shared/types";
 import { formatUtcTimestampToLocal } from "@shared/utils/dateTime";
@@ -105,8 +104,7 @@ const mcpCardBaseClassName =
 
 export const McpPage = () => {
   const queryClient = useQueryClient();
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const { setHeaderActions } = useOutletContext<MainLayoutOutletContext>();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<McpServerDTO | null>(null);
@@ -263,10 +261,10 @@ export const McpPage = () => {
         className="!h-10 !rounded-full !px-5"
         onClick={openCreateDrawer}
       >
-        {translateUiText(language, "添加 MCP 服务")}
+        {t("添加 MCP 服务")}
       </Button>
     ),
-    [language, openCreateDrawer],
+    [openCreateDrawer, t],
   );
 
   useEffect(() => {
@@ -431,7 +429,7 @@ export const McpPage = () => {
           <Button
             type="text"
             icon={<CloseOutlined />}
-            aria-label="关闭"
+            aria-label={t("关闭")}
             disabled={isSaving}
             onClick={closeDrawer}
           />
@@ -470,7 +468,7 @@ export const McpPage = () => {
                 items={[
                   {
                     key: "stdio",
-                    label: "标准输入输出",
+                    label: t("标准输入输出"),
                   },
                   {
                     key: "sse",
@@ -498,41 +496,41 @@ export const McpPage = () => {
               >
                 <Form.Item
                   name="name"
-                  label="服务名称"
+                  label={t("服务名称")}
                   rules={[{ required: true, message: t("请输入服务名称") }]}
                 >
-                  <Input placeholder="例如：Figma MCP / Browser MCP" />
+                  <Input placeholder={t("例如：Figma MCP / Browser MCP")} />
                 </Form.Item>
 
                 {activeTransport === "stdio" ? (
                   <>
                     <Form.Item
                       name="command"
-                      label="启动命令"
+                      label={t("启动命令")}
                       rules={[{ required: true, message: t("请输入启动命令") }]}
                     >
-                      <Input placeholder="例如：npx -y @modelcontextprotocol/server-filesystem" />
+                      <Input placeholder={t("例如：npx -y @modelcontextprotocol/server-filesystem")} />
                     </Form.Item>
                     <Form.Item
                       name="argsText"
-                      label="命令参数"
-                      extra="支持逗号或换行分隔"
+                      label={t("命令参数")}
+                      extra={t("支持逗号或换行分隔")}
                     >
                       <Input.TextArea
                         autoSize={{ minRows: 3, maxRows: 6 }}
-                        placeholder="例如：/Users/lei/Projects"
+                        placeholder={t("例如：/Users/lei/Projects")}
                       />
                     </Form.Item>
                     <Form.Item
                       name="cwd"
-                      label="工作目录"
+                      label={t("工作目录")}
                     >
-                      <Input placeholder="可选，例如：/Users/lei/Projects/vivid" />
+                      <Input placeholder={t("可选，例如：/Users/lei/Projects/vivid")} />
                     </Form.Item>
                     <Form.Item
                       name="envText"
-                      label="环境变量"
-                      extra="每行一个，格式 KEY=VALUE"
+                      label={t("环境变量")}
+                      extra={t("每行一个，格式 KEY=VALUE")}
                     >
                       <Input.TextArea
                         autoSize={{ minRows: 4, maxRows: 8 }}
@@ -544,15 +542,15 @@ export const McpPage = () => {
                   <>
                     <Form.Item
                       name="url"
-                      label="服务 URL"
+                      label={t("服务 URL")}
                       rules={[{ required: true, message: t("请输入服务 URL") }]}
                     >
-                      <Input placeholder="例如：https://example.com/mcp" />
+                      <Input placeholder={t("例如：https://example.com/mcp")} />
                     </Form.Item>
                     <Form.Item
                       name="headersText"
-                      label="请求头"
-                      extra="每行一个，格式 KEY=VALUE"
+                      label={t("请求头")}
+                      extra={t("每行一个，格式 KEY=VALUE")}
                     >
                       <Input.TextArea
                         autoSize={{ minRows: 4, maxRows: 8 }}

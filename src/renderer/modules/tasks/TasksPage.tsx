@@ -1,7 +1,6 @@
 import { PlayCircleOutlined, StopOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ScrollArea } from '@renderer/components/ScrollArea';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
-import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { api } from '@renderer/lib/api';
 import type { TaskDTO } from '@shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,14 +8,14 @@ import { Button, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-const resolveStatusTag = (status: TaskDTO['status']) => {
+const resolveStatusTag = (status: TaskDTO['status'], t: (value: string) => string) => {
   if (status === 'running') {
-    return <Tag color="green">运行中</Tag>;
+    return <Tag color="green">{t('运行中')}</Tag>;
   }
   if (status === 'success') {
-    return <Tag color="blue">已完成</Tag>;
+    return <Tag color="blue">{t('已完成')}</Tag>;
   }
-  return <Tag>已停止</Tag>;
+  return <Tag>{t('已停止')}</Tag>;
 };
 
 const summarizeCommand = (command: string): string => {
@@ -93,8 +92,7 @@ const TaskEmptyState = ({
 };
 
 export const TasksPage = () => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get('task') ?? '';
@@ -177,8 +175,8 @@ export const TasksPage = () => {
         {tasks.length === 0 ? (
           <TaskEmptyState
             variant="list"
-            title="还没有任务"
-            hint="在聊天里触发命令执行后，任务会自动出现在这里"
+            title={t('还没有任务')}
+            hint={t('在聊天里触发命令执行后，任务会自动出现在这里')}
           />
         ) : (
           <ScrollArea className="h-full">
@@ -200,7 +198,7 @@ export const TasksPage = () => {
                       <Typography.Text className="!max-w-[180px] !truncate !font-medium !text-slate-800">
                         {task.name}
                       </Typography.Text>
-                      {resolveStatusTag(task.status)}
+                      {resolveStatusTag(task.status, t)}
                     </div>
                     <Typography.Paragraph className="!mb-0 !mt-1 !text-xs !text-slate-500" ellipsis={{ rows: 2 }}>
                       {summarizeCommand(task.command)}
@@ -218,11 +216,13 @@ export const TasksPage = () => {
           <div className="flex h-full min-h-[320px] items-center justify-center rounded-[16px] border border-[#dde6f5] bg-white">
             <TaskEmptyState
               variant="detail"
-              title={tasks.length === 0 ? '暂无任务详情' : '选择任务查看日志'}
+              title={t(tasks.length === 0 ? '暂无任务详情' : '选择任务查看日志')}
               hint={
-                tasks.length === 0
-                  ? '创建并启动任务后，这里会展示运行状态与 stdout.log'
-                  : '从左侧选择一个任务，这里会实时显示执行输出'
+                t(
+                  tasks.length === 0
+                    ? '创建并启动任务后，这里会展示运行状态与 stdout.log'
+                    : '从左侧选择一个任务，这里会实时显示执行输出',
+                )
               }
             />
           </div>
@@ -249,7 +249,7 @@ export const TasksPage = () => {
                     disabled={startMutation.isPending || taskDetailQuery.data.status === 'running'}
                     onClick={() => startMutation.mutate(taskDetailQuery.data.id)}
                   >
-                    启动
+                    {t('启动')}
                   </Button>
                   <Button
                     icon={<StopOutlined />}
@@ -257,7 +257,7 @@ export const TasksPage = () => {
                     disabled={stopMutation.isPending || taskDetailQuery.data.status !== 'running'}
                     onClick={() => stopMutation.mutate(taskDetailQuery.data.id)}
                   >
-                    停止
+                    {t('停止')}
                   </Button>
                   <Button
                     icon={<DeleteOutlined />}
@@ -266,12 +266,12 @@ export const TasksPage = () => {
                     disabled={deleteMutation.isPending}
                     onClick={() => deleteMutation.mutate(taskDetailQuery.data.id)}
                   >
-                    删除
+                    {t('删除')}
                   </Button>
                 </div>
               </div>
               <div className="border-t border-[#eef2fb] px-4 py-2 text-xs text-slate-500">
-                命令：{taskDetailQuery.data.command || '--'}
+                {t('命令：')}{taskDetailQuery.data.command || '--'}
               </div>
             </div>
 
@@ -280,7 +280,7 @@ export const TasksPage = () => {
               <div className="min-h-0 flex-1">
                 <ScrollArea className="h-full">
                   <pre className="m-0 whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-slate-200">
-                    {taskDetailQuery.data.stdout || '暂无输出'}
+                    {taskDetailQuery.data.stdout || t('暂无输出')}
                   </pre>
                 </ScrollArea>
               </div>
@@ -288,7 +288,7 @@ export const TasksPage = () => {
           </div>
         ) : (
           <div className="flex h-full min-h-[320px] items-center justify-center rounded-[16px] border border-[#dde6f5] bg-white">
-            <TaskEmptyState variant="detail" title="任务详情加载失败" hint="请刷新后重试，或检查任务是否已被删除" />
+            <TaskEmptyState variant="detail" title={t('任务详情加载失败')} hint={t('请刷新后重试，或检查任务是否已被删除')} />
           </div>
         )}
       </div>

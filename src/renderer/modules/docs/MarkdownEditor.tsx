@@ -196,7 +196,7 @@ export const MarkdownEditor = ({
   value,
   onChange,
 }: MarkdownEditorProps) => {
-  const { resolvedTheme } = useAppI18n();
+  const { resolvedTheme, t } = useAppI18n();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [readMode, setReadMode] = useState(true);
   const markdownPreviewEnabled = useMemo(() => isMarkdownDocument(title), [title]);
@@ -306,8 +306,8 @@ export const MarkdownEditor = ({
               size="small"
               shape="circle"
               icon={readMode ? <EditOutlined /> : <ReadOutlined />}
-              title={readMode ? "编辑模式" : "阅读模式"}
-              aria-label={readMode ? "编辑模式" : "阅读模式"}
+              title={t(readMode ? "编辑模式" : "阅读模式")}
+              aria-label={t(readMode ? "编辑模式" : "阅读模式")}
               onClick={() => setReadMode((prev) => !prev)}
             />
           ) : null}
@@ -540,7 +540,7 @@ export const MarkdownEditor = ({
                 </ReactMarkdown>
               ) : (
                 <Typography.Text className="!text-sm !text-slate-400">
-                  暂无内容
+                  {t("暂无内容")}
                 </Typography.Text>
               )}
             </div>

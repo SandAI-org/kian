@@ -1,6 +1,5 @@
 import { ScrollArea } from '@renderer/components/ScrollArea';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
-import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { api } from '@renderer/lib/api';
 import type { CronJobDTO } from '@shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,35 +21,34 @@ const shouldSkipCardToggle = (target: EventTarget | null): boolean => {
   return Boolean(target.closest('a,button,input,textarea,select,label,.ant-typography-expand'));
 };
 
-const resolveStatusTag = (status: string) => {
+const resolveStatusTag = (status: string, t: (value: string) => string) => {
   const normalized = status.trim().toLowerCase();
   if (ACTIVE_STATUS.has(normalized)) {
     return (
       <Tag color="green" className="!m-0">
-        运行中
+        {t('运行中')}
       </Tag>
     );
   }
   if (PAUSED_STATUS.has(normalized)) {
     return (
       <Tag color="default" className="!m-0">
-        已暂停
+        {t('已暂停')}
       </Tag>
     );
   }
   return (
     <Tag color="blue" className="!m-0">
-      {status || '未知状态'}
+      {status ? t(status) : t('未知状态')}
     </Tag>
   );
 };
 
-const resolveTargetAgentLabel = (job: CronJobDTO): string =>
-  job.targetAgentName?.trim() || job.targetAgentId?.trim() || '主 Agent';
+const resolveTargetAgentLabel = (job: CronJobDTO, t: (value: string) => string): string =>
+  job.targetAgentName?.trim() || job.targetAgentId?.trim() || t('主 Agent');
 
 export const CronjobPage = () => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const cronjobQuery = useQuery({
     queryKey: ['cronjobs'],
@@ -116,7 +114,7 @@ export const CronjobPage = () => {
         <div className="flex h-[60vh] flex-col items-center justify-center gap-2">
           <IllustrationEmptyCronjob size={88} />
           <Typography.Text className="!text-sm !text-slate-400">
-            暂无定时任务
+            {t('暂无定时任务')}
           </Typography.Text>
         </div>
       ) : (
@@ -136,22 +134,22 @@ export const CronjobPage = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Typography.Text className="!text-sm !font-medium !text-slate-800">
-                        执行时间：{job.timeSummary || '--'}
+                        {t(`执行时间：${job.timeSummary || '--'}`)}
                       </Typography.Text>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <Tag color="cyan" className="!m-0">
-                        {resolveTargetAgentLabel(job)}
+                        {resolveTargetAgentLabel(job, t)}
                       </Tag>
                       <Tag color="geekblue" className="!m-0">
                         {job.cron || '--'}
                       </Tag>
-                      {resolveStatusTag(job.status)}
+                      {resolveStatusTag(job.status, t)}
                     </div>
                   </div>
                   <Typography.Paragraph
                     className="!mb-0 !text-[13px] !text-slate-600"
-                    ellipsis={{ rows: 4, expandable: true, symbol: '展开' }}
+                    ellipsis={{ rows: 4, expandable: true, symbol: t('展开') }}
                   >
                     {job.content || '--'}
                   </Typography.Paragraph>

@@ -1,7 +1,6 @@
 import { DeleteOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined } from "@ant-design/icons";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import {
   getChatSessionsQueryKey,
@@ -37,24 +36,24 @@ const getScopeKey = (scope: ChatScope): string =>
   scope.type === "main" ? "main" : scope.projectId;
 
 const formatRelativeTime = (
-  language: import("@shared/i18n").AppLanguage,
+  t: (value: string) => string,
   isoString: string,
 ): string => {
   const now = Date.now();
   const then = new Date(isoString).getTime();
   const diffMs = now - then;
   const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return translateUiText(language, "刚刚");
-  if (diffMin < 60) return translateUiText(language, `${diffMin}分钟前`);
+  if (diffMin < 1) return t("刚刚");
+  if (diffMin < 60) return t(`${diffMin}分钟前`);
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return translateUiText(language, `${diffHour}小时前`);
+  if (diffHour < 24) return t(`${diffHour}小时前`);
   const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 30) return translateUiText(language, `${diffDay}天前`);
+  if (diffDay < 30) return t(`${diffDay}天前`);
   const diffMonth = Math.floor(diffDay / 30);
   if (diffMonth < 12) {
-    return translateUiText(language, `${diffMonth}个月前`);
+    return t(`${diffMonth}个月前`);
   }
-  return translateUiText(language, `${Math.floor(diffMonth / 12)}年前`);
+  return t(`${Math.floor(diffMonth / 12)}年前`);
 };
 
 const SOURCE_LABEL_MAP: Record<string, Record<string, string>> = {
@@ -90,8 +89,7 @@ export const ChatSessionList = ({
   collapsible = false,
   onCollapse,
 }: ChatSessionListProps) => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const scopeKey = getScopeKey(scope);
   const queryClient = useQueryClient();
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -393,13 +391,13 @@ export const ChatSessionList = ({
                         {t("隐藏")}
                       </span>
                     ) : null}
-                    <span className="i18n-no-translate truncate text-sm font-medium leading-5">
+                    <span className="truncate text-sm font-medium leading-5">
                       {session.title || t("新对话")}
                     </span>
                   </div>
                 )}
                 <div className="truncate text-xs text-slate-400">
-                  {formatRelativeTime(language, session.updatedAt)}
+                  {formatRelativeTime(t, session.updatedAt)}
                 </div>
               </div>
               <button

@@ -11,7 +11,6 @@ import {
 } from "@ant-design/icons";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -83,15 +82,11 @@ const StatusTag = ({
 );
 
 export const GuidePage = () => {
-  const { language } = useAppI18n();
+  const { t } = useAppI18n();
   const navigate = useNavigate();
   const [showNodeCommands, setShowNodeCommands] = useState(false);
   const [showClaudeCommand, setShowClaudeCommand] = useState(false);
   const [isModelStepExpanded, setIsModelStepExpanded] = useState(false);
-  const t = useCallback(
-    (value: string): string => translateUiText(language, value),
-    [language],
-  );
 
   const modelStatusQuery = useQuery({
     queryKey: ["settings", "guide", "main-model-status"],

@@ -9,7 +9,6 @@ import {
 import { IllustrationEmptyTeamChatTarget } from "@renderer/components/EmptyIllustrations";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { AgentGroupChatWorkspace } from "@renderer/modules/project/AgentGroupChatWorkspace";
 import {
@@ -49,11 +48,7 @@ const PROJECT_MODULE_ITEMS: Array<{ key: ProjectModuleKey; label: string }> = [
 ];
 
 export const ProjectListPage = () => {
-  const { language } = useAppI18n();
-  const t = useCallback(
-    (value: string): string => translateUiText(language, value),
-    [language],
-  );
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const { setHeaderActions } = useOutletContext<MainLayoutOutletContext>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -405,10 +400,10 @@ export const ProjectListPage = () => {
       >
         <span className="mt-0.5 shrink-0">{icon}</span>
         <span className="min-w-0 flex-1">
-          <span className="i18n-no-translate block truncate text-sm font-semibold">
+          <span className="block truncate text-sm font-semibold">
             {item.name}
           </span>
-          <span className="i18n-no-translate block truncate text-xs text-[var(--muted)]">
+          <span className="block truncate text-xs text-[var(--muted)]">
             {description || t("暂无描述")}
           </span>
         </span>
@@ -623,7 +618,7 @@ export const ProjectListPage = () => {
                           }
                         >
                           <span className="ml-1 flex min-w-0">
-                            <span className="i18n-no-translate truncate text-sm font-medium text-[var(--text)]">
+                            <span className="truncate text-sm font-medium text-[var(--text)]">
                               {project.name}
                             </span>
                           </span>
@@ -716,7 +711,7 @@ export const ProjectListPage = () => {
                           }
                         >
                           <span className="ml-1 flex min-w-0">
-                            <span className="i18n-no-translate truncate text-sm font-medium text-[var(--text)]">
+                            <span className="truncate text-sm font-medium text-[var(--text)]">
                               {project.name}
                             </span>
                           </span>

@@ -22,14 +22,9 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
-import {
-  resolveTranslationState,
-  type TranslationState,
-} from "./translationState";
 import { translateUiText } from "./uiTranslations";
 
 type AppI18nContextValue = {
@@ -37,20 +32,9 @@ type AppI18nContextValue = {
   antdLocale: Locale;
   themeMode: AppThemeMode;
   resolvedTheme: AppResolvedTheme;
+  t: (value: string) => string;
 };
 
-type TextNodeTranslationState = TranslationState;
-type AttributeTranslationState = Map<string, TranslationState>;
-
-const ATTRIBUTES_TO_TRANSLATE = ["placeholder", "title", "aria-label", "alt"];
-const BLOCKED_TEXT_TAGS = new Set(["SCRIPT", "STYLE", "CODE", "PRE"]);
-const BLOCKED_ATTRIBUTE_TAGS = new Set(["SCRIPT", "STYLE", "CODE", "PRE"]);
-const BLOCKED_CLASS_NAMES = [
-  "chat-markdown",
-  "markdown-code-block",
-  "markdown-mermaid-block",
-  "i18n-no-translate",
-];
 const ANTD_LOCALES: Record<AppLanguage, Locale> = {
   "zh-CN": zhCN,
   "en-US": enUS,
@@ -63,6 +47,7 @@ const AppI18nContext = createContext<AppI18nContextValue>({
   antdLocale: ANTD_LOCALES[DEFAULT_APP_LANGUAGE],
   themeMode: DEFAULT_APP_THEME_MODE,
   resolvedTheme: "light",
+  t: (value) => value,
 });
 
 const isTranslatableLanguage = (value: unknown): value is AppLanguage =>
@@ -76,148 +61,6 @@ const getSystemResolvedTheme = (): AppResolvedTheme => {
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
-};
-
-const hasBlockedClassName = (element: Element): boolean =>
-  BLOCKED_CLASS_NAMES.some((className) => element.classList.contains(className));
-
-const shouldSkipTextElement = (element: Element | null): boolean => {
-  if (!element) return false;
-  if (BLOCKED_TEXT_TAGS.has(element.tagName)) return true;
-  if ((element as HTMLElement).isContentEditable) return true;
-  if (hasBlockedClassName(element)) return true;
-  return shouldSkipTextElement(element.parentElement);
-};
-
-const shouldSkipAttributeElement = (element: Element | null): boolean => {
-  if (!element) return false;
-  if (BLOCKED_ATTRIBUTE_TAGS.has(element.tagName)) return true;
-  if ((element as HTMLElement).isContentEditable) return true;
-  if (hasBlockedClassName(element)) return true;
-  return shouldSkipAttributeElement(element.parentElement);
-};
-
-const translateDocumentText = (
-  language: AppLanguage,
-  textNodes: WeakMap<Text, TextNodeTranslationState>,
-  attributeValues: WeakMap<Element, AttributeTranslationState>,
-  root: ParentNode,
-): void => {
-  const applyToTextNode = (node: Text) => {
-    if (shouldSkipTextElement(node.parentElement)) return;
-    const currentText = node.textContent ?? "";
-    const nextState = resolveTranslationState(
-      language,
-      currentText,
-      textNodes.get(node),
-    );
-    textNodes.set(node, nextState);
-    if (currentText !== nextState.translated) {
-      node.textContent = nextState.translated;
-    }
-  };
-
-  const applyToAttributes = (element: Element) => {
-    if (shouldSkipAttributeElement(element)) return;
-    const attributeStateMap =
-      attributeValues.get(element) ?? new Map<string, { source: string; translated: string }>();
-    for (const attribute of ATTRIBUTES_TO_TRANSLATE) {
-      const currentValue = element.getAttribute(attribute);
-      if (currentValue === null) continue;
-      const nextState = resolveTranslationState(
-        language,
-        currentValue,
-        attributeStateMap.get(attribute),
-      );
-      attributeStateMap.set(attribute, nextState);
-      if (currentValue !== nextState.translated) {
-        element.setAttribute(attribute, nextState.translated);
-      }
-    }
-    if (attributeStateMap.size > 0) {
-      attributeValues.set(element, attributeStateMap);
-    }
-  };
-
-  const walker = document.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-  );
-
-  let currentNode: Node | null = walker.currentNode;
-  while (currentNode) {
-    if (currentNode.nodeType === Node.TEXT_NODE) {
-      applyToTextNode(currentNode as Text);
-    } else if (currentNode.nodeType === Node.ELEMENT_NODE) {
-      applyToAttributes(currentNode as Element);
-    }
-    currentNode = walker.nextNode();
-  }
-};
-
-const UiTextTranslator = ({ language }: { language: AppLanguage }) => {
-  const textNodesRef = useRef(new WeakMap<Text, TextNodeTranslationState>());
-  const attributeValuesRef = useRef(new WeakMap<Element, AttributeTranslationState>());
-
-  useEffect(() => {
-    if (!document.body) return;
-
-    translateDocumentText(
-      language,
-      textNodesRef.current,
-      attributeValuesRef.current,
-      document.body,
-    );
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === "characterData" && mutation.target instanceof Text) {
-          translateDocumentText(
-            language,
-            textNodesRef.current,
-            attributeValuesRef.current,
-            mutation.target.parentElement ?? document.body,
-          );
-          continue;
-        }
-
-        if (mutation.type === "attributes" && mutation.target instanceof Element) {
-          translateDocumentText(
-            language,
-            textNodesRef.current,
-            attributeValuesRef.current,
-            mutation.target,
-          );
-          continue;
-        }
-
-        mutation.addedNodes.forEach((node) => {
-          if (node instanceof Element || node instanceof Text) {
-            translateDocumentText(
-              language,
-              textNodesRef.current,
-              attributeValuesRef.current,
-              node instanceof Text ? node.parentElement ?? document.body : node,
-            );
-          }
-        });
-      }
-    });
-
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ATTRIBUTES_TO_TRANSLATE,
-    });
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [language]);
-
-  return null;
 };
 
 export const AppI18nProvider = ({ children }: PropsWithChildren) => {
@@ -275,13 +118,13 @@ export const AppI18nProvider = ({ children }: PropsWithChildren) => {
       antdLocale: ANTD_LOCALES[language],
       themeMode,
       resolvedTheme,
+      t: (text) => translateUiText(language, text),
     }),
     [language, resolvedTheme, themeMode],
   );
 
   return (
     <AppI18nContext.Provider value={value}>
-      <UiTextTranslator language={language} />
       {children}
     </AppI18nContext.Provider>
   );

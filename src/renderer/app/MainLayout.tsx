@@ -39,7 +39,6 @@ import kianLogo from '@renderer/assets/kian-logo.png';
 import { Button, Input, Layout, Menu, Modal, Tooltip, Typography, message } from 'antd';
 import { CompactDropdown } from '@renderer/components/CompactDropdown';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
-import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { DEFAULT_SHORTCUT_CONFIG } from '@shared/utils/shortcuts';
 import { resolveStartupDefaultRouteGate } from './startupDefaultRoute';
@@ -69,8 +68,7 @@ export const shouldKeepHeaderActions = (pathname: string): boolean =>
   pathname.startsWith('/skills');
 
 export const MainLayout = () => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -573,7 +571,7 @@ export const MainLayout = () => {
             type="button"
             onClick={() => navigate('/main-agent')}
             className="no-drag mb-6 rounded-xl transition-transform hover:scale-[1.02]"
-            aria-label="打开主智能体"
+            aria-label={t('打开主智能体')}
           >
             <img src={kianLogo} alt="Kian logo" className="h-11 w-11 rounded-xl object-cover" />
           </button>
@@ -703,7 +701,7 @@ export const MainLayout = () => {
                             key: item.id,
                             label: (
                               <div className="flex items-center justify-between gap-3">
-                                <span className="i18n-no-translate max-w-[340px] truncate">{item.name}</span>
+                                <span className="max-w-[340px] truncate">{item.name}</span>
                                 {item.id === project?.id ? (
                                   <CheckOutlined className="shrink-0 text-[#2f6ff7]" />
                                 ) : null}
@@ -717,7 +715,7 @@ export const MainLayout = () => {
                       >
                         <button
                           type="button"
-                          className="i18n-no-translate no-drag flex max-w-[min(640px,60vw)] items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-[#eef3fc]"
+                          className="no-drag flex max-w-[min(640px,60vw)] items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-[#eef3fc]"
                           onDoubleClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -736,7 +734,7 @@ export const MainLayout = () => {
               ) : (
                 !isGuidePage ? (
                   <Typography.Title level={3} className="!mb-0 !text-slate-900">
-                    {headerTitle}
+                    {t(headerTitle)}
                   </Typography.Title>
                 ) : null
               )}
@@ -764,12 +762,12 @@ export const MainLayout = () => {
               ) : isCronjobsPage ? (
                 <Typography.Text className="!inline-flex !items-center !gap-1 !text-[12px] !text-slate-500">
                   <InfoCircleOutlined className="!text-[12px]" />
-                  点击卡片可切换状态
+                  {t('点击卡片可切换状态')}
                 </Typography.Text>
               ) : isTasksPage ? (
                 <Typography.Text className="!inline-flex !items-center !gap-1 !text-[12px] !text-slate-500">
                   <InfoCircleOutlined className="!text-[12px]" />
-                  点击任务可查看 stdout.log
+                  {t('点击任务可查看 stdout.log')}
                 </Typography.Text>
               ) : headerActions ? (
                 <div className="no-drag flex items-center">{headerActions}</div>

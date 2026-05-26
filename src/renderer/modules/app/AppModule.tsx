@@ -1,6 +1,5 @@
 import { ExportOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import type { AppType, OpenAppPreviewWindowPayload } from "@shared/types";
 import { formatUtcTimestampToLocal } from "@shared/utils/dateTime";
@@ -41,8 +40,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
   const queryClient = useQueryClient();
   const [previewVersion, setPreviewVersion] = React.useState(0);
   const previewHostRef = React.useRef<HTMLDivElement | null>(null);
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
 
   const statusQuery = useQuery({
     queryKey: ["app-workspace", projectId],
@@ -211,7 +209,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
             onClick={openAppDir}
             disabled={!status?.appDir}
           >
-            打开目录
+            {t("打开目录")}
           </Button>
           <Button
             size="small"
@@ -223,7 +221,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
             }}
             loading={statusQuery.isFetching}
           >
-            刷新
+            {t("刷新")}
           </Button>
           <Button
             size="small"
@@ -231,7 +229,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
             onClick={openGlobalPreview}
             disabled={!hasRenderableBuild}
           >
-            独立窗口展示
+            {t("独立窗口展示")}
           </Button>
         </Space>
       </div>
@@ -333,9 +331,9 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
               </svg>
             </div>
             <div className="app-empty-shell__text">
-              <p className="app-empty-shell__title">等待应用构建</p>
+              <p className="app-empty-shell__title">{t("等待应用构建")}</p>
               <p className="app-empty-shell__hint">
-                在对话中描述你想要的应用，构建后将在此预览
+                {t("在对话中描述你想要的应用，构建后将在此预览")}
               </p>
             </div>
           </div>

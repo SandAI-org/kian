@@ -1,6 +1,5 @@
 import { FileImageOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { isMacPlatform } from "@renderer/lib/shortcuts";
 import { message } from "antd";
@@ -36,9 +35,8 @@ export const RevealInFinderButton = ({
   projectId,
   documentPath,
 }: RevealInFinderButtonProps) => {
-  const { language } = useAppI18n();
-  const revealLabel = translateUiText(
-    language,
+  const { t } = useAppI18n();
+  const revealLabel = t(
     isMacPlatform()
       ? "在 Finder 中显示"
       : isWindowsPlatform()
@@ -56,7 +54,7 @@ export const RevealInFinderButton = ({
     }
 
     void api.file.showInFinder(targetPath, projectId, documentPath).catch(() => {
-      message.error(translateUiText(language, "显示文件位置失败"));
+      message.error(t("显示文件位置失败"));
     });
   };
 
@@ -88,9 +86,9 @@ export const RevealableImage = ({
   style,
   loading = "lazy",
 }: RevealableImageProps) => {
-  const { language } = useAppI18n();
+  const { t } = useAppI18n();
   const [loadFailed, setLoadFailed] = useState(false);
-  const missingImageLabel = translateUiText(language, "图片不可用");
+  const missingImageLabel = t("图片不可用");
 
   useEffect(() => {
     setLoadFailed(false);

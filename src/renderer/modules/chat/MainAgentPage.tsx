@@ -1,6 +1,5 @@
 import { SplitPane } from "@renderer/components/SplitPane";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { AppModule } from "@renderer/modules/app/AppModule";
 import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
 import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
@@ -31,11 +30,7 @@ const MODES: { key: AgentMode; label: string }[] = [
 export const NEW_CURRENT_AGENT_SESSION_EVENT = "main-agent:new-session";
 
 export const MainAgentPage = () => {
-  const { language } = useAppI18n();
-  const t = useCallback(
-    (value: string): string => translateUiText(language, value),
-    [language],
-  );
+  const { t } = useAppI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
   const requestedModule = searchParams.get("module");

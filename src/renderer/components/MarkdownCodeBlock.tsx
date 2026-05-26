@@ -5,6 +5,7 @@ import {
   CopyOutlined,
 } from "@ant-design/icons";
 import { ScrollArea } from "@renderer/components/ScrollArea";
+import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
 import { isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -58,6 +59,7 @@ export const MarkdownCodeBlock = ({
   children,
   variant,
 }: MarkdownCodeBlockProps) => {
+  const { t } = useAppI18n();
   const source = useMemo(() => normalizeCodeSource(children), [children]);
   const languageLabel = useMemo(
     () => getCodeLanguageLabel(extractCodeClassName(children)),
@@ -111,7 +113,7 @@ export const MarkdownCodeBlock = ({
           <span className="markdown-code-block__collapse" aria-hidden="true">
             {expanded ? <CaretDownFilled /> : <CaretRightFilled />}
           </span>
-          <span className="markdown-code-block__title">代码块</span>
+          <span className="markdown-code-block__title">{t("代码块")}</span>
         </button>
         {!collapsed ? (
           <div className="markdown-code-block__actions">
@@ -124,7 +126,7 @@ export const MarkdownCodeBlock = ({
               disabled={!canCopy}
             >
               {copied ? <CheckOutlined /> : <CopyOutlined />}
-              <span>{copied ? "已复制" : "复制"}</span>
+              <span>{t(copied ? "已复制" : "复制")}</span>
             </button>
           </div>
         ) : null}

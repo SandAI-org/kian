@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
-import { translateUiText } from '@renderer/i18n/uiTranslations';
 import { api } from '@renderer/lib/api';
 import { IllustrationEmptyCreationBoard } from '@renderer/components/EmptyIllustrations';
 import { ScrollArea } from '@renderer/components/ScrollArea';
@@ -14,8 +13,7 @@ interface CreationModuleProps {
 
 export const CreationModule = ({ projectId, onContextChange }: CreationModuleProps) => {
   const queryClient = useQueryClient();
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
 
   const boardQuery = useQuery({
     queryKey: ['creation-board', projectId],

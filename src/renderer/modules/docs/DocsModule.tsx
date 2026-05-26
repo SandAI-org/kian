@@ -21,7 +21,6 @@ import {
 } from "@renderer/components/EmptyIllustrations";
 import { RevealableImage } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { api } from "@renderer/lib/api";
 import {
@@ -325,11 +324,10 @@ const arePathSetsEqual = (left: Set<string>, right: Set<string>): boolean => {
   return true;
 };
 
-const getNewFileName = (language: import("@shared/i18n").AppLanguage): string =>
-  translateUiText(language, "新文件.md");
-const getNewFolderName = (
-  language: import("@shared/i18n").AppLanguage,
-): string => translateUiText(language, "新文件夹");
+const getNewFileName = (t: (value: string) => string): string =>
+  t("新文件.md");
+const getNewFolderName = (t: (value: string) => string): string =>
+  t("新文件夹");
 const getPathSegments = (rawPath: string): string[] =>
   stripDocsPrefix(rawPath).split("/").filter(Boolean);
 const getPathBaseName = (rawPath: string): string =>
@@ -337,20 +335,17 @@ const getPathBaseName = (rawPath: string): string =>
 
 const buildDuplicateTargetPath = (
   rawPath: string,
-  language: import("@shared/i18n").AppLanguage,
+  t: (value: string) => string,
 ): string => {
   const segments = getPathSegments(rawPath);
-  const sourceFileName = segments.pop() ?? getNewFileName(language);
+  const sourceFileName = segments.pop() ?? getNewFileName(t);
   const dotIndex = sourceFileName.lastIndexOf(".");
   const hasExtension = dotIndex > 0;
   const baseName = hasExtension
     ? sourceFileName.slice(0, dotIndex)
     : sourceFileName;
   const extension = hasExtension ? sourceFileName.slice(dotIndex) : ".md";
-  const duplicateFileName = translateUiText(
-    language,
-    `${baseName}-副本${extension}`,
-  );
+  const duplicateFileName = t(`${baseName}-副本${extension}`);
 
   return [...segments, duplicateFileName].join("/");
 };
@@ -430,8 +425,7 @@ export const DocsModule = ({
   onSelectSession,
   onNewSession,
 }: DocsModuleProps) => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const [activeEntryPath, setActiveEntryPath] = useState<string>();
   const [editorValue, setEditorValue] = useState("");
@@ -669,10 +663,7 @@ export const DocsModule = ({
       const created = await api.docs.create({
         projectId,
         title: targetPath,
-        content: translateUiText(
-          language,
-          "# 新文档\n\n在这里记录你的想法和资料。\n",
-        ),
+        content: t("# 新文档\n\n在这里记录你的想法和资料。\n"),
       });
       const createdPath = stripDocsPrefix(created.id);
       const createdEntry: DocExplorerEntryDTO = {
@@ -716,7 +707,7 @@ export const DocsModule = ({
     mutationFn: async () => {
       const created = await api.docs.createFolder({
         projectId,
-        path: getNewFolderName(language),
+        path: getNewFolderName(t),
       });
       const createdPath = stripDocsPrefix(created.path);
       const createdEntry: DocExplorerEntryDTO = {
@@ -1018,7 +1009,7 @@ export const DocsModule = ({
   };
 
   const handleCreateFile = async (): Promise<void> => {
-    const targetPath = getNewFileName(language);
+    const targetPath = getNewFileName(t);
     try {
       const created = await createFileMutation.mutateAsync(targetPath);
       setActiveEntryPath(stripDocsPrefix(created.id));
@@ -1035,7 +1026,7 @@ export const DocsModule = ({
     directoryPath: string,
   ): Promise<void> => {
     const normalizedDirectoryPath = stripDocsPrefix(directoryPath);
-    const targetPath = `${normalizedDirectoryPath}/${getNewFileName(language)}`;
+    const targetPath = `${normalizedDirectoryPath}/${getNewFileName(t)}`;
     try {
       const created = await createFileMutation.mutateAsync(targetPath);
       setExpandedDirectories((previous) =>
@@ -1138,7 +1129,7 @@ export const DocsModule = ({
 
     try {
       await duplicateMutation.mutateAsync({
-        title: buildDuplicateTargetPath(node.path, language),
+        title: buildDuplicateTargetPath(node.path, t),
         content: node.doc.content,
       });
     } catch {
@@ -1684,7 +1675,7 @@ export const DocsModule = ({
             <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2">
               <IllustrationEmptyEditor size={80} />
               <Typography.Text className="!text-sm !text-slate-400">
-                可以试试让 Kian 来帮你修改或者创建文档
+                {t("可以试试让 Kian 来帮你修改或者创建文档")}
               </Typography.Text>
             </div>
           </div>

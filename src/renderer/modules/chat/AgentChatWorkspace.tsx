@@ -1,6 +1,5 @@
 import { MenuUnfoldOutlined } from "@ant-design/icons";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { Button } from "antd";
 import { useState } from "react";
 import type {
@@ -40,8 +39,7 @@ export const AgentChatWorkspace = ({
   acceptMainInputFocusEvents,
   hideBorder,
 }: AgentChatWorkspaceProps) => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarWidthClass = sidebarCollapsed
     ? "w-10 min-w-[2.5rem] max-w-[2.5rem] basis-[2.5rem]"

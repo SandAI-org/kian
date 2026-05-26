@@ -12,7 +12,6 @@ import {
 } from "@ant-design/icons";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -40,8 +39,7 @@ const skillDescriptionClassName =
   "!mt-1.5 !mb-1.5 !text-xs !leading-[1.65] !text-slate-600";
 
 export const SkillsPage = () => {
-  const { language } = useAppI18n();
-  const t = (value: string): string => translateUiText(language, value);
+  const { t } = useAppI18n();
   const queryClient = useQueryClient();
   const { setHeaderActions } = useOutletContext<MainLayoutOutletContext>();
   const [activeTab, setActiveTab] = useState("installed");
@@ -342,7 +340,7 @@ export const SkillsPage = () => {
           className="!h-10 !rounded-full !px-5"
           onClick={openAddRepositoryDrawer}
         >
-          {translateUiText(language, "添加技能仓库")}
+          {t("添加技能仓库")}
         </Button>
         <Button
           type="primary"
@@ -350,11 +348,11 @@ export const SkillsPage = () => {
           className="!h-10 !rounded-full !px-5"
           onClick={openAddSkillModal}
         >
-          {translateUiText(language, "添加技能")}
+          {t("添加技能")}
         </Button>
       </Space>
     ),
-    [language, openAddRepositoryDrawer, openAddSkillModal],
+    [openAddRepositoryDrawer, openAddSkillModal, t],
   );
 
   useEffect(() => {

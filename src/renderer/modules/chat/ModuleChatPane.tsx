@@ -22,7 +22,6 @@ import {
   RevealableImage,
 } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { translateUiText } from "@renderer/i18n/uiTranslations";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
 import {
@@ -788,11 +787,7 @@ const FileReferenceCard = ({
   forceCardOnly?: boolean;
   attachment?: boolean;
 }) => {
-  const { language } = useAppI18n();
-  const t = useCallback(
-    (value: string) => translateUiText(language, value),
-    [language],
-  );
+  const { t } = useAppI18n();
   const fileName = useMemo(() => getPathFileName(sourcePath), [sourcePath]);
   const isTextPreview = useMemo(
     () => !forceCardOnly && isTextFilePath(sourcePath),
@@ -991,11 +986,7 @@ const InlineFileReferenceToken = ({
   projectId?: string;
   label: string;
 }) => {
-  const { language } = useAppI18n();
-  const t = useCallback(
-    (value: string) => translateUiText(language, value),
-    [language],
-  );
+  const { t } = useAppI18n();
   const fileName = useMemo(() => getPathFileName(sourcePath), [sourcePath]);
   const [menuPosition, setMenuPosition] = useState<{
     x: number;
@@ -1056,7 +1047,7 @@ const InlineFileReferenceToken = ({
   return (
     <>
       <span
-        className="chat-composer-mention-token i18n-no-translate"
+        className="chat-composer-mention-token"
         onContextMenu={handleContextMenu}
       >
         {label}
@@ -1128,7 +1119,7 @@ const renderMentionText = (
     nodes.push(
       <span
         key={`${keyPrefix}-${mentionStart}`}
-        className="chat-markdown__mention i18n-no-translate"
+        className="chat-markdown__mention"
       >
         {mention}
       </span>,
@@ -1555,6 +1546,7 @@ AssistantMessageContextMenu.displayName = "AssistantMessageContextMenu";
 
 /** Renders a single tool call step during streaming. */
 const ToolCallStep = memo(({ info }: { info: ToolCallInfo }) => {
+  const { t } = useAppI18n();
   const isDone = info.status === "done";
   const hasDetails = Boolean(info.toolInput?.trim() || info.output?.trim());
   const [showAllOutput, setShowAllOutput] = useState(false);
@@ -1613,7 +1605,7 @@ const ToolCallStep = memo(({ info }: { info: ToolCallInfo }) => {
         {info.toolInput?.trim() ? (
           <div>
             <div className="mb-1 text-[11px] font-medium text-slate-500">
-              输入参数
+              {t("输入参数")}
             </div>
             <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
               <ScrollArea className="tool-call-detail-scroll w-full">
@@ -1627,7 +1619,7 @@ const ToolCallStep = memo(({ info }: { info: ToolCallInfo }) => {
         {info.output?.trim() ? (
           <div>
             <div className="mb-1 text-[11px] font-medium text-slate-500">
-              执行结果
+              {t("执行结果")}
             </div>
             {showAllOutput ? (
               <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
@@ -1648,7 +1640,7 @@ const ToolCallStep = memo(({ info }: { info: ToolCallInfo }) => {
                 className="mt-1 text-[11px] leading-none text-[#2f6ff7] hover:cursor-pointer hover:underline"
                 onClick={() => setShowAllOutput(true)}
               >
-                展示全部
+                {t("展示全部")}
               </button>
             ) : null}
           </div>
@@ -2053,7 +2045,7 @@ interface ChatTimelineProps {
 
 const ThinkingIndicator = memo(({ label }: { label: string }) => (
   <div className="flex justify-start">
-    <Tag className="i18n-no-translate !m-0 inline-flex items-center gap-1 rounded-full border-[#dbe5f5] bg-[#f8fbff] px-2 py-0.5 text-[11px] font-medium text-[#2f6ff7]">
+    <Tag className="!m-0 inline-flex items-center gap-1 rounded-full border-[#dbe5f5] bg-[#f8fbff] px-2 py-0.5 text-[11px] font-medium text-[#2f6ff7]">
       <LoadingOutlined className="text-[10px]" spin />
       <span>{label}</span>
     </Tag>
@@ -2312,11 +2304,7 @@ export const ModuleChatPane = ({
   readOnly = false,
   readOnlyNotice,
 }: ModuleChatPaneProps) => {
-  const { language, resolvedTheme } = useAppI18n();
-  const t = useCallback(
-    (value: string) => translateUiText(language, value),
-    [language],
-  );
+  const { resolvedTheme, t } = useAppI18n();
   const effectiveScope = useMemo<ChatScope>(
     () =>
       scope ??
@@ -2503,14 +2491,14 @@ export const ModuleChatPane = ({
           💡
         </span>{" "}
         <strong>{formatKeyboardShortcut(shortcutConfig.sendMessage)}</strong>{" "}
-        发送，
+        {t("发送，")}
         <strong>
           {formatKeyboardShortcut(shortcutConfig.insertNewline)}
         </strong>{" "}
-        换行。
+        {t("换行。")}
       </span>
     ),
-    [shortcutConfig],
+    [shortcutConfig, t],
   );
   const enabledModels = claudeStatusQuery.data?.allEnabledModels ?? [];
   const providerNameMap = useMemo(
