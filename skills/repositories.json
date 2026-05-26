@@ -1,5 +1,6 @@
 {
   "repositories": [
-    "https://github.com/anthropics/skills"
+    "https://github.com/anthropics/skills",
+    "https://github.com/SandAI-org/vidmuse-skills"
   ]
 }
