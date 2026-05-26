@@ -86,7 +86,7 @@ const resolveExecutionStatusTag = (
 };
 
 export const CronjobPage = () => {
-  const { t } = useAppI18n();
+  const { language, t } = useAppI18n();
   const queryClient = useQueryClient();
   const cronjobQuery = useQuery({
     queryKey: ['cronjobs'],
@@ -208,7 +208,7 @@ export const CronjobPage = () => {
                       ) : job.lastExecution.assistantMessage ? (
                         <Typography.Paragraph
                           className="!mb-0 !text-xs !text-slate-500"
-                          ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+                          ellipsis={{ rows: 2, expandable: true, symbol: t('展开') }}
                         >
                           {t('最近反馈：')}
                           {job.lastExecution.assistantMessage}

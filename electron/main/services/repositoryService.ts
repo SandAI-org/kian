@@ -50,10 +50,21 @@ interface CronJobExecutionLogItem {
     name?: string | null;
   } | null;
 }
+interface FileSnapshot {
+  size: number;
+  mtimeMs: number;
+}
+interface CronJobsWithLastExecutionCache {
+  cronJobFile: FileSnapshot | null;
+  logFile: FileSnapshot | null;
+  latestExecutionByJobId: Map<string, CronJobLastExecutionDTO>;
+}
 
 const nowISO = (): string => new Date().toISOString();
 const MAIN_AGENT_SCOPE_ID = "main-agent";
 const CRON_JOB_LOG_READ_CHUNK_BYTES = 256 * 1024;
+let cronJobsWithLastExecutionCache: CronJobsWithLastExecutionCache | null =
+  null;
 
 const ensureDir = async (dirPath: string): Promise<void> => {
   await fs.mkdir(dirPath, { recursive: true });
@@ -67,6 +78,29 @@ const pathExists = async (filePath: string): Promise<boolean> => {
     return false;
   }
 };
+
+const readFileSnapshot = async (
+  filePath: string,
+): Promise<FileSnapshot | null> => {
+  try {
+    const stats = await fs.stat(filePath);
+    return {
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const fileSnapshotsEqual = (
+  left: FileSnapshot | null,
+  right: FileSnapshot | null,
+): boolean =>
+  left?.size === right?.size && left?.mtimeMs === right?.mtimeMs;
 
 const readJson = async <T>(filePath: string, fallback: T): Promise<T> => {
   try {
@@ -2183,9 +2217,55 @@ const toCronJobLastExecution = (
   assistantMessage: execution.assistantMessage ?? null,
 });
 
+const cloneCronJobLastExecution = (
+  execution: CronJobLastExecutionDTO | null | undefined,
+): CronJobLastExecutionDTO | null =>
+  execution ? { ...execution } : null;
+
+const attachCronJobLastExecutions = (
+  jobs: CronJobDTO[],
+  latestExecutionByJobId: Map<string, CronJobLastExecutionDTO>,
+): CronJobDTO[] =>
+  jobs.map((job) => ({
+    ...job,
+    lastExecution: cloneCronJobLastExecution(
+      latestExecutionByJobId.get(job.id),
+    ),
+  }));
+
+const readCronJobHistorySnapshots = async (): Promise<{
+  cronJobFile: FileSnapshot | null;
+  logFile: FileSnapshot | null;
+}> => ({
+  cronJobFile: await readFileSnapshot(getCronJobPath()),
+  logFile: await readFileSnapshot(getCronJobLogPath()),
+});
+
 const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
   const jobs = await listCronJobDtos();
+  const initialSnapshots = await readCronJobHistorySnapshots();
+  if (
+    cronJobsWithLastExecutionCache &&
+    fileSnapshotsEqual(
+      cronJobsWithLastExecutionCache.cronJobFile,
+      initialSnapshots.cronJobFile,
+    ) &&
+    fileSnapshotsEqual(
+      cronJobsWithLastExecutionCache.logFile,
+      initialSnapshots.logFile,
+    )
+  ) {
+    return attachCronJobLastExecutions(
+      jobs,
+      cronJobsWithLastExecutionCache.latestExecutionByJobId,
+    );
+  }
+
   if (jobs.length === 0) {
+    cronJobsWithLastExecutionCache = {
+      ...initialSnapshots,
+      latestExecutionByJobId: new Map(),
+    };
     return jobs;
   }
 
@@ -2211,10 +2291,11 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
     return pending.size > 0;
   });
 
-  return jobs.map((job) => ({
-    ...job,
-    lastExecution: latestByJobId.get(job.id) ?? null,
-  }));
+  cronJobsWithLastExecutionCache = {
+    ...(await readCronJobHistorySnapshots()),
+    latestExecutionByJobId: new Map(latestByJobId),
+  };
+  return attachCronJobLastExecutions(jobs, latestByJobId);
 };
 
 const resolveCronJobTargetAgentName = async (
