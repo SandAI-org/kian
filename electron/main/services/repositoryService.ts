@@ -2206,6 +2206,26 @@ const cronJobExecutionMatchesJob = (
   return projectId === MAIN_AGENT_SCOPE_ID;
 };
 
+const cronJobExecutionMatchesFallbackJobId = (
+  execution: CronJobExecutionLogItem,
+  job: CronJobDTO,
+): boolean => {
+  if (!job.targetAgentId || execution.jobId !== job.id) {
+    return false;
+  }
+
+  const projectId =
+    typeof execution.project?.id === "string"
+      ? execution.project.id.trim()
+      : "";
+
+  return (
+    projectId === MAIN_AGENT_SCOPE_ID &&
+    (execution.cron ?? "").trim() === job.cron.trim() &&
+    (execution.content ?? "").trim() === job.content.trim()
+  );
+};
+
 const toCronJobLastExecution = (
   execution: CronJobExecutionLogItem,
 ): CronJobLastExecutionDTO => ({
@@ -2233,17 +2253,12 @@ const attachCronJobLastExecutions = (
     ),
   }));
 
-const readCronJobHistorySnapshots = async (): Promise<{
-  cronJobFile: FileSnapshot | null;
-  logFile: FileSnapshot | null;
-}> => ({
-  cronJobFile: await readFileSnapshot(getCronJobPath()),
-  logFile: await readFileSnapshot(getCronJobLogPath()),
-});
-
 const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
-  const jobs = await listCronJobDtos();
-  const initialSnapshots = await readCronJobHistorySnapshots();
+  const { jobs, cronJobFile } = await listCronJobDtosWithSnapshot();
+  const initialSnapshots = {
+    cronJobFile,
+    logFile: await readFileSnapshot(getCronJobLogPath()),
+  };
   if (
     cronJobsWithLastExecutionCache &&
     fileSnapshotsEqual(
@@ -2275,6 +2290,29 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
   await readCronJobExecutionLinesFromEnd((line) => {
     const execution = parseCronJobExecutionLogLine(line);
     if (!execution) return true;
+
+    const sameIdPendingJob = jobs.find(
+      (candidate) =>
+        pending.has(candidate.id) && candidate.id === execution.jobId,
+    );
+    if (
+      sameIdPendingJob &&
+      (cronJobExecutionMatchesJob(execution, sameIdPendingJob) ||
+        cronJobExecutionMatchesFallbackJobId(execution, sameIdPendingJob))
+    ) {
+      latestByJobId.set(sameIdPendingJob.id, toCronJobLastExecution(execution));
+      pending.delete(sameIdPendingJob.id);
+      return pending.size > 0;
+    }
+
+    const sameIdJob = jobs.find((candidate) => candidate.id === execution.jobId);
+    if (
+      sameIdJob &&
+      !pending.has(sameIdJob.id) &&
+      cronJobExecutionMatchesFallbackJobId(execution, sameIdJob)
+    ) {
+      return true;
+    }
 
     const candidates = jobs.filter(
       (candidate) =>
@@ -2333,6 +2371,20 @@ const toCronJobDto = async (
 const listCronJobDtos = async (): Promise<CronJobDTO[]> => {
   const rows = await readCronJobItems();
   return Promise.all(rows.map((item, index) => toCronJobDto(item, index)));
+};
+
+const listCronJobDtosWithSnapshot = async (): Promise<{
+  jobs: CronJobDTO[];
+  cronJobFile: FileSnapshot | null;
+}> => {
+  while (true) {
+    const before = await readFileSnapshot(getCronJobPath());
+    const jobs = await listCronJobDtos();
+    const after = await readFileSnapshot(getCronJobPath());
+    if (fileSnapshotsEqual(before, after)) {
+      return { jobs, cronJobFile: after };
+    }
+  }
 };
 
 const readProjectMeta = async (projectId: string): Promise<ProjectMetaFile> => {

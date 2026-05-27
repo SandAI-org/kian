@@ -295,6 +295,118 @@ describe("repositoryService cronjob", () => {
     });
   });
 
+  it("matches fallback main-agent executions by job id when the target agent is missing", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+            targetAgentId: "deleted-agent",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      projectId: "main-agent",
+      projectName: "主 Agent",
+      sessionId: "session-main",
+      assistantMessage: "日报已整理",
+    });
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0]).toMatchObject({
+      id: "cronjob-1",
+      targetAgentId: "deleted-agent",
+      targetAgentName: null,
+      lastExecution: {
+        executedAt: "2026-05-21T10:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-main",
+        assistantMessage: "日报已整理",
+      },
+    });
+  });
+
+  it("does not reuse fallback target-agent executions for an identical main-agent job", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+          },
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+            targetAgentId: "deleted-agent",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T09:59:00.000Z",
+      jobId: "cronjob-2",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      projectId: "main-agent",
+      projectName: "主 Agent",
+      sessionId: "session-old-fallback",
+      assistantMessage: "旧 fallback 结果",
+    });
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:00:00.000Z",
+      jobId: "cronjob-2",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      projectId: "main-agent",
+      projectName: "主 Agent",
+      sessionId: "session-fallback",
+      assistantMessage: "fallback 结果",
+    });
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0].lastExecution).toBeNull();
+    expect(jobs[1]).toMatchObject({
+      id: "cronjob-2",
+      targetAgentId: "deleted-agent",
+      lastExecution: {
+        executedAt: "2026-05-21T10:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-fallback",
+        assistantMessage: "fallback 结果",
+      },
+    });
+  });
+
   it("uses execution job IDs to disambiguate identical cron jobs", async () => {
     const { repositoryService } =
       await import("../../electron/main/services/repositoryService");
@@ -531,6 +643,81 @@ describe("repositoryService cronjob", () => {
         status: "dispatched",
         sessionId: "session-report",
         assistantMessage: "日报已生成",
+      },
+    });
+  });
+
+  it("does not cache cron jobs against a snapshot changed during job reading", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+    const cronJobPath = path.join(tempRoot, "cronjob.json");
+
+    await fs.writeFile(
+      cronJobPath,
+      JSON.stringify(
+        [
+          {
+            cron: "0 9 * * *",
+            content: "旧任务",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T11:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 9 * * *",
+      content: "新任务内容明显更长",
+      status: "dispatched",
+      sessionId: "session-report",
+      assistantMessage: "新任务已完成",
+    });
+
+    const originalReadFile = fs.readFile.bind(fs);
+    const originalWriteFile = fs.writeFile.bind(fs);
+    let replacedDuringRead = false;
+    const readSpy = vi.spyOn(fs, "readFile").mockImplementation(
+      async (...args: Parameters<typeof fs.readFile>) => {
+        const [filePath] = args;
+        if (!replacedDuringRead && String(filePath) === cronJobPath) {
+          const oldContent = await originalReadFile(...args);
+          replacedDuringRead = true;
+          await originalWriteFile(
+            cronJobPath,
+            JSON.stringify(
+              [
+                {
+                  cron: "0 9 * * *",
+                  content: "新任务内容明显更长",
+                  status: "active",
+                },
+              ],
+              null,
+              2,
+            ),
+            "utf8",
+          );
+          return oldContent;
+        }
+        return originalReadFile(...args);
+      },
+    );
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+    readSpy.mockRestore();
+
+    expect(jobs[0]).toMatchObject({
+      id: "cronjob-1",
+      content: "新任务内容明显更长",
+      lastExecution: {
+        executedAt: "2026-05-21T11:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-report",
+        assistantMessage: "新任务已完成",
       },
     });
   });
