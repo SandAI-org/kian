@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SearchOutlined,
   WechatOutlined,
 } from "@ant-design/icons";
@@ -982,6 +983,8 @@ export const SettingsPage = () => {
   const [updateDebugVersion, setUpdateDebugVersion] = useState("9.9.9");
   const [updateDebugReleaseNotes, setUpdateDebugReleaseNotes] = useState("");
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+  const [workspaceRootRestartPending, setWorkspaceRootRestartPending] =
+    useState(false);
   const autoSaveInFlightRef = useRef(false);
   const aboutAutoCheckTriggeredRef = useRef(false);
   const currentWeixinQrSessionKeyRef = useRef<string | null>(null);
@@ -1202,6 +1205,9 @@ export const SettingsPage = () => {
   });
   const installUpdateMutation = useMutation({
     mutationFn: () => api.update.quitAndInstall(),
+  });
+  const restartAppMutation = useMutation({
+    mutationFn: () => api.window.restartApp(),
   });
   const debugUpdateMutation = useMutation({
     mutationFn: (payload: {
@@ -1442,6 +1448,9 @@ export const SettingsPage = () => {
       themeMode: generalConfigQuery.data.themeMode,
       linkOpenMode: generalConfigQuery.data.linkOpenMode,
     });
+    if (generalConfigQuery.data.workspaceRootRestartRequired) {
+      setWorkspaceRootRestartPending(true);
+    }
   }, [generalForm, generalConfigQuery.data]);
 
   useEffect(() => {
@@ -1775,8 +1784,15 @@ export const SettingsPage = () => {
   );
 
   const generalConfig = generalConfigQuery.data;
+  const workspaceRootDirty = generalConfig
+    ? String(workspaceRootValue ?? "") !== generalConfig.workspaceRoot
+    : false;
+  const showWorkspaceRootRestartButton =
+    workspaceRootDirty ||
+    workspaceRootRestartPending ||
+    Boolean(generalConfig?.workspaceRootRestartRequired);
   const generalDirty = generalConfig
-    ? String(workspaceRootValue ?? "") !== generalConfig.workspaceRoot ||
+    ? workspaceRootDirty ||
       languageValue !== generalConfig.language ||
       themeModeValue !== generalConfig.themeMode ||
       linkOpenModeValue !== generalConfig.linkOpenMode
@@ -1893,9 +1909,9 @@ export const SettingsPage = () => {
     (account) => account.accountId === activeWeixinAccountId,
   );
 
-  const handleAutoSaveChanges = useCallback(async () => {
-    if (autoSaveInFlightRef.current) return;
-    if (!hasUnsavedChanges) return;
+  const handleAutoSaveChanges = useCallback(async (): Promise<boolean> => {
+    if (autoSaveInFlightRef.current) return false;
+    if (!hasUnsavedChanges) return true;
     autoSaveInFlightRef.current = true;
     setAutoSaveError(null);
 
@@ -1936,6 +1952,9 @@ export const SettingsPage = () => {
           linkOpenMode:
             values.linkOpenMode === "system" ? "system" : "builtin",
         });
+        if (workspaceRootDirty) {
+          setWorkspaceRootRestartPending(true);
+        }
       },
       generalConfigQuery.refetch,
     );
@@ -2080,14 +2099,16 @@ export const SettingsPage = () => {
     if (firstSaveError) {
       setAutoSaveError(firstSaveError);
       message.error(firstSaveError);
-      return;
+      return false;
     }
 
     setAutoSaveError(null);
+    return true;
   }, [
     hasUnsavedChanges,
     generalDirty,
     generalForm,
+    workspaceRootDirty,
     generalConfigQuery.refetch,
     saveGeneralMutation.mutateAsync,
     shortcutDirty,
@@ -2255,6 +2276,19 @@ export const SettingsPage = () => {
       message.error(error instanceof Error ? error.message : t("安装更新失败"));
     }
   }, [installUpdateMutation, t]);
+
+  const handleRestartApp = useCallback(async () => {
+    try {
+      if (hasUnsavedChanges) {
+        const saved = await handleAutoSaveChanges();
+        if (!saved) return;
+      }
+      await restartAppMutation.mutateAsync();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("重启应用失败"));
+    }
+  }, [handleAutoSaveChanges, hasUnsavedChanges, restartAppMutation, t]);
+
   const updateReleaseNotes =
     resolvedUpdateStatus?.releaseNotes?.trim() || t("暂无更新说明");
 
@@ -2620,14 +2654,38 @@ export const SettingsPage = () => {
                       </Form.Item>
 
                       <Form.Item
-                        name="workspaceRoot"
                         label={t("数据存放目录")}
                         extra={t("修改后需要重启应用才能生效。默认：~/KianWorkspace")}
-                        rules={[
-                          { required: true, message: t("数据存放目录不能为空") },
-                        ]}
+                        required
                       >
-                        <Input placeholder="~/KianWorkspace" />
+                        <div className="flex items-start gap-2">
+                          <Form.Item
+                            name="workspaceRoot"
+                            className="!mb-0 min-w-0 flex-1"
+                            rules={[
+                              {
+                                required: true,
+                                message: t("数据存放目录不能为空"),
+                              },
+                            ]}
+                          >
+                            <Input placeholder="~/KianWorkspace" />
+                          </Form.Item>
+                          {showWorkspaceRootRestartButton ? (
+                            <Button
+                              type="primary"
+                              icon={<ReloadOutlined />}
+                              loading={
+                                restartAppMutation.isPending || isSavingAny
+                              }
+                              disabled={isSavingAny}
+                              className="h-8 shrink-0 rounded-md"
+                              onClick={handleRestartApp}
+                            >
+                              {t("重启应用")}
+                            </Button>
+                          ) : null}
+                        </div>
                       </Form.Item>
 
                       <Form.Item

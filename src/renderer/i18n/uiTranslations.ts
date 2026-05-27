@@ -61,6 +61,8 @@ const EN_US_EXACT: Record<string, string> = {
   "修改后需要重启应用才能生效。默认：~/KianWorkspace":
     "Restart the app after changing this. Default: ~/KianWorkspace",
   "数据存放目录不能为空": "Data directory is required",
+  "重启应用": "Restart App",
+  "重启应用失败": "Failed to restart app",
   "打开链接的方式": "Open Links With",
   "选择应用内打开，或交给系统默认浏览器处理。":
     "Choose the built-in browser or your system default browser.",
@@ -491,6 +493,8 @@ const KO_KR_EXACT: Record<string, string> = {
   "修改后需要重启应用才能生效。默认：~/KianWorkspace":
     "변경 후 앱을 다시 시작해야 적용됩니다. 기본값: ~/KianWorkspace",
   "数据存放目录不能为空": "데이터 디렉터리를 입력하세요",
+  "重启应用": "앱 다시 시작",
+  "重启应用失败": "앱 다시 시작 실패",
   "打开链接的方式": "링크 열기 방식",
   "选择应用内打开，或交给系统默认浏览器处理。":
     "앱 내 브라우저 또는 시스템 기본 브라우저를 선택하세요.",
@@ -739,6 +743,8 @@ const JA_JP_EXACT: Record<string, string> = {
   "修改后需要重启应用才能生效。默认：~/KianWorkspace":
     "変更後はアプリの再起動が必要です。デフォルト: ~/KianWorkspace",
   "数据存放目录不能为空": "データ保存先は必須です",
+  "重启应用": "アプリを再起動",
+  "重启应用失败": "アプリの再起動に失敗しました",
   "打开链接的方式": "リンクの開き方",
   "选择应用内打开，或交给系统默认浏览器处理。":
     "アプリ内ブラウザまたはシステム既定のブラウザを選択します。",

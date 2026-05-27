@@ -146,6 +146,46 @@ describe("chatService queue orchestration", () => {
         type: "request_started",
       }),
     );
+    expect(state.emitStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: ack.requestId,
+        sessionId: "session-1",
+        type: "assistant_done",
+        fullText: "处理完成",
+      }),
+    );
+  });
+
+  it("finishes the renderer stream when the agent returns without stream events", async () => {
+    state.agentSend.mockReset().mockResolvedValue({
+      assistantMessage: "模型尚未配置。请先在设置中录入凭证并启用模型。",
+      toolActions: [],
+    });
+    const { chatService } = await import("../../electron/main/services/chatService");
+
+    const ack = await chatService.sendFromRenderer({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-1",
+      requestId: "req-no-model",
+      message: "翻译一下",
+    });
+
+    expect(ack).toMatchObject({
+      queued: false,
+      requestId: "req-no-model",
+    });
+    await vi.waitFor(() => {
+      expect(state.appendMessage).toHaveBeenCalledTimes(2);
+    });
+    expect(state.emitStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "req-no-model",
+        sessionId: "session-1",
+        type: "assistant_done",
+        fullText: "模型尚未配置。请先在设置中录入凭证并启用模型。",
+      }),
+    );
   });
 
   it("interrupts only the targeted queued request and keeps later queued items", async () => {

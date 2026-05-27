@@ -1209,6 +1209,15 @@ app
       win?.hide();
       return { ok: true, data: true };
     });
+    ipcMain.handle('window:restartApp', (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      win?.hide();
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 100);
+      return { ok: true, data: true };
+    });
     ipcMain.handle('window:dismissQuickLauncher', (event) => {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (win && quickLauncherWindow === win && !win.isDestroyed()) {

@@ -551,6 +551,7 @@ const api = {
   window: {
     close: () => invoke<boolean>("window:close"),
     hide: () => invoke<boolean>("window:hide"),
+    restartApp: () => invoke<boolean>("window:restartApp"),
     dismissQuickLauncher: () => invoke<boolean>("window:dismissQuickLauncher"),
     toggleMaximize: () => invoke<boolean>("window:toggleMaximize"),
     openUrl: (url: string) => invoke<boolean>("window:openUrl", { url }),

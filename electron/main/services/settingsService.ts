@@ -34,6 +34,7 @@ import { normalizeUtcTimestamp } from "@shared/utils/dateTime";
 import { normalizeShortcutConfig } from "@shared/utils/shortcuts";
 import { app } from "electron";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { chatChannelOwnerDiscoveryService } from "./chatChannelOwnerDiscoveryService";
 import { FAL_SUPPORTED_MODELS } from "./modelProviders/falProvider";
@@ -425,9 +426,13 @@ const normalizeGeneralConfig = (
     : DEFAULT_GENERAL_CONFIG_FLAGS.themeMode;
   const linkOpenMode =
     raw.linkOpenMode === "system" ? "system" : DEFAULT_GENERAL_CONFIG_FLAGS.linkOpenMode;
+  const resolvedWorkspaceRoot = path.resolve(
+    workspaceRoot.replace(/^~/, os.homedir()),
+  );
 
   return {
     workspaceRoot,
+    workspaceRootRestartRequired: resolvedWorkspaceRoot !== WORKSPACE_ROOT,
     language,
     themeMode,
     linkOpenMode,

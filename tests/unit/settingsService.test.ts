@@ -293,6 +293,7 @@ describe("settingsService.getAgentSystemPrompt", () => {
 
     await expect(settingsService.getGeneralConfig()).resolves.toEqual({
       workspaceRoot: "/tmp/legacy-workspace",
+      workspaceRootRestartRequired: true,
       language: "zh-CN",
       themeMode: "system",
       linkOpenMode: "builtin",

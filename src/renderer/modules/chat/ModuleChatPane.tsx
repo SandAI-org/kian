@@ -2909,7 +2909,7 @@ export const ModuleChatPane = ({
     onError: (error) => {
       message.error(error instanceof Error ? error.message : t("打断失败"));
     },
-    onSuccess: (_result, variables) => {
+    onSuccess: (interrupted, variables) => {
       const nextQueuedPayloads = variables.requestId
         ? queuedSendPayloadsRef.current.filter(
             (item) => item.requestId !== variables.requestId,
@@ -2924,6 +2924,15 @@ export const ModuleChatPane = ({
             ? (prev ?? []).filter((item) => item.requestId !== variables.requestId)
             : [],
       );
+      if (!interrupted && variables.requestId) {
+        useChatStreamStore
+          .getState()
+          .releaseRequest(variables.sessionId, variables.requestId);
+        if (requestRef.current === variables.requestId) {
+          requestRef.current = undefined;
+        }
+        clearSessionStream(variables.sessionId);
+      }
     },
   });
 

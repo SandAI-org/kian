@@ -422,6 +422,7 @@ export const api = {
   window: {
     close: async () => unwrap(await window.api.window.close()),
     hide: async () => unwrap(await window.api.window.hide()),
+    restartApp: async () => unwrap(await window.api.window.restartApp()),
     dismissQuickLauncher: async () => unwrap(await window.api.window.dismissQuickLauncher()),
     toggleMaximize: async (): Promise<boolean> => unwrap(await window.api.window.toggleMaximize()),
     openUrl: async (url: string): Promise<boolean> => unwrap(await window.api.window.openUrl(url)),

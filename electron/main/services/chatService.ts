@@ -404,8 +404,12 @@ const processQueuedMessage = async (
   await maybeSetOptimisticSessionTitle(payload);
 
   const timelineState = createChatTurnTimelineState();
+  let didEmitTerminalStreamEvent = false;
 
   const streamProxy = (event: ChatStreamEvent): void => {
+    if (event.type === "assistant_done" || event.type === "error") {
+      didEmitTerminalStreamEvent = true;
+    }
     emitStreamEvent(event);
     onStream?.(event);
     if (event.requestId !== (payload.requestId ?? event.requestId)) {
@@ -431,6 +435,19 @@ const processQueuedMessage = async (
       assistantMessage: errorMessage,
       toolActions: [],
     };
+  }
+
+  if (!didEmitTerminalStreamEvent) {
+    const assistantDoneEvent: ChatStreamEvent = {
+      requestId: payload.requestId ?? "",
+      sessionId: payload.sessionId,
+      scope: payload.scope,
+      module: payload.module,
+      createdAt: new Date().toISOString(),
+      type: "assistant_done",
+      fullText: result.assistantMessage,
+    };
+    streamProxy(assistantDoneEvent);
   }
 
   const persistedMessageCount = await persistChatTurnTimeline({

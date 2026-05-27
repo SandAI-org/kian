@@ -618,6 +618,7 @@ export type LinkOpenMode = 'builtin' | 'system';
 
 export interface GeneralConfigDTO {
   workspaceRoot: string;
+  workspaceRootRestartRequired?: boolean;
   language: AppLanguage;
   themeMode: AppThemeMode;
   linkOpenMode: LinkOpenMode;
