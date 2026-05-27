@@ -98,7 +98,7 @@ describe("cronjobService", () => {
       module: "docs",
       kind: "normal",
       hidden: true,
-      title: "Agent 会话",
+      title: "",
       sdkSessionId: null,
       createdAt: "2026-03-10T09:00:00.000Z",
       updatedAt: "2026-03-10T09:00:00.000Z",
@@ -122,7 +122,7 @@ describe("cronjobService", () => {
         projectId: "agent-a",
       },
       module: "docs",
-      title: "Agent 会话",
+      title: "",
       hidden: true,
     });
     expect(chatService.send).toHaveBeenCalledWith(
@@ -186,7 +186,7 @@ describe("cronjobService", () => {
       module: "main",
       kind: "normal",
       hidden: true,
-      title: "主智能体会话",
+      title: "",
       sdkSessionId: null,
       createdAt: "2026-03-10T09:00:00.000Z",
       updatedAt: "2026-03-10T09:00:00.000Z",
@@ -209,7 +209,7 @@ describe("cronjobService", () => {
         type: "main",
       },
       module: "main",
-      title: "主智能体会话",
+      title: "",
       hidden: true,
     });
     expect(chatService.send).toHaveBeenCalledWith(

@@ -313,7 +313,7 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
   const session = await repositoryService.createChatSession({
     scope: target.scope,
     module: target.defaultModule,
-    title: target.scope.type === 'main' ? '主智能体会话' : 'Agent 会话',
+    title: '',
     hidden: true
   });
   const module = session.module ?? target.defaultModule;
