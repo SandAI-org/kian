@@ -2292,7 +2292,7 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
   });
 
   cronJobsWithLastExecutionCache = {
-    ...(await readCronJobHistorySnapshots()),
+    ...initialSnapshots,
     latestExecutionByJobId: new Map(latestByJobId),
   };
   return attachCronJobLastExecutions(jobs, latestByJobId);

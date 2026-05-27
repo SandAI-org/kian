@@ -471,6 +471,70 @@ describe("repositoryService cronjob", () => {
     });
   });
 
+  it("does not cache a log snapshot appended during history scanning", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 9 * * *",
+            content: "生成日报",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:00:00.000Z",
+      jobId: "cronjob-2",
+      cron: "0 10 * * *",
+      content: "无关任务",
+      status: "dispatched",
+      sessionId: "session-other",
+    });
+
+    const originalOpen = fs.open.bind(fs);
+    let appendedDuringScan = false;
+    const openSpy = vi.spyOn(fs, "open").mockImplementation(
+      async (...args: Parameters<typeof fs.open>) => {
+        if (!appendedDuringScan) {
+          appendedDuringScan = true;
+          await repositoryService.logCronJobExecution({
+            executedAt: "2026-05-21T11:00:00.000Z",
+            jobId: "cronjob-1",
+            cron: "0 9 * * *",
+            content: "生成日报",
+            status: "dispatched",
+            sessionId: "session-report",
+            assistantMessage: "日报已生成",
+          });
+        }
+        return originalOpen(...args);
+      },
+    );
+
+    const firstResult = await repositoryService.listCronJobsWithLastExecution();
+    openSpy.mockRestore();
+
+    expect(firstResult[0].lastExecution).toBeNull();
+    const refreshedResult =
+      await repositoryService.listCronJobsWithLastExecution();
+    expect(refreshedResult[0]).toMatchObject({
+      lastExecution: {
+        executedAt: "2026-05-21T11:00:00.000Z",
+        status: "dispatched",
+        sessionId: "session-report",
+        assistantMessage: "日报已生成",
+      },
+    });
+  });
+
   it("preserves multibyte cron log lines split across read chunks", async () => {
     const { repositoryService } =
       await import("../../electron/main/services/repositoryService");
