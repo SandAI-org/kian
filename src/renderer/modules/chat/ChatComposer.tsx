@@ -615,16 +615,18 @@ export const ChatComposer = ({
             onChange={handleSlateChange}
             onSelectionChange={refreshMentionTarget}
           >
-            <Editable
-              data-chat-composer-editor="true"
-              renderElement={renderElement}
-              placeholder={placeholder}
-              className="chat-composer-editor min-h-[84px] outline-none"
-              onCompositionStart={onCompositionStart}
-              onCompositionEnd={onCompositionEnd}
-              onKeyDown={handleEditableKeyDown}
-              onPaste={onInputPaste}
-            />
+            <ScrollArea className="min-h-[84px] max-h-40 pr-2">
+              <Editable
+                data-chat-composer-editor="true"
+                renderElement={renderElement}
+                placeholder={placeholder}
+                className="chat-composer-editor min-h-[84px] outline-none"
+                onCompositionStart={onCompositionStart}
+                onCompositionEnd={onCompositionEnd}
+                onKeyDown={handleEditableKeyDown}
+                onPaste={onInputPaste}
+              />
+            </ScrollArea>
           </Slate>
           {mentionSuggestionsOpen && mentionPopupPosition ? (
             <div
