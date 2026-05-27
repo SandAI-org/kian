@@ -3543,9 +3543,6 @@ export const ModuleChatPane = ({
     const sessionId = currentSessionId;
     if (!sessionId || interruptMutation.isPending) return;
     const requestId = requestRef.current ?? activeRequestId;
-    if (!requestId) {
-      if (queuedComposerMessages.length === 0) return;
-    }
     interruptMutation.mutate({
       sessionId,
       requestId,

@@ -151,7 +151,8 @@ export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
           let nextInProgress = current.streamingInProgress;
           let nextThinkingActive = current.streamingThinkingActive;
           let nextError = current.streamError;
-          let nextRequestId = current.activeRequestId;
+          let nextRequestId: string | undefined =
+            current.activeRequestId ?? event.requestId;
           let nextCounter = current.blockCounter;
           const eventCreatedAt = event.createdAt ?? new Date().toISOString();
           const createStreamingBlockKey = (prefix: string): string => {
