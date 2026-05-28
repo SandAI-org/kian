@@ -328,15 +328,11 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
       sessionId: session.id,
       requestId: randomUUID(),
       message
-    },
-    (streamEvent) => {
-      assistantMirrorStreamer.pushEvent(streamEvent);
     }
   );
 
   void assistantMirrorStreamer.finalize({
-    fallbackAssistantMessage: result.assistantMessage,
-    toolActions: result.toolActions
+    fallbackAssistantMessage: result.assistantMessage
   });
 
   logger.info('Cron job dispatched', {

@@ -106,7 +106,7 @@ describe("cronjobService", () => {
     );
     vi.mocked(chatService.send).mockResolvedValue({
       assistantMessage: "已完成",
-      toolActions: [],
+      toolActions: ["调用了工具"],
     });
 
     cronjobService.start();
@@ -135,8 +135,11 @@ describe("cronjobService", () => {
         sessionId: "session-agent-a",
         message: "整理日报",
       }),
-      expect.any(Function),
     );
+    expect(assistantMirrorStreamer.pushEvent).not.toHaveBeenCalled();
+    expect(assistantMirrorStreamer.finalize).toHaveBeenCalledWith({
+      fallbackAssistantMessage: "已完成",
+    });
     expect(repositoryService.logCronJobExecution).toHaveBeenCalledWith(
       expect.objectContaining({
         jobId: "cronjob-1",
@@ -211,8 +214,11 @@ describe("cronjobService", () => {
         sessionId: "session-main",
         message: "汇总看板",
       }),
-      expect.any(Function),
     );
+    expect(assistantMirrorStreamer.pushEvent).not.toHaveBeenCalled();
+    expect(assistantMirrorStreamer.finalize).toHaveBeenCalledWith({
+      fallbackAssistantMessage: "已完成",
+    });
     expect(repositoryService.logCronJobExecution).toHaveBeenCalledWith(
       expect.objectContaining({
         jobId: "cronjob-1",
