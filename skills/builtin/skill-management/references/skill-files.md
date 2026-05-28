@@ -60,6 +60,10 @@ Each installed Skill metadata file has this shape:
 }
 ```
 
+All fields shown above are required for installed Skills. The Skill list reads `.skill.json`
+for identity and visibility state; a directory with only `SKILL.md`, `config.json`, or a
+minimal `.skill.json` containing only `name`, `description`, or `version` is incomplete.
+
 Builtin skills use:
 
 ```json
@@ -67,6 +71,10 @@ Builtin skills use:
   "repositoryUrl": "builtin://kian"
 }
 ```
+
+For a Skill created directly from local instructions instead of a GitHub repository, still
+write the full installed metadata. Use a stable local repository URL such as `local://kian`
+and an `id` in the form `local://kian::<skill-path>`.
 
 ## Install Rules
 
@@ -79,6 +87,16 @@ Builtin skills use:
 7. Copy the source Skill directory into the installed directory, but do not copy a source `.skill.json`.
 8. Write the installed `.skill.json` with the normalized repository URL, normalized `skillPath`, and resolved visibility.
 9. Add the normalized repository URL to `<GlobalWorkspaceRoot>/.kian/skills.json` if it is not already present.
+
+## Manual Creation And Repair
+
+- If a user asks to create a Skill directly in the installed directory, create both `SKILL.md`
+  and the installed `.skill.json`.
+- Do not create `config.json`; it is not the installed Skill manifest.
+- Set `mainAgentVisible` and `projectAgentVisible` explicitly. Default both to `true` unless
+  the user asked for a narrower scope.
+- Use an ISO timestamp for `installedAt`.
+- After writing the files, parse `.skill.json` and verify the required fields are present.
 
 ## Default Visibility
 

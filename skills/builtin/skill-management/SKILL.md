@@ -28,10 +28,11 @@ Use this skill when the task is to manage Skills for Kian itself rather than to 
 4. Find candidate skill directories by recursively locating `SKILL.md`.
 5. If the repository contains exactly one Skill and the user did not specify a path, install that Skill directly.
 6. If the repository contains multiple Skills and the target is ambiguous, list the candidates and ask the user which one to install.
-7. Preserve existing `installedAt`, `mainAgentVisible`, and `projectAgentVisible` values when reinstalling the same Skill.
-8. If the user asks to enable or disable a Skill only for the current agent, change only the flag for the current scope and preserve the other one.
-9. If the user asks to enable or disable a Skill for all agents, update both visibility flags explicitly.
-10. Never uninstall a builtin Skill.
+7. When creating or repairing a Skill directly on disk, always write the full installed `.skill.json` metadata from the reference schema. Do not write `config.json`, and do not use a minimal manifest with only `name`, `description`, or `version`.
+8. Preserve existing `installedAt`, `mainAgentVisible`, and `projectAgentVisible` values when reinstalling the same Skill.
+9. If the user asks to enable or disable a Skill only for the current agent, change only the flag for the current scope and preserve the other one.
+10. If the user asks to enable or disable a Skill for all agents, update both visibility flags explicitly.
+11. Never uninstall a builtin Skill.
 
 ## Scope Mapping
 
