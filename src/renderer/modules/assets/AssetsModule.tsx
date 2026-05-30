@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import type { MouseEvent, RefObject } from 'react';
 import { Input, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { SearchOutlined } from '@ant-design/icons';
@@ -103,18 +103,52 @@ interface AssetPreviewProps {
 const AssetPreview = ({ asset, previewUrl }: AssetPreviewProps) => {
   const { t } = useAppI18n();
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const hoverProgressRef = useRef(0);
   const isPreviewingRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState({ current: 0, duration: 0 });
 
-  const startHoverPreview = (): void => {
+  const updateHoverProgress = (event: MouseEvent<HTMLElement>): void => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    hoverProgressRef.current = Math.min(Math.max((event.clientX - bounds.left) / bounds.width, 0), 1);
+  };
+
+  const seekPreview = (progress = hoverProgressRef.current): void => {
     if (!mediaRef.current) return;
-    isPreviewingRef.current = true;
-    setIsPlaying(true);
-    void mediaRef.current.play().catch(() => setIsPlaying(false));
+    const duration = mediaRef.current.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+
+    const current = duration * progress;
+    mediaRef.current.currentTime = current;
+    setPreviewTime({ current, duration });
+  };
+
+  const startHoverPreview = (event: MouseEvent<HTMLElement>): void => {
+    if (!mediaRef.current) return;
+    updateHoverProgress(event);
+    hoverTimerRef.current = window.setTimeout(() => {
+      if (!mediaRef.current) return;
+      hoverTimerRef.current = null;
+      isPreviewingRef.current = true;
+      setIsPlaying(true);
+      seekPreview();
+      void mediaRef.current.play().catch(() => setIsPlaying(false));
+    }, 1000);
+  };
+
+  const updatePreviewProgress = (event: MouseEvent<HTMLElement>): void => {
+    updateHoverProgress(event);
+    if (isPreviewingRef.current) {
+      seekPreview();
+    }
   };
 
   const stopPreview = (): void => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
     isPreviewingRef.current = false;
     if (!mediaRef.current) return;
     setIsPlaying(false);
@@ -146,6 +180,7 @@ const AssetPreview = ({ asset, previewUrl }: AssetPreviewProps) => {
     onLoadedMetadata: syncPreviewTime,
     onTimeUpdate: syncPreviewTime,
     onMouseEnter: startHoverPreview,
+    onMouseMove: updatePreviewProgress,
     onMouseLeave: stopPreview
   };
 
@@ -185,6 +220,7 @@ const AssetPreview = ({ asset, previewUrl }: AssetPreviewProps) => {
       <div
         className="asset-preview-fallback relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden text-[var(--muted)]"
         onMouseEnter={startHoverPreview}
+        onMouseMove={updatePreviewProgress}
         onMouseLeave={stopPreview}
       >
         <audio
