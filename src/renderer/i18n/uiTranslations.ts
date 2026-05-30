@@ -217,6 +217,8 @@ const EN_US_EXACT: Record<string, string> = {
   "所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“":
     "All image, audio, and video assets will appear here. Try asking me to generate a beautiful sunset photo.",
   "点击使用系统预览打开": "Click to open with the system preview",
+  "悬停播放预览，点击使用系统预览打开":
+    "Hover to play the preview. Click to open with the system preview",
   "素材路径不可用，无法打开系统预览":
     "The asset path is unavailable and cannot be opened in the system preview",
   "打开系统预览失败": "Failed to open the system preview",
@@ -229,6 +231,10 @@ const EN_US_EXACT: Record<string, string> = {
   "文件列表": "File List",
   "展开文件列表": "Expand file list",
   "折叠文件列表": "Collapse file list",
+  "展开左侧边栏": "Expand left sidebar",
+  "折叠左侧边栏": "Collapse left sidebar",
+  "展开右侧对话边栏": "Expand right chat sidebar",
+  "折叠右侧对话边栏": "Collapse right chat sidebar",
   "对话历史": "Chat History",
   "修改对话名称失败": "Failed to rename chat",
   "删除对话": "Delete chat",
@@ -601,6 +607,10 @@ const KO_KR_EXACT: Record<string, string> = {
   "暂无素材": "아직 소재가 없습니다",
   "对话列表": "대화 목록",
   "文件列表": "파일 목록",
+  "展开左侧边栏": "왼쪽 사이드바 펼치기",
+  "折叠左侧边栏": "왼쪽 사이드바 접기",
+  "展开右侧对话边栏": "오른쪽 대화 사이드바 펼치기",
+  "折叠右侧对话边栏": "오른쪽 대화 사이드바 접기",
   "对话历史": "대화 기록",
   "发送失败": "전송 실패",
   "打断失败": "중단 실패",
@@ -852,6 +862,10 @@ const JA_JP_EXACT: Record<string, string> = {
   "暂无素材": "まだアセットはありません",
   "对话列表": "会話一覧",
   "文件列表": "ファイル一覧",
+  "展开左侧边栏": "左サイドバーを展開",
+  "折叠左侧边栏": "左サイドバーを折りたたむ",
+  "展开右侧对话边栏": "右の会話サイドバーを展開",
+  "折叠右侧对话边栏": "右の会話サイドバーを折りたたむ",
   "对话历史": "会話履歴",
   "发送失败": "送信に失敗しました",
   "打断失败": "中断に失敗しました",
@@ -1894,6 +1908,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
   "添加 MCP 服务失败": "MCP 서비스 추가 실패",
     "渠道名称": "채널 이름",
     "点击使用系统预览打开": "클릭하여 시스템 미리보기로 열기",
+    "悬停播放预览，点击使用系统预览打开":
+      "마우스를 올리면 미리보기를 재생하고, 클릭하면 시스템 미리보기로 엽니다",
     "状态：": "상태:",
     "子智能体": "하위 에이전트",
     "用户": "사용자",
@@ -2659,6 +2675,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "渠道名称": "チャネル名",
     "点击使用系统预览打开":
       "クリックしてシステムプレビューで開く",
+    "悬停播放预览，点击使用系统预览打开":
+      "ホバーでプレビューを再生し、クリックでシステムプレビューを開きます",
     "状态：": "状態:",
     "子智能体": "サブエージェント",
     "用户": "ユーザー",

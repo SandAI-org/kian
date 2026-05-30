@@ -1,4 +1,5 @@
 import { SplitPane } from "@renderer/components/SplitPane";
+import { WorkspacePaneControls } from "@renderer/components/WorkspacePaneControls";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { AppModule } from "@renderer/modules/app/AppModule";
 import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
@@ -35,6 +36,9 @@ export const MainAgentPage = () => {
   const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
   const requestedModule = searchParams.get("module");
   const [mode, setMode] = useState<AgentMode>("chat");
+  const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
+  const [docsSidebarCollapsed, setDocsSidebarCollapsed] = useState(false);
+  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(
     undefined,
   );
@@ -94,6 +98,22 @@ export const MainAgentPage = () => {
     },
     [queryClient],
   );
+  const toggleLeftPane = useCallback(() => {
+    if (mode === "chat") {
+      setChatSidebarCollapsed((current) => !current);
+      return;
+    }
+
+    if (mode === "docs") {
+      setDocsSidebarCollapsed((current) => !current);
+      return;
+    }
+  }, [mode]);
+
+  const toggleRightPane = useCallback(() => {
+    setRightPaneCollapsed((current) => !current);
+  }, []);
+
   // Listen for CMD+N new session event
   useEffect(() => {
     const handler = () => {
@@ -150,9 +170,22 @@ export const MainAgentPage = () => {
     <div className="flex h-full min-h-0 flex-col px-5 pt-3 pb-5">
       {/* Header with centered switch tab — matching project module switcher style */}
       <div
-        className="drag-region mb-3 flex justify-center"
+        className="drag-region mb-3 grid grid-cols-[1fr_auto_1fr] items-center"
         onDoubleClick={toggleWindowMaximizeFromChrome}
       >
+        <div className="justify-self-start">
+          {mode === "chat" || mode === "docs" ? (
+            <WorkspacePaneControls
+              leftCollapsed={
+                mode === "chat" ? chatSidebarCollapsed : docsSidebarCollapsed
+              }
+              rightCollapsed={rightPaneCollapsed}
+              onToggleLeft={toggleLeftPane}
+              onToggleRight={toggleRightPane}
+              showRight={false}
+            />
+          ) : null}
+        </div>
         <div className="drag-region flex items-center gap-2 rounded-full border border-[#dce5f4] bg-white/90 p-1 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
           {MODES.map((m) => {
             const active = mode === m.key;
@@ -171,6 +204,17 @@ export const MainAgentPage = () => {
               </button>
             );
           })}
+        </div>
+        <div className="justify-self-end">
+          {mode !== "chat" ? (
+            <WorkspacePaneControls
+              leftCollapsed={docsSidebarCollapsed}
+              rightCollapsed={rightPaneCollapsed}
+              onToggleLeft={toggleLeftPane}
+              onToggleRight={toggleRightPane}
+              showLeft={false}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -196,6 +240,7 @@ export const MainAgentPage = () => {
             acceptMainInputFocusEvents={mode === "chat"}
             contextSnapshot={contexts}
             hideBorder={false}
+            sidebarCollapsed={chatSidebarCollapsed}
           />
         </div>
 
@@ -208,6 +253,8 @@ export const MainAgentPage = () => {
           }`}
         >
           <SplitPane
+            leftCollapsed={false}
+            rightCollapsed={rightPaneCollapsed}
             left={
               <div className="h-full min-h-0">
                 <div className={mode === "docs" ? "h-full min-h-0" : "hidden"}>
@@ -219,6 +266,8 @@ export const MainAgentPage = () => {
                     currentSessionId={currentSessionId}
                     onSelectSession={handleSelectSession}
                     onNewSession={handleNewSession}
+                    sidebarCollapsed={docsSidebarCollapsed}
+                    onSidebarCollapsedChange={setDocsSidebarCollapsed}
                   />
                 </div>
                 <div

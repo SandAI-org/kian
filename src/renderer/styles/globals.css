@@ -1219,18 +1219,16 @@ a:focus-visible,
   display: flex;
   align-items: center;
   border-radius: 14px;
-  border: 1px solid #dbe5f5;
-  background: rgba(248, 251, 255, 0.98);
-  box-shadow:
-    0 14px 28px rgba(15, 23, 42, 0.1),
-    0 4px 10px rgba(15, 23, 42, 0.05);
-  color: #334155;
+  border: 1px solid var(--stroke);
+  background: rgba(var(--surface-rgb), 0.98);
+  box-shadow: var(--shadow-elevated);
+  color: var(--text-soft);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .ant-tooltip .ant-tooltip-arrow::before {
-  background: rgba(248, 251, 255, 0.98);
+  background: rgba(var(--surface-rgb), 0.98);
 }
 
 .compact-dropdown-overlay

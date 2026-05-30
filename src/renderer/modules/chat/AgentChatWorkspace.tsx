@@ -1,7 +1,3 @@
-import { MenuUnfoldOutlined } from "@ant-design/icons";
-import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
-import { Button } from "antd";
-import { useState } from "react";
 import type {
   ChatModuleType,
   ChatScope,
@@ -23,6 +19,7 @@ interface AgentChatWorkspaceProps {
   sessionKinds?: ChatSessionKind[];
   acceptMainInputFocusEvents?: boolean;
   hideBorder?: boolean;
+  sidebarCollapsed?: boolean;
 }
 
 export const AgentChatWorkspace = ({
@@ -38,11 +35,10 @@ export const AgentChatWorkspace = ({
   sessionKinds,
   acceptMainInputFocusEvents,
   hideBorder,
+  sidebarCollapsed = false,
 }: AgentChatWorkspaceProps) => {
-  const { t } = useAppI18n();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarWidthClass = sidebarCollapsed
-    ? "w-10 min-w-[2.5rem] max-w-[2.5rem] basis-[2.5rem]"
+    ? "w-0 min-w-0 max-w-0 basis-0"
     : "w-64 min-w-[16rem] max-w-[16rem] basis-[16rem]";
 
   return (
@@ -50,19 +46,7 @@ export const AgentChatWorkspace = ({
       <div
         className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${sidebarWidthClass}`}
       >
-        {sidebarCollapsed ? (
-          <div className="flex items-center justify-center">
-            <Button
-              type="text"
-              shape="circle"
-              icon={<MenuUnfoldOutlined />}
-              title={t("展开对话列表")}
-              aria-label={t("展开对话列表")}
-              size="small"
-              onClick={() => setSidebarCollapsed(false)}
-            />
-          </div>
-        ) : (
+        {!sidebarCollapsed ? (
           <ChatSessionList
             scope={scope}
             module={module}
@@ -70,10 +54,8 @@ export const AgentChatWorkspace = ({
             onSelectSession={onSelectSession}
             onNewSession={onNewSession}
             sessionKinds={sessionKinds}
-            collapsible
-            onCollapse={() => setSidebarCollapsed(true)}
           />
-        )}
+        ) : null}
       </div>
       <div className="min-w-0 flex-1 basis-0">
         <div className="mx-auto h-full">

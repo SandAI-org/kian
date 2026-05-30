@@ -5,9 +5,16 @@ import { useUIStore } from '@renderer/store/uiStore';
 interface SplitPaneProps {
   left: ReactNode;
   right: ReactNode;
+  leftCollapsed?: boolean;
+  rightCollapsed?: boolean;
 }
 
-export const SplitPane = ({ left, right }: SplitPaneProps) => {
+export const SplitPane = ({
+  left,
+  right,
+  leftCollapsed = false,
+  rightCollapsed = false,
+}: SplitPaneProps) => {
   const leftWidth = useUIStore((state) => state.leftPaneWidth);
   const setLeftWidth = useUIStore((state) => state.setLeftPaneWidth);
   const [dragging, setDragging] = useState(false);
@@ -29,6 +36,14 @@ export const SplitPane = ({ left, right }: SplitPaneProps) => {
 
   const leftStyle = useMemo(() => ({ width: `${leftWidth}%` }), [leftWidth]);
   const rightStyle = useMemo(() => ({ width: `${100 - leftWidth}%` }), [leftWidth]);
+
+  if (leftCollapsed) {
+    return <div className="h-full min-h-0 w-full min-w-0">{right}</div>;
+  }
+
+  if (rightCollapsed) {
+    return <div className="h-full min-h-0 w-full min-w-0">{left}</div>;
+  }
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0" onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>

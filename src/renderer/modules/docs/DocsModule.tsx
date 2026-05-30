@@ -8,8 +8,6 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   PlusOutlined,
   SaveOutlined,
   VideoCameraOutlined,
@@ -31,7 +29,7 @@ import {
 import type { DocExplorerEntryDTO, DocumentDTO } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Typography, message, type MenuProps } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatSessionList } from "@renderer/modules/chat/ChatSessionList";
 import { detectDocMediaKind, resolveDocLocalUrl } from "./docMedia";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -45,6 +43,8 @@ interface DocsModuleProps {
   currentSessionId?: string;
   onSelectSession?: (sessionId: string) => void;
   onNewSession?: () => void;
+  sidebarCollapsed?: boolean;
+  onSidebarCollapsedChange?: (collapsed: boolean) => void;
 }
 
 type SaveState = "saved" | "saving" | "error";
@@ -424,6 +424,8 @@ export const DocsModule = ({
   currentSessionId,
   onSelectSession,
   onNewSession,
+  sidebarCollapsed: controlledSidebarCollapsed,
+  onSidebarCollapsedChange,
 }: DocsModuleProps) => {
   const { t } = useAppI18n();
   const queryClient = useQueryClient();
@@ -434,7 +436,21 @@ export const DocsModule = ({
     () => new Set(),
   );
   const [renaming, setRenaming] = useState<RenameState | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [uncontrolledSidebarCollapsed, setUncontrolledSidebarCollapsed] =
+    useState(false);
+  const sidebarCollapsed =
+    controlledSidebarCollapsed ?? uncontrolledSidebarCollapsed;
+  const setSidebarCollapsed = useCallback(
+    (value: boolean | ((current: boolean) => boolean)) => {
+      const next =
+        typeof value === "function" ? value(sidebarCollapsed) : value;
+      if (controlledSidebarCollapsed === undefined) {
+        setUncontrolledSidebarCollapsed(next);
+      }
+      onSidebarCollapsedChange?.(next);
+    },
+    [controlledSidebarCollapsed, onSidebarCollapsedChange, sidebarCollapsed],
+  );
   const hasChatProps = Boolean(chatScope);
   type SidebarTab = "files" | "conversations";
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("files");
@@ -1536,7 +1552,7 @@ export const DocsModule = ({
   return (
     <div className="flex h-full min-h-0 gap-0.5">
       <div
-        className={`flex h-full min-h-0 shrink-0 flex-col transition-[width] duration-200 ${sidebarCollapsed ? "w-10" : "w-72"}`}
+        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${sidebarCollapsed ? "w-0" : "w-72"}`}
       >
         <div className="mb-3 flex items-center justify-between">
           {!sidebarCollapsed ? (
@@ -1598,21 +1614,6 @@ export const DocsModule = ({
                 onClick={onNewSession}
               />
             ) : null}
-            <Button
-              type="text"
-              shape="circle"
-              icon={
-                sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />
-              }
-              title={
-                sidebarCollapsed ? t("展开文件列表") : t("折叠文件列表")
-              }
-              aria-label={
-                sidebarCollapsed ? t("展开文件列表") : t("折叠文件列表")
-              }
-              size="small"
-              onClick={() => setSidebarCollapsed((prev) => !prev)}
-            />
           </div>
         </div>
 

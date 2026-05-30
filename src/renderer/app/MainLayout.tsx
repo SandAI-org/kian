@@ -20,7 +20,7 @@ import {
   SettingFilled,
   SettingOutlined,
 } from '@ant-design/icons';
-import type { ReactNode } from 'react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -47,6 +47,10 @@ import remarkGfm from 'remark-gfm';
 const { Sider, Header, Content } = Layout;
 const GUIDE_SEEN_STORAGE_KEY = 'kian.guide.seen.v1';
 type ProjectModuleKey = Extract<ChatModuleType, 'main' | 'docs' | 'assets' | 'app'>;
+interface WorkspaceHeaderControls {
+  left?: ReactNode;
+  right?: ReactNode;
+}
 
 const PROJECT_MODULE_ITEMS: Array<{ key: ProjectModuleKey; label: string }> = [
   { key: 'main', label: '聊天' },
@@ -82,6 +86,8 @@ export const MainLayout = () => {
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
+  const [workspaceHeaderControls, setWorkspaceHeaderControls] =
+    useState<WorkspaceHeaderControls>({});
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatusDTO | null>(null);
   const [updateChangelogModalOpen, setUpdateChangelogModalOpen] = useState(false);
   const isHomePage = location.pathname === '/';
@@ -437,7 +443,10 @@ export const MainLayout = () => {
     if (!shouldKeepHeaderActions(location.pathname)) {
       setHeaderActions(null);
     }
-  }, [location.pathname]);
+    if (!isProjectPage) {
+      setWorkspaceHeaderControls({});
+    }
+  }, [isProjectPage, location.pathname]);
 
   useEffect(() => {
     let disposed = false;
@@ -669,6 +678,7 @@ export const MainLayout = () => {
             <div className="flex h-full items-center justify-between">
               {isProjectPage ? (
                 <div className="no-drag flex min-w-0 items-center gap-3">
+                  {workspaceHeaderControls.left ?? null}
                   <div className="min-w-0">
                     {isTitleEditing ? (
                       <Input
@@ -739,25 +749,28 @@ export const MainLayout = () => {
                 ) : null
               )}
               {isProjectPage ? (
-                <div className="no-drag flex items-center gap-2 rounded-full border border-[#dce5f4] bg-white/90 p-1 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
-                  {PROJECT_MODULE_ITEMS.map((item) => {
-                    const active = activeProjectModule === item.key;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        aria-current={active ? 'page' : undefined}
-                        onClick={() => switchProjectModule(item.key)}
-                        className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
-                          active
-                            ? 'bg-[#2f6ff7] text-white shadow-[0_6px_12px_rgba(47,111,247,0.32)]'
-                            : 'text-slate-600 hover:bg-[#eef3fc] hover:text-slate-900'
-                        }`}
-                      >
-                        {t(item.label)}
-                      </button>
-                    );
-                  })}
+                <div className="no-drag flex items-center gap-3">
+                  <div className="flex items-center gap-2 rounded-full border border-[#dce5f4] bg-white/90 p-1 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
+                    {PROJECT_MODULE_ITEMS.map((item) => {
+                      const active = activeProjectModule === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          aria-current={active ? 'page' : undefined}
+                          onClick={() => switchProjectModule(item.key)}
+                          className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+                            active
+                              ? 'bg-[#2f6ff7] text-white shadow-[0_6px_12px_rgba(47,111,247,0.32)]'
+                              : 'text-slate-600 hover:bg-[#eef3fc] hover:text-slate-900'
+                          }`}
+                        >
+                          {t(item.label)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {workspaceHeaderControls.right ?? null}
                 </div>
               ) : isCronjobsPage ? (
                 <Typography.Text className="!inline-flex !items-center !gap-1 !text-[12px] !text-slate-500">
@@ -777,7 +790,7 @@ export const MainLayout = () => {
         )}
         <Content className="flex-1 min-h-0 overflow-hidden">
           <div className="h-full min-h-0">
-            <Outlet context={{ setHeaderActions }} />
+            <Outlet context={{ setHeaderActions, setWorkspaceHeaderControls }} />
           </div>
         </Content>
       </Layout>
@@ -841,4 +854,5 @@ export const MainLayout = () => {
 
 export interface MainLayoutOutletContext {
   setHeaderActions: (actions: ReactNode | null) => void;
+  setWorkspaceHeaderControls: Dispatch<SetStateAction<WorkspaceHeaderControls>>;
 }

@@ -1,4 +1,4 @@
-import { DeleteOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
@@ -26,10 +26,6 @@ interface ChatSessionListProps {
   allowCreate?: boolean;
   /** When true, renders only the list without a header (header managed externally). */
   hideHeader?: boolean;
-  /** When true and header is shown, display a collapse button. */
-  collapsible?: boolean;
-  /** Called when the collapse button is clicked. */
-  onCollapse?: () => void;
 }
 
 const getScopeKey = (scope: ChatScope): string =>
@@ -86,8 +82,6 @@ export const ChatSessionList = ({
   sessionKinds,
   allowCreate = true,
   hideHeader = false,
-  collapsible = false,
-  onCollapse,
 }: ChatSessionListProps) => {
   const { t } = useAppI18n();
   const scopeKey = getScopeKey(scope);
@@ -441,17 +435,6 @@ export const ChatSessionList = ({
               aria-label={t("新建对话")}
               size="small"
               onClick={onNewSession}
-            />
-          ) : null}
-          {collapsible ? (
-            <Button
-              type="text"
-              shape="circle"
-              icon={<MenuFoldOutlined />}
-              title={t("折叠对话列表")}
-              aria-label={t("折叠对话列表")}
-              size="small"
-              onClick={onCollapse}
             />
           ) : null}
         </div>
