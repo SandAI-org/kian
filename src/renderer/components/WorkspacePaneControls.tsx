@@ -66,7 +66,10 @@ export const WorkspacePaneControls = ({
         : "";
 
   return (
-    <div className={`no-drag flex items-center gap-1 ${edgeAlignClassName}`}>
+    <div
+      className={`no-drag flex items-center gap-1 ${edgeAlignClassName}`}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
       {showLeft ? (
         <Button
           type="text"

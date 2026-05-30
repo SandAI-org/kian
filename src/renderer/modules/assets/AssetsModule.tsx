@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { Input, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { SearchOutlined } from '@ant-design/icons';
+import { FileIconType, FileTypeIconMap, getFileTypeIconAsUrl } from '@fluentui/react-file-type-icons';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
 import type { AssetDTO } from '@shared/types';
 import { api } from '@renderer/lib/api';
@@ -64,6 +66,178 @@ const resolveAssetPreviewUrl = (rawPath?: string | null): string => {
   }
   return '';
 };
+
+const getAssetExtension = (asset: AssetDTO): string => {
+  const source = asset.name || asset.path;
+  const lastSegment = source.split(/[\\/]/).pop() ?? '';
+  const extension = lastSegment.includes('.') ? lastSegment.split('.').pop() : '';
+  return extension?.toLowerCase() ?? '';
+};
+
+const getFileTypeIconData = (extension: string): { iconUrl: string; hasSpecificIcon: boolean } => {
+  const hasSpecificIcon =
+    extension.length > 0 &&
+    Object.values(FileTypeIconMap).some((entry) => entry.extensions?.includes(extension));
+  const iconUrl =
+    getFileTypeIconAsUrl({
+      ...(hasSpecificIcon ? { extension } : { type: FileIconType.genericFile }),
+      size: 96,
+      imageFileType: 'svg'
+    }) ?? '';
+
+  return { iconUrl, hasSpecificIcon };
+};
+
+const formatPreviewTime = (seconds: number): string => {
+  const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+};
+
+interface AssetPreviewProps {
+  asset: AssetDTO;
+  previewUrl: string;
+}
+
+const AssetPreview = ({ asset, previewUrl }: AssetPreviewProps) => {
+  const { t } = useAppI18n();
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  const isPreviewingRef = useRef(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [previewTime, setPreviewTime] = useState({ current: 0, duration: 0 });
+
+  const startHoverPreview = (): void => {
+    if (!mediaRef.current) return;
+    isPreviewingRef.current = true;
+    setIsPlaying(true);
+    void mediaRef.current.play().catch(() => setIsPlaying(false));
+  };
+
+  const stopPreview = (): void => {
+    isPreviewingRef.current = false;
+    if (!mediaRef.current) return;
+    setIsPlaying(false);
+    mediaRef.current.pause();
+    mediaRef.current.currentTime = 0;
+    setPreviewTime({ current: 0, duration: 0 });
+  };
+
+  const syncPreviewTime = (): void => {
+    if (!mediaRef.current || !isPreviewingRef.current) return;
+    const duration = mediaRef.current.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    setPreviewTime({ current: mediaRef.current.currentTime, duration });
+  };
+
+  const previewTimeLabel =
+    previewTime.duration > 0
+      ? `${formatPreviewTime(previewTime.current)}/${formatPreviewTime(previewTime.duration)}`
+      : '';
+
+  const previewTimeOverlay =
+    isPlaying && previewTimeLabel ? (
+      <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm backdrop-blur-sm">
+        {previewTimeLabel}
+      </div>
+    ) : null;
+
+  const mediaHandlers = {
+    onLoadedMetadata: syncPreviewTime,
+    onTimeUpdate: syncPreviewTime,
+    onMouseEnter: startHoverPreview,
+    onMouseLeave: stopPreview
+  };
+
+  if (asset.type === 'image' && previewUrl) {
+    return (
+      <RevealableImage
+        src={previewUrl}
+        alt={asset.name}
+        filePath={asset.absolutePath ?? undefined}
+        className="absolute inset-0 h-full w-full"
+        imageClassName="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+      />
+    );
+  }
+
+  if (asset.type === 'video' && previewUrl) {
+    return (
+      <>
+        <video
+          ref={mediaRef as RefObject<HTMLVideoElement>}
+          src={previewUrl}
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          {...mediaHandlers}
+        />
+        {previewTimeOverlay}
+      </>
+    );
+  }
+
+  if (asset.type === 'audio' && previewUrl) {
+    const audioBarHeights = [12, 22, 34, 20, 28];
+    return (
+      <div
+        className="asset-preview-fallback relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden text-[var(--muted)]"
+        onMouseEnter={startHoverPreview}
+        onMouseLeave={stopPreview}
+      >
+        <audio
+          ref={mediaRef as RefObject<HTMLAudioElement>}
+          src={previewUrl}
+          preload="metadata"
+          onLoadedMetadata={syncPreviewTime}
+          onTimeUpdate={syncPreviewTime}
+        />
+        <div className="relative flex h-16 items-center gap-2">
+          {audioBarHeights.map((height, item) => (
+            <span
+              key={item}
+              className={`block w-3 rounded-full bg-[var(--muted-2)] shadow-sm ${
+                isPlaying ? 'animate-pulse' : ''
+              }`}
+              style={{
+                height,
+                animationDelay: `${item * 90}ms`,
+                animationDuration: '620ms'
+              }}
+            />
+          ))}
+        </div>
+        {previewTimeOverlay}
+      </div>
+    );
+  }
+
+  if (asset.type === 'file') {
+    const extension = getAssetExtension(asset);
+    const fileIcon = getFileTypeIconData(extension);
+    return (
+      <div className="asset-preview-fallback flex h-full w-full flex-col items-center justify-center gap-2 text-[var(--muted)]">
+        {fileIcon.iconUrl ? (
+          <img src={fileIcon.iconUrl} alt="" className="asset-file-icon h-16 w-16 object-contain" draggable={false} />
+        ) : null}
+        {extension && !fileIcon.hasSpecificIcon ? (
+          <span className="rounded-full bg-[rgba(var(--surface-rgb),0.72)] px-2 py-0.5 text-[10px] font-semibold uppercase leading-none text-[var(--muted)]">
+            {extension}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
+      {getAssetTypeLabel(asset.type, t)}
+    </div>
+  );
+};
+
 export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) => {
   const { t } = useAppI18n();
   const [search, setSearch] = useState('');
@@ -204,39 +378,34 @@ export const AssetsModule = ({ projectId, onContextChange }: AssetsModuleProps) 
         </div>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-6">
             {assets.map((asset) => {
               const tags = parseAssetTags(asset);
               const sourceTag = getAssetSourceTag(tags, t);
-              const previewUrl =
-                asset.type === 'image' ? resolveAssetPreviewUrl(asset.absolutePath ?? asset.path) : '';
+              const previewUrl = resolveAssetPreviewUrl(asset.absolutePath ?? asset.path);
+              const extension = getAssetExtension(asset);
+              const fileIcon = asset.type === 'file' ? getFileTypeIconData(extension) : null;
+              const showTypeTag =
+                asset.type === 'image' ||
+                (asset.type === 'file' && !fileIcon?.hasSpecificIcon);
+              const typeTagLabel =
+                asset.type === 'file' && extension ? extension.toUpperCase() : getAssetTypeLabel(asset.type, t);
               return (
-                <div key={asset.id} className="overflow-hidden rounded-md border border-[#e5ebf5] bg-white">
+                <div key={asset.id} className="overflow-hidden rounded-md">
                   <button
                     type="button"
-                    className="group relative block w-full overflow-hidden bg-[#f2f5fb] text-left"
+                    className="group relative block w-full overflow-hidden rounded-md bg-[var(--surface-2)] text-left"
                     style={{ aspectRatio: '16 / 9' }}
                     onClick={() => handleOpenAsset(asset)}
-                    title={t('点击使用系统预览打开')}
                   >
-                    {previewUrl ? (
-                      <RevealableImage
-                        src={previewUrl}
-                        alt={asset.name}
-                        filePath={asset.absolutePath ?? undefined}
-                        className="absolute inset-0 h-full w-full"
-                        imageClassName="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
-                        {getAssetTypeLabel(asset.type, t)}
-                      </div>
-                    )}
+                    <AssetPreview asset={asset} previewUrl={previewUrl} />
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between p-2">
                       {sourceTag ? <span className="rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white shadow-sm backdrop-blur-sm">{sourceTag}</span> : <span />}
-                      <span className="rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
-                        {getAssetTypeLabel(asset.type, t)}
-                      </span>
+                      {showTypeTag ? (
+                        <span className="rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
+                          {typeTagLabel}
+                        </span>
+                      ) : null}
                     </div>
                   </button>
                 </div>

@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.0.0",
+    "@fluentui/react-file-type-icons": "^8.18.0",
     "@hookform/resolvers": "^5.2.1",
     "@kian/weixin-adapter": "workspace:*",
     "@larksuiteoapi/node-sdk": "^1.59.0",

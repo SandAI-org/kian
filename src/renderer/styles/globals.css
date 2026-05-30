@@ -167,6 +167,30 @@ a:focus-visible,
   background: var(--surface-2);
 }
 
+.asset-preview-fallback {
+  background:
+    radial-gradient(circle at 30% 22%, rgba(47, 111, 247, 0.12), transparent 42%),
+    linear-gradient(135deg, var(--surface-3), var(--surface-2));
+}
+
+.asset-file-icon {
+  filter: drop-shadow(0 8px 14px rgba(15, 23, 42, 0.14));
+}
+
+:root.theme-dark .asset-preview-fallback {
+  background:
+    radial-gradient(circle at 30% 22%, rgba(91, 140, 255, 0.14), transparent 44%),
+    linear-gradient(135deg, #18243a, #111b2e);
+}
+
+:root.theme-dark .asset-file-icon {
+  opacity: 0.9;
+  filter:
+    brightness(0.9)
+    saturate(0.92)
+    drop-shadow(0 10px 18px rgba(2, 6, 23, 0.34));
+}
+
 .agent-group-thinking-hint {
   position: relative;
   width: fit-content;
