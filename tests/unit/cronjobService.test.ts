@@ -134,6 +134,7 @@ describe("cronjobService", () => {
         module: "docs",
         sessionId: "session-agent-a",
         message: "整理日报",
+        skipAutoTitleGeneration: true,
       }),
     );
     expect(assistantMirrorStreamer.pushEvent).not.toHaveBeenCalled();
@@ -220,6 +221,7 @@ describe("cronjobService", () => {
         module: "main",
         sessionId: "session-main",
         message: "汇总看板",
+        skipAutoTitleGeneration: true,
       }),
     );
     expect(assistantMirrorStreamer.pushEvent).not.toHaveBeenCalled();

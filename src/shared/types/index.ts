@@ -323,6 +323,7 @@ export interface ChatSendPayload {
   delegationContext?: DelegationContext;
   skipUserMessagePersistence?: boolean;
   skipChannelReply?: boolean;
+  skipAutoTitleGeneration?: boolean;
 }
 
 export type ChatQueueDeliveryMode = 'steer' | 'followUp';

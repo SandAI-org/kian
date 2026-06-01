@@ -401,7 +401,9 @@ const processQueuedMessage = async (
     });
   }
 
-  await maybeSetOptimisticSessionTitle(payload);
+  if (!payload.skipAutoTitleGeneration) {
+    await maybeSetOptimisticSessionTitle(payload);
+  }
 
   const timelineState = createChatTurnTimelineState();
   let didEmitTerminalStreamEvent = false;
@@ -458,16 +460,18 @@ const processQueuedMessage = async (
     requestStartedAt,
   });
 
-  logger.info("Auto title queued", {
-    sessionId: payload.sessionId,
-    scope: payload.scope,
-    module: payload.module,
-    persistedMessageCount:
-      persistedMessageCount + (payload.skipUserMessagePersistence ? 0 : 1),
-    userMessageLength: payload.message.trim().length,
-  });
+  if (!payload.skipAutoTitleGeneration) {
+    logger.info("Auto title queued", {
+      sessionId: payload.sessionId,
+      scope: payload.scope,
+      module: payload.module,
+      persistedMessageCount:
+        persistedMessageCount + (payload.skipUserMessagePersistence ? 0 : 1),
+      userMessageLength: payload.message.trim().length,
+    });
 
-  void generateSessionTitle(payload).catch(() => {});
+    void generateSessionTitle(payload).catch(() => {});
+  }
 
   if (!payload.skipChannelReply) {
     void import("./chatChannelService")

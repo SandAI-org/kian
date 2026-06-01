@@ -329,7 +329,8 @@ const dispatchCronJob = async (job: CronJobDTO): Promise<CronJobDispatchResult> 
       module,
       sessionId: session.id,
       requestId: randomUUID(),
-      message
+      message,
+      skipAutoTitleGeneration: true
     }
   );
 
