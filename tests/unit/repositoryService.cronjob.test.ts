@@ -469,6 +469,65 @@ describe("repositoryService cronjob", () => {
     });
   });
 
+  it("does not reuse older logs from an already matched job", async () => {
+    const { repositoryService } =
+      await import("../../electron/main/services/repositoryService");
+
+    await fs.writeFile(
+      path.join(tempRoot, "cronjob.json"),
+      JSON.stringify(
+        [
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+          },
+          {
+            cron: "0 18 * * *",
+            content: "整理日报",
+            status: "active",
+          },
+        ],
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T09:59:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      sessionId: "session-first-old",
+      assistantMessage: "第一条任务旧结果",
+    });
+    await repositoryService.logCronJobExecution({
+      executedAt: "2026-05-21T10:00:00.000Z",
+      jobId: "cronjob-1",
+      cron: "0 18 * * *",
+      content: "整理日报",
+      status: "dispatched",
+      sessionId: "session-first-new",
+      assistantMessage: "第一条任务新结果",
+    });
+
+    const jobs = await repositoryService.listCronJobsWithLastExecution();
+
+    expect(jobs[0]).toMatchObject({
+      id: "cronjob-1",
+      lastExecution: {
+        sessionId: "session-first-new",
+        assistantMessage: "第一条任务新结果",
+      },
+    });
+    expect(jobs[1]).toMatchObject({
+      id: "cronjob-2",
+      lastExecution: null,
+    });
+  });
+
   it("finds the latest matching execution beyond the recent log window", async () => {
     const { repositoryService } =
       await import("../../electron/main/services/repositoryService");

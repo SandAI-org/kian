@@ -2306,11 +2306,7 @@ const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
     }
 
     const sameIdJob = jobs.find((candidate) => candidate.id === execution.jobId);
-    if (
-      sameIdJob &&
-      !pending.has(sameIdJob.id) &&
-      cronJobExecutionMatchesFallbackJobId(execution, sameIdJob)
-    ) {
+    if (sameIdJob && !pending.has(sameIdJob.id)) {
       return true;
     }
 
