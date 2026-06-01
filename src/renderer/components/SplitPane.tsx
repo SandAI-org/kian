@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@renderer/store/uiStore';
 
 interface SplitPaneProps {
@@ -24,36 +24,48 @@ export const SplitPane = ({
 
   const onMove = useCallback(
     (event: React.MouseEvent) => {
-      if (!dragging) return;
+      if (!dragging || leftCollapsed || rightCollapsed) return;
       const parent = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
       const next = ((event.clientX - parent.left) / parent.width) * 100;
       const clamped = Math.max(50, Math.min(80, next));
       setLeftWidth(clamped);
       window.dispatchEvent(new Event('resize'));
     },
-    [dragging, setLeftWidth]
+    [dragging, leftCollapsed, rightCollapsed, setLeftWidth]
   );
 
-  const leftStyle = useMemo(() => ({ width: `${leftWidth}%` }), [leftWidth]);
-  const rightStyle = useMemo(() => ({ width: `${100 - leftWidth}%` }), [leftWidth]);
+  const leftPaneWidth = leftCollapsed ? 0 : rightCollapsed ? 100 : leftWidth;
+  const rightPaneWidth = rightCollapsed ? 0 : leftCollapsed ? 100 : 100 - leftWidth;
+  const dividerVisible = !leftCollapsed && !rightCollapsed;
+  const leftStyle = useMemo(() => ({ width: `${leftPaneWidth}%` }), [leftPaneWidth]);
+  const rightStyle = useMemo(() => ({ width: `${rightPaneWidth}%` }), [rightPaneWidth]);
 
-  if (leftCollapsed) {
-    return <div className="h-full min-h-0 w-full min-w-0">{right}</div>;
-  }
-
-  if (rightCollapsed) {
-    return <div className="h-full min-h-0 w-full min-w-0">{left}</div>;
-  }
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [leftCollapsed, rightCollapsed]);
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0" onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
-      <div className="h-full min-h-0 min-w-0 pr-1" style={leftStyle}>
+      <div
+        className={`h-full min-h-0 min-w-0 overflow-hidden ${
+          leftCollapsed ? 'pointer-events-none' : dividerVisible ? 'pr-1' : ''
+        }`}
+        style={leftStyle}
+        aria-hidden={leftCollapsed}
+      >
         {left}
       </div>
       <div
         role="separator"
         aria-orientation="vertical"
-        className="group flex h-full w-3 cursor-col-resize select-none items-center justify-center"
+        className={`group h-full w-3 cursor-col-resize select-none items-center justify-center ${
+          dividerVisible ? 'flex' : 'hidden'
+        }`}
         onMouseDown={startDrag}
       >
         <span
@@ -62,7 +74,13 @@ export const SplitPane = ({
           }`}
         />
       </div>
-      <div className="h-full min-h-0 min-w-0 pl-1" style={rightStyle}>
+      <div
+        className={`h-full min-h-0 min-w-0 overflow-hidden ${
+          rightCollapsed ? 'pointer-events-none' : dividerVisible ? 'pl-1' : ''
+        }`}
+        style={rightStyle}
+        aria-hidden={rightCollapsed}
+      >
         {right}
       </div>
     </div>
