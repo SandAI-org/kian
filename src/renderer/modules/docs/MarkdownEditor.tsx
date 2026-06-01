@@ -4,6 +4,7 @@ import { RevealableImage } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
+import { AppPreviewWebview } from "@renderer/modules/app/AppPreviewWebview";
 import {
   detectMarkdownMediaKindFromSource,
   rewriteBareRemoteMediaUrlsInMarkdown,
@@ -73,6 +74,14 @@ const preprocessExtendedMedia = (content: string): string =>
       return `![${kind}${sizeSuffix}](${path.trim()})`;
     },
   );
+
+const appendPreviewVersion = (rawUrl: string, version?: string | number): string => {
+  if (version === undefined || version === null || version === "") {
+    return rawUrl;
+  }
+  const separator = rawUrl.includes("?") ? "&" : "?";
+  return `${rawUrl}${separator}v=${encodeURIComponent(String(version))}`;
+};
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 const LANGUAGE_BY_EXTENSION = new Map<string, string>([
@@ -162,6 +171,17 @@ const isMarkdownDocument = (filePath: string): boolean => {
   return MARKDOWN_EXTENSIONS.has(extension);
 };
 
+const isHtmlDocument = (filePath: string): boolean => {
+  const trimmed = filePath.trim();
+  if (!trimmed) return false;
+  const lastSlash = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  const baseName = lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
+  const extension = baseName.includes(".")
+    ? baseName.slice(baseName.lastIndexOf(".")).toLowerCase()
+    : "";
+  return extension === ".html" || extension === ".htm";
+};
+
 const inferDocumentLanguage = (filePath: string): string => {
   const trimmed = filePath.trim();
   if (!trimmed) return "plaintext";
@@ -183,6 +203,7 @@ interface MarkdownEditorProps {
   projectId: string;
   documentPath: string;
   title: string;
+  documentVersion?: string | number;
   statusText?: string;
   value: string;
   onChange: (next: string) => void;
@@ -192,6 +213,7 @@ export const MarkdownEditor = ({
   projectId,
   documentPath,
   title,
+  documentVersion,
   statusText,
   value,
   onChange,
@@ -200,9 +222,25 @@ export const MarkdownEditor = ({
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [readMode, setReadMode] = useState(true);
   const markdownPreviewEnabled = useMemo(() => isMarkdownDocument(title), [title]);
+  const htmlPreviewEnabled = useMemo(() => isHtmlDocument(title), [title]);
   const editorLanguage = useMemo(() => inferDocumentLanguage(title), [title]);
   const showingMarkdownPreview = markdownPreviewEnabled && readMode;
+  const showingHtmlPreview = htmlPreviewEnabled && readMode;
+  const previewEnabled = markdownPreviewEnabled || htmlPreviewEnabled;
   const editorTheme = resolvedTheme === "dark" ? "kian-docs-dark" : "kian-docs-light";
+  const htmlPreviewUrl = useMemo(
+    () =>
+      htmlPreviewEnabled
+        ? appendPreviewVersion(
+            resolveDocLocalUrl(`docs/${documentPath}`, {
+              projectId,
+              documentPath,
+            }),
+            documentVersion,
+          )
+        : "",
+    [documentPath, documentVersion, htmlPreviewEnabled, projectId],
+  );
 
   const handleBeforeMount = useCallback<BeforeMount>((monaco) => {
     monaco.editor.defineTheme("kian-docs-light", {
@@ -300,21 +338,45 @@ export const MarkdownEditor = ({
               {statusText}
             </Typography.Text>
           ) : null}
-          {markdownPreviewEnabled ? (
+          {previewEnabled ? (
             <Button
               type="text"
               size="small"
               shape="circle"
               icon={readMode ? <EditOutlined /> : <ReadOutlined />}
-              title={t(readMode ? "编辑模式" : "阅读模式")}
-              aria-label={t(readMode ? "编辑模式" : "阅读模式")}
+              title={t(
+                readMode
+                  ? "编辑模式"
+                  : htmlPreviewEnabled
+                    ? "预览模式"
+                    : "阅读模式",
+              )}
+              aria-label={t(
+                readMode
+                  ? "编辑模式"
+                  : htmlPreviewEnabled
+                    ? "预览模式"
+                    : "阅读模式",
+              )}
               onClick={() => setReadMode((prev) => !prev)}
             />
           ) : null}
         </div>
       </div>
       <div className="docs-editor-panel__body min-h-0 min-w-0 flex-1 overflow-hidden">
-        {showingMarkdownPreview ? (
+        {showingHtmlPreview ? (
+          value.trim() ? (
+            <AppPreviewWebview previewUrl={htmlPreviewUrl} />
+          ) : (
+            <ScrollArea className="h-full">
+              <div className="px-3 py-2">
+                <Typography.Text className="!text-sm !text-slate-400">
+                  {t("暂无内容")}
+                </Typography.Text>
+              </div>
+            </ScrollArea>
+          )
+        ) : showingMarkdownPreview ? (
           <ScrollArea className="docs-editor-panel__preview h-full">
             <div className="px-3 py-2">
               {value.trim() ? (

@@ -549,6 +549,10 @@ export const DocsModule = ({
     () => (resolvedActivePath ? docsByPath.get(resolvedActivePath) : undefined),
     [docsByPath, resolvedActivePath],
   );
+  const visibleEditorValue =
+    activeDoc && lastRemoteSnapshotRef.current.docId !== activeDoc.id
+      ? activeDoc.content
+      : editorValue;
   const activeMediaKind = useMemo(
     () =>
       activeExplorerEntry && !activeDoc
@@ -940,7 +944,7 @@ export const DocsModule = ({
     const nextSaveSnapshot = {
       docId: activeDoc?.id ?? null,
       remoteContent: activeDoc?.content ?? "",
-      editorValue,
+      editorValue: visibleEditorValue,
     };
 
     if (!activeDoc) {
@@ -948,7 +952,7 @@ export const DocsModule = ({
       setSaveState("saved");
       return;
     }
-    if (editorValue === activeDoc.content) {
+    if (visibleEditorValue === activeDoc.content) {
       lastQueuedSaveSnapshotRef.current = nextSaveSnapshot;
       setSaveState("saved");
       return;
@@ -970,13 +974,13 @@ export const DocsModule = ({
     const timer = setTimeout(() => {
       updateMutation.mutate({
         id: activeDoc.id,
-        content: editorValue,
+        content: visibleEditorValue,
         requestSeq,
       });
     }, 700);
 
     return () => clearTimeout(timer);
-  }, [activeDoc, editorValue, updateMutation]);
+  }, [activeDoc, visibleEditorValue, updateMutation]);
 
   const toggleDirectory = (directoryPath: string): void => {
     setExpandedDirectories((previous) => {
@@ -1651,8 +1655,9 @@ export const DocsModule = ({
                 projectId={projectId}
                 documentPath={stripDocsPrefix(activeDoc.id)}
                 title={toDocPath(activeDoc.id) || toDocPath(activeDoc.title)}
+                documentVersion={activeDoc.version}
                 statusText={saveStatusText}
-                value={editorValue}
+                value={visibleEditorValue}
                 onChange={setEditorValue}
               />
             </div>

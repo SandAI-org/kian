@@ -6,6 +6,7 @@ import { formatUtcTimestampToLocal } from "@shared/utils/dateTime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Space, Typography, message } from "antd";
 import React, { useEffect, useMemo } from "react";
+import { AppPreviewWebview } from "./AppPreviewWebview";
 
 interface AppModuleProps {
   projectId: string;
@@ -13,17 +14,8 @@ interface AppModuleProps {
 }
 
 const LOCAL_MEDIA_SCHEME_PREFIX = "kian-local://local/";
-const APP_PREVIEW_PARTITION = "kian-app-preview";
 const toLocalMediaUrl = (rawPath: string): string =>
   `${LOCAL_MEDIA_SCHEME_PREFIX}${encodeURIComponent(rawPath)}`;
-const applyPreviewIframeStyles = (frame: HTMLIFrameElement): void => {
-  frame.style.display = "block";
-  frame.style.width = "100%";
-  frame.style.height = "100%";
-  frame.style.minHeight = "100%";
-  frame.style.flex = "1 1 100%";
-  frame.style.border = "0";
-};
 
 const APP_TYPE_TITLES: Record<AppType, string> = {
   react: "React 应用",
@@ -39,7 +31,6 @@ const APP_TYPE_TITLES: Record<AppType, string> = {
 export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
   const queryClient = useQueryClient();
   const [previewVersion, setPreviewVersion] = React.useState(0);
-  const previewHostRef = React.useRef<HTMLDivElement | null>(null);
   const { t } = useAppI18n();
 
   const statusQuery = useQuery({
@@ -119,45 +110,6 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
     [projectId, queryClient],
   );
 
-  useEffect(() => {
-    const host = previewHostRef.current;
-    if (!host) return;
-
-    host.replaceChildren();
-
-    if (!previewUrl) return;
-
-    const webview = document.createElement("webview");
-    webview.setAttribute("src", previewUrl);
-    webview.setAttribute("partition", APP_PREVIEW_PARTITION);
-    webview.setAttribute("allowpopups", "true");
-    webview.className = "block";
-    webview.style.position = "absolute";
-    webview.style.inset = "0";
-    webview.style.display = "block";
-    webview.style.width = "100%";
-    webview.style.height = "100%";
-    webview.style.border = "0";
-
-    const syncInternalIframeLayout = () => {
-      const internalFrame = webview.shadowRoot?.querySelector("iframe");
-      if (!(internalFrame instanceof HTMLIFrameElement)) return;
-      applyPreviewIframeStyles(internalFrame);
-    };
-
-    webview.addEventListener("dom-ready", syncInternalIframeLayout);
-    host.appendChild(webview);
-    const frameId = requestAnimationFrame(syncInternalIframeLayout);
-
-    return () => {
-      webview.removeEventListener("dom-ready", syncInternalIframeLayout);
-      cancelAnimationFrame(frameId);
-      if (webview.parentElement === host) {
-        host.removeChild(webview);
-      }
-    };
-  }, [previewUrl]);
-
   const appTitle = hasRenderableBuild
     ? status?.appName?.trim() || APP_TYPE_TITLES[status?.appType ?? "unknown"]
     : "应用预览";
@@ -236,7 +188,7 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[#dbe5f5] bg-white">
         {previewUrl ? (
-          <div ref={previewHostRef} className="relative h-full w-full overflow-hidden" />
+          <AppPreviewWebview previewUrl={previewUrl} />
         ) : (
           <div className="app-empty-shell">
             <div className="app-empty-shell__glow app-empty-shell__glow--one" />
