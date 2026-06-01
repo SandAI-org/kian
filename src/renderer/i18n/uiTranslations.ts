@@ -134,6 +134,7 @@ const EN_US_EXACT: Record<string, string> = {
   "文件已另存": "File saved as",
   "另存为失败": "Failed to save as",
   "打开": "Open",
+  "在新窗口中打开失败": "Failed to open in a new window",
   "输入校验失败，请检查填写内容":
     "Validation failed. Please check your input.",
   "保存图片到剪贴板": "Save Image to Clipboard",
@@ -459,6 +460,7 @@ const KO_KR_EXACT: Record<string, string> = {
   "应用": "앱",
   "主 Agent": "메인 에이전트",
   "打开主智能体": "메인 에이전트 열기",
+  "在新窗口中打开失败": "새 창에서 열지 못했습니다",
   "重启升级到新版本": "다시 시작하여 업데이트",
   "立即重启并升级": "지금 다시 시작하고 업그레이드",
   "更新日志": "변경 로그",
@@ -716,6 +718,7 @@ const JA_JP_EXACT: Record<string, string> = {
   "应用": "アプリ",
   "主 Agent": "メインエージェント",
   "打开主智能体": "メインエージェントを開く",
+  "在新窗口中打开失败": "新しいウィンドウで開けませんでした",
   "重启升级到新版本": "再起動して更新",
   "立即重启并升级": "今すぐ再起動してアップグレード",
   "更新日志": "変更履歴",

@@ -1161,6 +1161,26 @@ export const DocsModule = ({
     saveAsMutation.mutate(node);
   };
 
+  const handleOpenInNewWindow = (input: {
+    path: string;
+    name: string;
+    builtAt: string;
+  }): void => {
+    void api.window
+      .openAppPreview({
+        projectId,
+        distIndexPath: `docs/${stripDocsPrefix(input.path)}`,
+        builtAt: input.builtAt,
+        appName: input.name,
+        appType: "unknown",
+      })
+      .catch((error) => {
+        message.error(
+          error instanceof Error ? error.message : t("在新窗口中打开失败"),
+        );
+      });
+  };
+
   const handleDeleteFile = (node: FileTreeNode): void => {
     const targetPath = stripDocsPrefix(node.path);
     deleteMutation.mutate(targetPath);
@@ -1659,6 +1679,13 @@ export const DocsModule = ({
                 statusText={saveStatusText}
                 value={visibleEditorValue}
                 onChange={setEditorValue}
+                onOpenInNewWindow={() =>
+                  handleOpenInNewWindow({
+                    path: stripDocsPrefix(activeDoc.id),
+                    name: getPathBaseName(activeDoc.id),
+                    builtAt: activeDoc.updatedAt || String(activeDoc.version),
+                  })
+                }
               />
             </div>
           </div>

@@ -128,6 +128,22 @@ const ensurePreviewWindow = (): BrowserWindow => {
     }
   });
 
+  if (process.platform === 'darwin') {
+    previewWindow.webContents.on('before-input-event', (event, input) => {
+      if (
+        input.type === 'keyDown' &&
+        input.meta &&
+        !input.control &&
+        !input.alt &&
+        !input.shift &&
+        input.code === 'KeyW'
+      ) {
+        event.preventDefault();
+        previewWindow.close();
+      }
+    });
+  }
+
   state = { window: previewWindow, projectId: '' };
   return previewWindow;
 };

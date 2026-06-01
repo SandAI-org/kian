@@ -1,4 +1,4 @@
-import { EditOutlined, ReadOutlined } from "@ant-design/icons";
+import { EditOutlined, ExportOutlined, ReadOutlined } from "@ant-design/icons";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { RevealableImage } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
@@ -207,6 +207,7 @@ interface MarkdownEditorProps {
   statusText?: string;
   value: string;
   onChange: (next: string) => void;
+  onOpenInNewWindow?: () => void;
 }
 
 export const MarkdownEditor = ({
@@ -217,6 +218,7 @@ export const MarkdownEditor = ({
   statusText,
   value,
   onChange,
+  onOpenInNewWindow,
 }: MarkdownEditorProps) => {
   const { resolvedTheme, t } = useAppI18n();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -227,6 +229,9 @@ export const MarkdownEditor = ({
   const showingMarkdownPreview = markdownPreviewEnabled && readMode;
   const showingHtmlPreview = htmlPreviewEnabled && readMode;
   const previewEnabled = markdownPreviewEnabled || htmlPreviewEnabled;
+  const canOpenInNewWindow = htmlPreviewEnabled && Boolean(onOpenInNewWindow);
+  const showStatusText = Boolean(statusText) && !htmlPreviewEnabled;
+  const showPreviewToggle = previewEnabled && !htmlPreviewEnabled;
   const editorTheme = resolvedTheme === "dark" ? "kian-docs-dark" : "kian-docs-light";
   const htmlPreviewUrl = useMemo(
     () =>
@@ -333,12 +338,21 @@ export const MarkdownEditor = ({
           </Typography.Text>
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-2">
-          {statusText ? (
+          {showStatusText ? (
             <Typography.Text className="!text-xs !text-slate-500">
               {statusText}
             </Typography.Text>
           ) : null}
-          {previewEnabled ? (
+          {canOpenInNewWindow ? (
+            <Button
+              size="small"
+              icon={<ExportOutlined />}
+              onClick={onOpenInNewWindow}
+            >
+              {t("独立窗口展示")}
+            </Button>
+          ) : null}
+          {showPreviewToggle ? (
             <Button
               type="text"
               size="small"
