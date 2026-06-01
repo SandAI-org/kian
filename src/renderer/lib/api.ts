@@ -31,6 +31,8 @@ import type {
   SavePastedUploadFilePayload,
   CronJobDTO,
   DiscordChatChannelStatus,
+  DocExplorerEntryDTO,
+  DocImportFilePayload,
   DocumentDTO,
   InstalledSkillDTO,
   MediaProvider,
@@ -139,6 +141,8 @@ export const api = {
       unwrap(await window.api.docs.createFolder(payload)),
     renameFile: async (payload: { projectId: string; path: string; name: string }) =>
       unwrap(await window.api.docs.renameFile(payload)),
+    importFiles: async (payload: { projectId: string; files: DocImportFilePayload[] }): Promise<DocExplorerEntryDTO[]> =>
+      unwrap(await window.api.docs.importFiles(payload)),
     renameFolder: async (payload: { projectId: string; path: string; name: string }) =>
       unwrap(await window.api.docs.renameFolder(payload)),
     deleteFolder: async (payload: { projectId: string; path: string }) =>

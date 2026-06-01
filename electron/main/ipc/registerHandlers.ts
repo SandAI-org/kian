@@ -23,6 +23,7 @@ import {
   docCreateSchema,
   docCreateFolderSchema,
   docDeleteFolderSchema,
+  docImportFilesSchema,
   docRenameFileSchema,
   docRenameFolderSchema,
   docUpdateSchema,
@@ -328,6 +329,9 @@ export const registerHandlers = (): void => {
   );
   handle('docs:renameFile', docRenameFileSchema, async (input) =>
     repositoryService.renameDocumentFile(input)
+  );
+  handle('docs:importFiles', docImportFilesSchema, async (input) =>
+    repositoryService.importDocumentFiles(input)
   );
   handle('docs:renameFolder', docRenameFolderSchema, async (input) =>
     repositoryService.renameDocumentDirectory(input)

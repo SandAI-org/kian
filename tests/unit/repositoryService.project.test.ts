@@ -183,7 +183,7 @@ describe("repositoryService project management", () => {
     const updated = await repositoryService.updateDocument({
       projectId: project.id,
       id: "src/main.ts",
-      title: "app.ts",
+      title: "app",
       content: "export const answer = 43;\n",
     });
 

@@ -780,7 +780,12 @@ const sanitizeDocumentFileName = (input: string, fallback: string): string => {
     .replace(/\s+/g, " ")
     .trim();
   const safeName = baseName || fallback;
-  return isEditableTextDocument(safeName) ? safeName : `${safeName}.md`;
+  if (isEditableTextDocument(safeName)) {
+    return safeName;
+  }
+
+  const fallbackExtension = path.extname(fallback);
+  return fallbackExtension ? `${safeName}${fallbackExtension}` : `${safeName}.md`;
 };
 
 const sanitizeUploadFileName = (input: string, fallback: string): string => {
@@ -1267,7 +1272,7 @@ const resolveUniqueFilePath = async (
     throw new Error("文档路径非法");
   }
 
-  const extension = path.extname(normalizedRelativePath) || ".md";
+  const extension = path.extname(normalizedRelativePath);
   const baseName = path.basename(normalizedRelativePath, extension) || "note";
   let candidate = path.resolve(parentDirPath, `${baseName}${extension}`);
   if (!isWithinDirectory(candidate, dirPath)) {
@@ -2883,6 +2888,41 @@ export const repositoryService = {
       isEditableText: isEditableTextDocument(finalRelativePath),
       isMarkdown: isMarkdownFile(finalRelativePath),
     };
+  },
+
+  async importDocumentFiles(input: {
+    projectId: string;
+    files: { name: string; sourcePath: string }[];
+  }): Promise<DocExplorerEntryDTO[]> {
+    await ensureDocsOwnerStructure(input.projectId);
+
+    const docsDir = getDocsDir(input.projectId);
+    const imported: DocExplorerEntryDTO[] = [];
+
+    for (const file of input.files) {
+      const sourcePath = path.resolve(file.sourcePath);
+      const sourceStats = await fs.stat(sourcePath);
+      if (!sourceStats.isFile()) {
+        throw new Error(`不是有效文件: ${file.sourcePath}`);
+      }
+
+      const fallbackName = path.basename(sourcePath) || "file";
+      const safeName = sanitizeUploadFileName(file.name, fallbackName);
+      const absolutePath = await resolveUniqueFilePath(docsDir, safeName);
+      await fs.copyFile(sourcePath, absolutePath);
+
+      const relativePath = toPosixPath(path.relative(docsDir, absolutePath));
+      imported.push({
+        path: relativePath,
+        name: path.basename(relativePath),
+        kind: "file",
+        isEditableText: isEditableTextDocument(relativePath),
+        isMarkdown: isMarkdownFile(relativePath),
+      });
+    }
+
+    await touchProject(input.projectId);
+    return imported;
   },
 
   async deleteDocument(projectId: string, id: string): Promise<void> {

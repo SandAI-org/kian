@@ -79,6 +79,14 @@ export const docRenameFileSchema = z.object({
   name: z.string().min(1).max(120)
 });
 
+export const docImportFilesSchema = z.object({
+  projectId: z.string().min(1),
+  files: z.array(z.object({
+    name: z.string().min(1).max(255),
+    sourcePath: z.string().min(1)
+  })).min(1).max(20)
+});
+
 export const docDeleteFolderSchema = z.object({
   projectId: z.string().min(1),
   path: z.string().min(1).max(240)

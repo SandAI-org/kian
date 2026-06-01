@@ -103,6 +103,11 @@ export interface DocExplorerEntryDTO {
   isMarkdown: boolean;
 }
 
+export interface DocImportFilePayload {
+  name: string;
+  sourcePath: string;
+}
+
 export interface AppWorkspaceStatusDTO {
   projectId: string;
   appDir: string;

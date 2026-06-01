@@ -26,10 +26,21 @@ import {
   shouldScheduleDocAutosave,
   shouldSyncDocEditorFromRemote,
 } from "@shared/utils/docAutosave";
-import type { DocExplorerEntryDTO, DocumentDTO } from "@shared/types";
+import type {
+  DocExplorerEntryDTO,
+  DocImportFilePayload,
+  DocumentDTO,
+} from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Typography, message, type MenuProps } from "antd";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import { ChatSessionList } from "@renderer/modules/chat/ChatSessionList";
 import { detectDocMediaKind, resolveDocLocalUrl } from "./docMedia";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -350,6 +361,20 @@ const buildDuplicateTargetPath = (
   return [...segments, duplicateFileName].join("/");
 };
 
+const hasDraggedFiles = (event: DragEvent): boolean =>
+  Array.from(event.dataTransfer.types).includes("Files") ||
+  event.dataTransfer.files.length > 0;
+
+const getDroppedDocumentFiles = (
+  files: FileList,
+): DocImportFilePayload[] =>
+  Array.from(files)
+    .map((file) => ({
+      name: file.name,
+      sourcePath: api.file.getPathForFile(file),
+    }))
+    .filter((file) => file.sourcePath);
+
 interface MediaPreviewPanelProps {
   projectId: string;
   filePath: string;
@@ -415,6 +440,40 @@ const MediaPreviewPanel = ({
   );
 };
 
+interface FilePreviewPanelProps {
+  title: string;
+  onOpen: () => void;
+  openLabel: string;
+  typeLabel: string;
+}
+
+const FilePreviewPanel = ({
+  title,
+  onOpen,
+  openLabel,
+  typeLabel,
+}: FilePreviewPanelProps) => (
+  <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white">
+    <div className="flex items-center justify-between px-3 py-2">
+      <Typography.Text
+        className="!mb-0 !font-semibold !text-slate-900"
+        ellipsis
+      >
+        {title}
+      </Typography.Text>
+      <Typography.Text className="!text-xs !text-slate-500">
+        {typeLabel}
+      </Typography.Text>
+    </div>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 px-6 py-8">
+      <FileTextOutlined className="text-4xl text-slate-300" />
+      <Button type="primary" onClick={onOpen}>
+        {openLabel}
+      </Button>
+    </div>
+  </div>
+);
+
 export const DocsModule = ({
   projectId,
   requestedDocumentId,
@@ -436,6 +495,7 @@ export const DocsModule = ({
     () => new Set(),
   );
   const [renaming, setRenaming] = useState<RenameState | null>(null);
+  const [isDraggingDocumentFile, setIsDraggingDocumentFile] = useState(false);
   const [uncontrolledSidebarCollapsed, setUncontrolledSidebarCollapsed] =
     useState(false);
   const sidebarCollapsed =
@@ -455,6 +515,7 @@ export const DocsModule = ({
   type SidebarTab = "files" | "conversations";
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("files");
   const hasInitializedExpansionRef = useRef(false);
+  const docsDragDepthRef = useRef(0);
   const editorValueRef = useRef(editorValue);
   const activeDocIdRef = useRef<string | null>(null);
   const lastRemoteSnapshotRef = useRef<{
@@ -857,6 +918,23 @@ export const DocsModule = ({
     },
   });
 
+  const importFilesMutation = useMutation({
+    mutationFn: (files: DocImportFilePayload[]) =>
+      api.docs.importFiles({ projectId, files }),
+    onSuccess: async (imported) => {
+      await invalidateDocQueries();
+      const firstImported = imported[0];
+      if (firstImported) {
+        setSidebarTab("files");
+        setActiveEntryPath(stripDocsPrefix(firstImported.path));
+      }
+      message.success(t("文件已导入"));
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : t("导入文件失败"));
+    },
+  });
+
   const renameFileMutation = useMutation({
     mutationFn: async (payload: { id: string; title: string }) => {
       const updated = await api.docs.update({
@@ -1161,6 +1239,58 @@ export const DocsModule = ({
     saveAsMutation.mutate(node);
   };
 
+  const handleDocsDragEnter = (event: DragEvent<HTMLDivElement>): void => {
+    if (!hasDraggedFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    docsDragDepthRef.current += 1;
+    setIsDraggingDocumentFile(true);
+  };
+
+  const handleDocsDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (!hasDraggedFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDraggingDocumentFile(true);
+  };
+
+  const handleDocsDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+    if (!hasDraggedFiles(event)) {
+      return;
+    }
+    docsDragDepthRef.current = Math.max(0, docsDragDepthRef.current - 1);
+    if (docsDragDepthRef.current === 0) {
+      setIsDraggingDocumentFile(false);
+    }
+  };
+
+  const handleDocsDrop = (event: DragEvent<HTMLDivElement>): void => {
+    if (!hasDraggedFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    docsDragDepthRef.current = 0;
+    setIsDraggingDocumentFile(false);
+
+    const files = getDroppedDocumentFiles(event.dataTransfer.files);
+    if (files.length === 0) {
+      message.error(t("当前环境无法读取文件路径"));
+      return;
+    }
+    importFilesMutation.mutate(files);
+  };
+
+  const handleOpenFile = (filePath: string): void => {
+    void api.file.open(filePath, projectId).catch((error) => {
+      message.error(
+        error instanceof Error ? error.message : t("打开系统预览失败"),
+      );
+    });
+  };
+
   const handleOpenInNewWindow = (input: {
     path: string;
     name: string;
@@ -1386,8 +1516,8 @@ export const DocsModule = ({
       }
 
       const active = resolvedActivePath === node.path;
-      const selectable = Boolean(node.doc) || Boolean(node.mediaKind);
-      const actionable = selectable;
+      const selectable = true;
+      const actionable = true;
       const renamingFile =
         renaming?.kind === "file" && renaming.path === node.path;
       const fileMenuItems: NonNullable<MenuProps["items"]> = [
@@ -1574,7 +1704,13 @@ export const DocsModule = ({
     });
 
   return (
-    <div className="flex h-full min-h-0 gap-0.5">
+    <div
+      className="relative flex h-full min-h-0 gap-0.5 rounded-xl"
+      onDragEnter={handleDocsDragEnter}
+      onDragLeave={handleDocsDragLeave}
+      onDragOver={handleDocsDragOver}
+      onDrop={handleDocsDrop}
+    >
       <div
         className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${sidebarCollapsed ? "w-0" : "w-72"}`}
       >
@@ -1703,6 +1839,13 @@ export const DocsModule = ({
             }
             mediaKind={activeMediaKind}
           />
+        ) : activeExplorerEntry ? (
+          <FilePreviewPanel
+            title={toDocPath(activeExplorerEntry.path)}
+            typeLabel={t("文件")}
+            openLabel={t("打开")}
+            onOpen={() => handleOpenFile(activeExplorerEntry.path)}
+          />
         ) : (
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)]">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2">
@@ -1714,6 +1857,14 @@ export const DocsModule = ({
           </div>
         )}
       </div>
+      {isDraggingDocumentFile ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--primary)_70%,transparent)] bg-[color-mix(in_srgb,var(--primary)_16%,rgba(var(--surface-rgb),0.72))] px-6 text-center text-2xl font-semibold text-[var(--text)] shadow-[inset_0_0_0_1px_rgba(var(--surface-rgb),0.42)] backdrop-blur-[1px]"
+          aria-hidden="true"
+        >
+          {t("松开鼠标，复制文件到文档中。")}
+        </div>
+      ) : null}
     </div>
   );
 };

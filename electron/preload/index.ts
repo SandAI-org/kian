@@ -31,6 +31,7 @@ import type {
   CreationBoardDTO,
   DiscordChatChannelStatus,
   DocExplorerEntryDTO,
+  DocImportFilePayload,
   DocumentDTO,
   FeishuChatChannelStatus,
   GeneralConfigDTO,
@@ -172,6 +173,8 @@ const api = {
       invoke<DocExplorerEntryDTO>("docs:createFolder", payload),
     renameFile: (payload: { projectId: string; path: string; name: string }) =>
       invoke<DocExplorerEntryDTO>("docs:renameFile", payload),
+    importFiles: (payload: { projectId: string; files: DocImportFilePayload[] }) =>
+      invoke<DocExplorerEntryDTO[]>("docs:importFiles", payload),
     renameFolder: (payload: { projectId: string; path: string; name: string }) =>
       invoke<DocExplorerEntryDTO>("docs:renameFolder", payload),
     deleteFolder: (payload: { projectId: string; path: string }) =>
