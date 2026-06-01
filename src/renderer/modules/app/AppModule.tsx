@@ -1,10 +1,15 @@
-import { ExportOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
+import {
+  ExportOutlined,
+  FolderOpenOutlined,
+  ReloadOutlined,
+  SaveOutlined,
+} from "@ant-design/icons";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
 import type { AppType, OpenAppPreviewWindowPayload } from "@shared/types";
 import { formatUtcTimestampToLocal } from "@shared/utils/dateTime";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Space, Typography, message } from "antd";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Space, Tooltip, Typography, message } from "antd";
 import React, { useEffect, useMemo } from "react";
 import { AppPreviewWebview } from "./AppPreviewWebview";
 
@@ -141,18 +146,33 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
     });
   };
 
+  const saveBuildToDocsMutation = useMutation({
+    mutationFn: () => api.app.saveBuildToDocs(projectId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["docs", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["docs-explorer", projectId] }),
+      ]);
+      message.success(t("已保存到文档"));
+    },
+    onError: (error) => {
+      message.error(
+        error instanceof Error ? error.message : t("保存到文档失败"),
+      );
+    },
+  });
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Typography.Text className="!font-semibold !text-slate-900">
-            {appTitle}
-          </Typography.Text>
-          {buildTimeText ? (
-            <Typography.Text className="!text-[12px] !text-slate-500">
-              {t(`上次构建：${buildTimeText}`)}
+          <Tooltip
+            title={buildTimeText ? t(`上次构建：${buildTimeText}`) : undefined}
+          >
+            <Typography.Text className="!font-semibold !text-slate-900" ellipsis>
+              {appTitle}
             </Typography.Text>
-          ) : null}
+          </Tooltip>
         </div>
         <Space size="small">
           <Button
@@ -182,6 +202,15 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
             disabled={!hasRenderableBuild}
           >
             {t("独立窗口展示")}
+          </Button>
+          <Button
+            size="small"
+            icon={<SaveOutlined />}
+            onClick={() => saveBuildToDocsMutation.mutate()}
+            disabled={!hasRenderableBuild}
+            loading={saveBuildToDocsMutation.isPending}
+          >
+            {t("保存到文档中")}
           </Button>
         </Space>
       </div>

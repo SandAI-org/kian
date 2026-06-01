@@ -193,6 +193,8 @@ const api = {
       invoke<AppWorkspaceStatusDTO>("app:init", { projectId }),
     build: (projectId: string) =>
       invoke<AppBuildResultDTO>("app:build", { projectId }),
+    saveBuildToDocs: (projectId: string) =>
+      invoke<DocumentDTO>("app:saveBuildToDocs", { projectId }),
   },
   creation: {
     getBoard: (projectId: string) =>

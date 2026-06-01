@@ -351,6 +351,9 @@ export const registerHandlers = (): void => {
   handle('app:build', z.object({ projectId: z.string() }), async (input) =>
     repositoryService.buildAppWorkspace(input.projectId)
   );
+  handle('app:saveBuildToDocs', z.object({ projectId: z.string() }), async (input) =>
+    repositoryService.saveAppBuildToDocument(input.projectId)
+  );
 
   handle('creation:getBoard', z.object({ projectId: z.string() }), async (input) =>
     repositoryService.getCreationBoard(input.projectId)

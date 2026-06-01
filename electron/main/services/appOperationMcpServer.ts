@@ -417,11 +417,57 @@ export const createAppOperationTools = (
               switchToApp
                 ? "已切换到应用模块并刷新预览。"
                 : "未切换模块，但已刷新应用预览。",
+              "是否需要将这个 HTML 应用保存到文档中？确认后可调用 SaveAppBuildToDocument，或点击应用模块的“保存到文档中”按钮。",
             ].join("\n"),
           };
         } catch (error) {
           return {
             text: `BuildAndRefreshApp failed: ${toErrorMessage(error)}`,
+            isError: true,
+          };
+        }
+      },
+    },
+    {
+      name: "SaveAppBuildToDocument",
+      label: "SaveAppBuildToDocument",
+      description:
+        "将当前应用构建结果保存为文档模块中的单 HTML 文档（内联本地资源，无外部引用）。",
+      parameters: Type.Object({
+        project_id: Type.Optional(
+          Type.String({
+            description:
+              "兼容旧参数。可选，目标 Agent ID；不传则使用当前对话 Agent",
+          }),
+        ),
+        agent_id: Type.Optional(
+          Type.String({
+            description: "可选，目标 Agent ID；不传则使用当前对话 Agent",
+          }),
+        ),
+      }),
+      async handler(input) {
+        try {
+          const projectId =
+            (input.agent_id as string | undefined) ??
+            (input.project_id as string | undefined);
+          const project = await resolveProject(currentProjectId, projectId);
+          const document = await repositoryService.saveAppBuildToDocument(
+            project.id,
+          );
+
+          emitNavigate({
+            projectId: project.id,
+            module: "docs",
+            documentId: document.id,
+          });
+
+          return {
+            text: `已将 Agent ${describeProject(project)} 的 HTML 应用保存到文档：${document.id}。`,
+          };
+        } catch (error) {
+          return {
+            text: `SaveAppBuildToDocument failed: ${toErrorMessage(error)}`,
             isError: true,
           };
         }

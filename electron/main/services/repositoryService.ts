@@ -403,6 +403,31 @@ const SUPPORTED_FILE_EXTENSIONS = new Set([
   ...SUPPORTED_AUDIO_EXTENSIONS,
   ...SUPPORTED_VIDEO_EXTENSIONS,
 ]);
+const INLINE_ASSET_MIME_TYPES = new Map<string, string>([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+  [".bmp", "image/bmp"],
+  [".svg", "image/svg+xml"],
+  [".ico", "image/x-icon"],
+  [".avif", "image/avif"],
+  [".mp3", "audio/mpeg"],
+  [".wav", "audio/wav"],
+  [".m4a", "audio/mp4"],
+  [".aac", "audio/aac"],
+  [".ogg", "audio/ogg"],
+  [".flac", "audio/flac"],
+  [".opus", "audio/opus"],
+  [".mp4", "video/mp4"],
+  [".webm", "video/webm"],
+  [".mov", "video/quicktime"],
+  [".woff", "font/woff"],
+  [".woff2", "font/woff2"],
+  [".ttf", "font/ttf"],
+  [".otf", "font/otf"],
+]);
 const SUPPORTED_MIME_PREFIXES = ["text/", "image/", "audio/", "video/"];
 const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf",
@@ -1512,6 +1537,140 @@ const readAppWorkspaceStatus = async (
     hasBuild,
     builtAt,
   };
+};
+
+const isExternalInlineUrl = (value: string): boolean =>
+  /^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(value.trim());
+
+const resolveInlineAssetPath = (
+  rawUrl: string,
+  input: {
+    rootDir: string;
+    baseDir: string;
+  },
+): string | null => {
+  const trimmed = rawUrl.trim();
+  if (!trimmed || isExternalInlineUrl(trimmed)) return null;
+
+  const withoutSuffix = trimmed.split(/[?#]/, 1)[0] ?? "";
+  const decoded = decodeURIComponent(withoutSuffix);
+  const normalized = decoded.replace(/\\/g, "/");
+  const absolutePath = normalized.startsWith("/")
+    ? path.resolve(input.rootDir, normalized.replace(/^\/+/, ""))
+    : path.resolve(input.baseDir, normalized);
+
+  if (!isWithinDirectory(absolutePath, input.rootDir)) {
+    return null;
+  }
+  return absolutePath;
+};
+
+const inlineAssetAsDataUrl = async (filePath: string): Promise<string> => {
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeType =
+    INLINE_ASSET_MIME_TYPES.get(extension) ?? "application/octet-stream";
+  const data = await fs.readFile(filePath);
+  return `data:${mimeType};base64,${data.toString("base64")}`;
+};
+
+const inlineCssAssetUrls = async (
+  css: string,
+  input: {
+    rootDir: string;
+    cssDir: string;
+  },
+): Promise<string> => {
+  const replacements = await Promise.all(
+    [...css.matchAll(/url\((["']?)([^"')]+)\1\)/g)].map(
+      async (match): Promise<[string, string] | null> => {
+        const rawUrl = match[2]?.trim();
+        if (!rawUrl || isExternalInlineUrl(rawUrl)) return null;
+        const assetPath = resolveInlineAssetPath(rawUrl, {
+          rootDir: input.rootDir,
+          baseDir: input.cssDir,
+        });
+        if (!assetPath || !(await pathExists(assetPath))) return null;
+        return [match[0], `url("${await inlineAssetAsDataUrl(assetPath)}")`];
+      },
+    ),
+  );
+
+  let nextCss = css;
+  for (const replacement of replacements) {
+    if (!replacement) continue;
+    nextCss = nextCss.split(replacement[0]).join(replacement[1]);
+  }
+  return nextCss;
+};
+
+const stripAttribute = (attributes: string, name: string): string =>
+  attributes
+    .replace(new RegExp(`\\s${name}(?:=(["']).*?\\1|=[^\\s>]+)?`, "gi"), "")
+    .trimEnd();
+
+const inlineBuiltAppHtml = async (indexPath: string): Promise<string> => {
+  const rootDir = path.dirname(indexPath);
+  let html = await fs.readFile(indexPath, "utf8");
+
+  const stylesheetMatches = [
+    ...html.matchAll(/<link\b([^>]*\brel=(["'])stylesheet\2[^>]*)>/gi),
+  ];
+  for (const match of stylesheetMatches) {
+    const tag = match[0];
+    const attributes = match[1] ?? "";
+    const href = attributes.match(/\bhref=(["'])([^"']+)\1/i)?.[2];
+    if (!href) continue;
+    const cssPath = resolveInlineAssetPath(href, {
+      rootDir,
+      baseDir: rootDir,
+    });
+    if (!cssPath || !(await pathExists(cssPath))) continue;
+    const css = await inlineCssAssetUrls(await fs.readFile(cssPath, "utf8"), {
+      rootDir,
+      cssDir: path.dirname(cssPath),
+    });
+    html = html.replace(tag, `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`);
+  }
+
+  const scriptMatches = [
+    ...html.matchAll(/<script\b([^>]*)\bsrc=(["'])([^"']+)\2([^>]*)>\s*<\/script>/gi),
+  ];
+  for (const match of scriptMatches) {
+    const tag = match[0];
+    const attributes = `${match[1] ?? ""}${match[4] ?? ""}`;
+    const src = match[3];
+    if (!src) continue;
+    const scriptPath = resolveInlineAssetPath(src, {
+      rootDir,
+      baseDir: rootDir,
+    });
+    if (!scriptPath || !(await pathExists(scriptPath))) continue;
+    const script = await fs.readFile(scriptPath, "utf8");
+    const nextAttributes = stripAttribute(attributes, "src").trim();
+    html = html.replace(
+      tag,
+      `<script${nextAttributes ? ` ${nextAttributes}` : ""}>${script.replace(/<\/script/gi, "<\\/script")}</script>`,
+    );
+  }
+
+  const assetAttributeMatches = [
+    ...html.matchAll(/\b(src|href|poster)=(["'])([^"']+)\2/gi),
+  ];
+  for (const match of assetAttributeMatches) {
+    const full = match[0];
+    const name = match[1];
+    const quote = match[2];
+    const rawUrl = match[3];
+    if (!name || !quote || !rawUrl || isExternalInlineUrl(rawUrl)) continue;
+    const assetPath = resolveInlineAssetPath(rawUrl, {
+      rootDir,
+      baseDir: rootDir,
+    });
+    if (!assetPath || !(await pathExists(assetPath))) continue;
+    html = html.replace(full, `${name}=${quote}${await inlineAssetAsDataUrl(assetPath)}${quote}`);
+  }
+
+  return html;
 };
 
 interface ProcessExecutionResult {
@@ -2800,6 +2959,27 @@ export const repositoryService = {
       builtAt: stats.mtime.toISOString(),
       installedDependencies,
     };
+  },
+
+  async saveAppBuildToDocument(projectId: string): Promise<DocumentDTO> {
+    const status = await readAppWorkspaceStatus(projectId);
+    if (!status.hasBuild || !status.distIndexPath || !status.builtAt) {
+      throw new Error("请先构建应用");
+    }
+    if (!(await pathExists(status.distIndexPath))) {
+      throw new Error("未找到 app/dist/index.html");
+    }
+
+    const rawName = status.appName.trim() || "app";
+    const fileName = rawName.toLowerCase().endsWith(".html")
+      ? rawName
+      : `${rawName}.html`;
+    const content = await inlineBuiltAppHtml(status.distIndexPath);
+    return this.createDocument({
+      projectId,
+      title: fileName,
+      content,
+    });
   },
 
   async getCreationBoard(projectId: string): Promise<CreationBoardDTO> {

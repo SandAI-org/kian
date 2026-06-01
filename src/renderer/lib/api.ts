@@ -31,6 +31,7 @@ import type {
   SavePastedUploadFilePayload,
   CronJobDTO,
   DiscordChatChannelStatus,
+  DocumentDTO,
   InstalledSkillDTO,
   MediaProvider,
   FeishuChatChannelStatus,
@@ -157,7 +158,9 @@ export const api = {
     init: async (projectId: string): Promise<AppWorkspaceStatusDTO> =>
       unwrap(await window.api.app.init(projectId)),
     build: async (projectId: string): Promise<AppBuildResultDTO> =>
-      unwrap(await window.api.app.build(projectId))
+      unwrap(await window.api.app.build(projectId)),
+    saveBuildToDocs: async (projectId: string): Promise<DocumentDTO> =>
+      unwrap(await window.api.app.saveBuildToDocs(projectId))
   },
   creation: {
     getBoard: async (projectId: string) => unwrap(await window.api.creation.getBoard(projectId)),
