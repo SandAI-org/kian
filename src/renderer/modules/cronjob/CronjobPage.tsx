@@ -1,7 +1,7 @@
 import { ScrollArea } from '@renderer/components/ScrollArea';
 import { useAppI18n } from '@renderer/i18n/AppI18nProvider';
 import { api } from '@renderer/lib/api';
-import type { CronJobDTO } from '@shared/types';
+import type { CronJobDTO, CronJobExecutionStatus } from '@shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Spin, Tag, Typography, message } from 'antd';
 import { IllustrationEmptyCronjob } from '@renderer/components/EmptyIllustrations';
@@ -47,12 +47,50 @@ const resolveStatusTag = (status: string, t: (value: string) => string) => {
 const resolveTargetAgentLabel = (job: CronJobDTO, t: (value: string) => string): string =>
   job.targetAgentName?.trim() || job.targetAgentId?.trim() || t('主 Agent');
 
+const formatExecutionTime = (value: string, language: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(language, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+};
+
+const resolveExecutionStatusTag = (
+  status: CronJobExecutionStatus,
+  t: (value: string) => string
+) => {
+  if (status === 'failed') {
+    return (
+      <Tag color="red" className="!m-0">
+        {t('执行失败')}
+      </Tag>
+    );
+  }
+  if (status === 'skipped') {
+    return (
+      <Tag color="default" className="!m-0">
+        {t('已跳过')}
+      </Tag>
+    );
+  }
+  return (
+    <Tag color="green" className="!m-0">
+      {t('已执行')}
+    </Tag>
+  );
+};
+
 export const CronjobPage = () => {
-  const { t } = useAppI18n();
+  const { language, t } = useAppI18n();
   const queryClient = useQueryClient();
   const cronjobQuery = useQuery({
     queryKey: ['cronjobs'],
-    queryFn: api.cronjob.list,
+    queryFn: api.cronjob.listWithLastExecution,
     refetchInterval: 5000
   });
   const toggleStatusMutation = useMutation({
@@ -153,6 +191,31 @@ export const CronjobPage = () => {
                   >
                     {job.content || '--'}
                   </Typography.Paragraph>
+                  {job.lastExecution ? (
+                    <div className="flex flex-col gap-1 rounded-md bg-slate-50 px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Typography.Text className="!text-xs !text-slate-500">
+                          {t('最近执行：')}
+                          {formatExecutionTime(job.lastExecution.executedAt, language)}
+                        </Typography.Text>
+                        {resolveExecutionStatusTag(job.lastExecution.status, t)}
+                      </div>
+                      {job.lastExecution.error ? (
+                        <Typography.Text className="!text-xs" type="danger">
+                          {t('错误：')}
+                          {job.lastExecution.error}
+                        </Typography.Text>
+                      ) : job.lastExecution.assistantMessage ? (
+                        <Typography.Paragraph
+                          className="!mb-0 !text-xs !text-slate-500"
+                          ellipsis={{ rows: 2, expandable: true, symbol: t('展开') }}
+                        >
+                          {t('最近反馈：')}
+                          {job.lastExecution.assistantMessage}
+                        </Typography.Paragraph>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </Card>
             );

@@ -13,6 +13,7 @@ import {
   type CreationSceneDTO,
   type CreationShotDTO,
   type CronJobDTO,
+  type CronJobLastExecutionDTO,
   type DocExplorerEntryDTO,
   type DocumentDTO,
   type ModuleType,
@@ -34,9 +35,36 @@ interface CronJobFileItem {
   status: string;
   targetAgentId?: string | null;
 }
+interface CronJobExecutionLogItem {
+  executedAt: string;
+  jobId: string;
+  cron?: string;
+  content?: string;
+  status: CronJobLastExecutionDTO["status"];
+  reason?: string | null;
+  error?: string | null;
+  sessionId?: string | null;
+  assistantMessage?: string | null;
+  project?: {
+    id?: string | null;
+    name?: string | null;
+  } | null;
+}
+interface FileSnapshot {
+  size: number;
+  mtimeMs: number;
+}
+interface CronJobsWithLastExecutionCache {
+  cronJobFile: FileSnapshot | null;
+  logFile: FileSnapshot | null;
+  latestExecutionByJobId: Map<string, CronJobLastExecutionDTO>;
+}
 
 const nowISO = (): string => new Date().toISOString();
 const MAIN_AGENT_SCOPE_ID = "main-agent";
+const CRON_JOB_LOG_READ_CHUNK_BYTES = 256 * 1024;
+let cronJobsWithLastExecutionCache: CronJobsWithLastExecutionCache | null =
+  null;
 
 const ensureDir = async (dirPath: string): Promise<void> => {
   await fs.mkdir(dirPath, { recursive: true });
@@ -50,6 +78,29 @@ const pathExists = async (filePath: string): Promise<boolean> => {
     return false;
   }
 };
+
+const readFileSnapshot = async (
+  filePath: string,
+): Promise<FileSnapshot | null> => {
+  try {
+    const stats = await fs.stat(filePath);
+    return {
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const fileSnapshotsEqual = (
+  left: FileSnapshot | null,
+  right: FileSnapshot | null,
+): boolean =>
+  left?.size === right?.size && left?.mtimeMs === right?.mtimeMs;
 
 const readJson = async <T>(filePath: string, fallback: T): Promise<T> => {
   try {
@@ -2033,6 +2084,254 @@ const readRawCronJobItems = async (): Promise<unknown[]> => {
   return Array.isArray(raw) ? raw : [];
 };
 
+const readCronJobExecutionLinesFromEnd = async (
+  onLine: (line: string) => boolean,
+): Promise<void> => {
+  const filePath = getCronJobLogPath();
+  if (!(await pathExists(filePath))) {
+    return;
+  }
+
+  const stats = await fs.stat(filePath);
+  if (stats.size === 0) {
+    return;
+  }
+
+  const handle = await fs.open(filePath, "r");
+  let position = stats.size;
+  let carry: Buffer = Buffer.alloc(0);
+
+  try {
+    while (position > 0) {
+      const length = Math.min(position, CRON_JOB_LOG_READ_CHUNK_BYTES);
+      position -= length;
+
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, position);
+      const chunk = buffer.subarray(0, bytesRead);
+      const combined =
+        carry.length > 0 ? Buffer.concat([chunk, carry]) : chunk;
+      const segments: Buffer[] = [];
+      let lineStart = 0;
+      for (let index = 0; index < combined.length; index += 1) {
+        if (combined[index] !== 10) continue;
+        segments.push(combined.subarray(lineStart, index));
+        lineStart = index + 1;
+      }
+      segments.push(combined.subarray(lineStart));
+
+      let firstCompleteLineIndex = 0;
+      if (position > 0) {
+        carry = segments[0] ?? Buffer.alloc(0);
+        firstCompleteLineIndex = 1;
+      } else {
+        carry = Buffer.alloc(0);
+      }
+
+      for (
+        let index = segments.length - 1;
+        index >= firstCompleteLineIndex;
+        index -= 1
+      ) {
+        const line = segments[index].toString("utf8").trim();
+        if (line && !onLine(line)) {
+          return;
+        }
+      }
+    }
+  } finally {
+    await handle.close();
+  }
+};
+
+const parseCronJobExecutionLogLine = (
+  line: string,
+): CronJobExecutionLogItem | null => {
+  try {
+    const parsed = JSON.parse(line) as Partial<CronJobExecutionLogItem>;
+    if (
+      typeof parsed.executedAt !== "string" ||
+      (parsed.status !== "dispatched" &&
+        parsed.status !== "skipped" &&
+        parsed.status !== "failed")
+    ) {
+      return null;
+    }
+
+    return {
+      executedAt: parsed.executedAt,
+      jobId: typeof parsed.jobId === "string" ? parsed.jobId : "",
+      cron: typeof parsed.cron === "string" ? parsed.cron : "",
+      content: typeof parsed.content === "string" ? parsed.content : "",
+      status: parsed.status,
+      reason: parsed.reason ?? null,
+      error: parsed.error ?? null,
+      sessionId: parsed.sessionId ?? null,
+      assistantMessage: parsed.assistantMessage ?? null,
+      project:
+        typeof parsed.project === "object" && parsed.project
+          ? parsed.project
+          : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const cronJobExecutionMatchesJob = (
+  execution: CronJobExecutionLogItem,
+  job: CronJobDTO,
+): boolean => {
+  const expectedProjectId = job.targetAgentId ?? MAIN_AGENT_SCOPE_ID;
+  const projectId =
+    typeof execution.project?.id === "string"
+      ? execution.project.id.trim()
+      : "";
+
+  if (
+    (execution.cron ?? "").trim() !== job.cron.trim() ||
+    (execution.content ?? "").trim() !== job.content.trim()
+  ) {
+    return false;
+  }
+
+  if (!projectId) {
+    return true;
+  }
+
+  if (job.targetAgentId) {
+    return projectId === expectedProjectId;
+  }
+
+  return projectId === MAIN_AGENT_SCOPE_ID;
+};
+
+const cronJobExecutionMatchesFallbackJobId = (
+  execution: CronJobExecutionLogItem,
+  job: CronJobDTO,
+): boolean => {
+  if (!job.targetAgentId || execution.jobId !== job.id) {
+    return false;
+  }
+
+  const projectId =
+    typeof execution.project?.id === "string"
+      ? execution.project.id.trim()
+      : "";
+
+  return (
+    projectId === MAIN_AGENT_SCOPE_ID &&
+    (execution.cron ?? "").trim() === job.cron.trim() &&
+    (execution.content ?? "").trim() === job.content.trim()
+  );
+};
+
+const toCronJobLastExecution = (
+  execution: CronJobExecutionLogItem,
+): CronJobLastExecutionDTO => ({
+  executedAt: execution.executedAt,
+  status: execution.status,
+  reason: execution.reason ?? null,
+  error: execution.error ?? null,
+  sessionId: execution.sessionId ?? null,
+  assistantMessage: execution.assistantMessage ?? null,
+});
+
+const cloneCronJobLastExecution = (
+  execution: CronJobLastExecutionDTO | null | undefined,
+): CronJobLastExecutionDTO | null =>
+  execution ? { ...execution } : null;
+
+const attachCronJobLastExecutions = (
+  jobs: CronJobDTO[],
+  latestExecutionByJobId: Map<string, CronJobLastExecutionDTO>,
+): CronJobDTO[] =>
+  jobs.map((job) => ({
+    ...job,
+    lastExecution: cloneCronJobLastExecution(
+      latestExecutionByJobId.get(job.id),
+    ),
+  }));
+
+const listCronJobsWithRecentExecutions = async (): Promise<CronJobDTO[]> => {
+  const { jobs, cronJobFile } = await listCronJobDtosWithSnapshot();
+  const initialSnapshots = {
+    cronJobFile,
+    logFile: await readFileSnapshot(getCronJobLogPath()),
+  };
+  if (
+    cronJobsWithLastExecutionCache &&
+    fileSnapshotsEqual(
+      cronJobsWithLastExecutionCache.cronJobFile,
+      initialSnapshots.cronJobFile,
+    ) &&
+    fileSnapshotsEqual(
+      cronJobsWithLastExecutionCache.logFile,
+      initialSnapshots.logFile,
+    )
+  ) {
+    return attachCronJobLastExecutions(
+      jobs,
+      cronJobsWithLastExecutionCache.latestExecutionByJobId,
+    );
+  }
+
+  if (jobs.length === 0) {
+    cronJobsWithLastExecutionCache = {
+      ...initialSnapshots,
+      latestExecutionByJobId: new Map(),
+    };
+    return jobs;
+  }
+
+  const pending = new Set(jobs.map((job) => job.id));
+  const latestByJobId = new Map<string, CronJobLastExecutionDTO>();
+
+  await readCronJobExecutionLinesFromEnd((line) => {
+    const execution = parseCronJobExecutionLogLine(line);
+    if (!execution) return true;
+
+    const sameIdPendingJob = jobs.find(
+      (candidate) =>
+        pending.has(candidate.id) && candidate.id === execution.jobId,
+    );
+    if (
+      sameIdPendingJob &&
+      (cronJobExecutionMatchesJob(execution, sameIdPendingJob) ||
+        cronJobExecutionMatchesFallbackJobId(execution, sameIdPendingJob))
+    ) {
+      latestByJobId.set(sameIdPendingJob.id, toCronJobLastExecution(execution));
+      pending.delete(sameIdPendingJob.id);
+      return pending.size > 0;
+    }
+
+    const sameIdJob = jobs.find((candidate) => candidate.id === execution.jobId);
+    if (sameIdJob && !pending.has(sameIdJob.id)) {
+      return true;
+    }
+
+    const candidates = jobs.filter(
+      (candidate) =>
+        pending.has(candidate.id) &&
+        cronJobExecutionMatchesJob(execution, candidate),
+    );
+    const job =
+      candidates.find((candidate) => candidate.id === execution.jobId) ??
+      (candidates.length === 1 ? candidates[0] : null);
+    if (!job) return true;
+
+    latestByJobId.set(job.id, toCronJobLastExecution(execution));
+    pending.delete(job.id);
+    return pending.size > 0;
+  });
+
+  cronJobsWithLastExecutionCache = {
+    ...initialSnapshots,
+    latestExecutionByJobId: new Map(latestByJobId),
+  };
+  return attachCronJobLastExecutions(jobs, latestByJobId);
+};
+
 const resolveCronJobTargetAgentName = async (
   targetAgentId: string | null | undefined,
 ): Promise<string | null> => {
@@ -2053,6 +2352,7 @@ const resolveCronJobTargetAgentName = async (
 const toCronJobDto = async (
   item: CronJobFileItem,
   index: number,
+  lastExecution?: CronJobLastExecutionDTO | null,
 ): Promise<CronJobDTO> => ({
   id: `cronjob-${index + 1}`,
   cron: item.cron,
@@ -2061,7 +2361,27 @@ const toCronJobDto = async (
   status: item.status,
   targetAgentId: item.targetAgentId ?? null,
   targetAgentName: await resolveCronJobTargetAgentName(item.targetAgentId),
+  lastExecution: lastExecution ?? null,
 });
+
+const listCronJobDtos = async (): Promise<CronJobDTO[]> => {
+  const rows = await readCronJobItems();
+  return Promise.all(rows.map((item, index) => toCronJobDto(item, index)));
+};
+
+const listCronJobDtosWithSnapshot = async (): Promise<{
+  jobs: CronJobDTO[];
+  cronJobFile: FileSnapshot | null;
+}> => {
+  while (true) {
+    const before = await readFileSnapshot(getCronJobPath());
+    const jobs = await listCronJobDtos();
+    const after = await readFileSnapshot(getCronJobPath());
+    if (fileSnapshotsEqual(before, after)) {
+      return { jobs, cronJobFile: after };
+    }
+  }
+};
 
 const readProjectMeta = async (projectId: string): Promise<ProjectMetaFile> => {
   const filePath = getProjectMetaPath(projectId);
@@ -2415,8 +2735,11 @@ const updateChatSessionTimestamp = async (
 
 export const repositoryService = {
   async listCronJobs(): Promise<CronJobDTO[]> {
-    const rows = await readCronJobItems();
-    return Promise.all(rows.map((item, index) => toCronJobDto(item, index)));
+    return listCronJobDtos();
+  },
+
+  async listCronJobsWithLastExecution(): Promise<CronJobDTO[]> {
+    return listCronJobsWithRecentExecutions();
   },
 
   async setCronJobStatus(input: {
@@ -2461,6 +2784,7 @@ export const repositoryService = {
     sessionId?: string | null;
     reason?: string | null;
     error?: string | null;
+    assistantMessage?: string | null;
   }): Promise<void> {
     await ensureWorkspaceRoot();
 
@@ -2477,6 +2801,7 @@ export const repositoryService = {
         name: input.projectName ?? null,
       },
       sessionId: input.sessionId ?? null,
+      assistantMessage: input.assistantMessage ?? null,
     });
 
     await fs.appendFile(getCronJobLogPath(), `${line}\n`, "utf8");
@@ -3384,6 +3709,7 @@ export const repositoryService = {
       sessionUpdatedAt: timestamp,
       sessionModule: input.module,
       sessionKind: next.kind,
+      sessionHidden: next.hidden,
       sessionMetadataJson: next.metadataJson,
     });
 
@@ -3590,6 +3916,7 @@ export const repositoryService = {
       sessionUpdatedAt: updatedAt,
       sessionModule: session.module,
       sessionKind: session.kind,
+      sessionHidden: session.hidden,
       sessionMetadataJson: session.metadataJson,
     });
   },
@@ -3652,6 +3979,7 @@ export const repositoryService = {
         createdAt: next.createdAt,
         sessionUpdatedAt,
         sessionKind: matchedSession.kind,
+        sessionHidden: matchedSession.hidden,
         sessionMetadataJson: matchedSession.metadataJson,
         message: cachedMessages.find((item) => item.id === next.id) ?? next,
       });

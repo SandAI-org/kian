@@ -60,6 +60,8 @@ export const api = {
   },
   cronjob: {
     list: async (): Promise<CronJobDTO[]> => unwrap(await window.api.cronjob.list()),
+    listWithLastExecution: async (): Promise<CronJobDTO[]> =>
+      unwrap(await window.api.cronjob.listWithLastExecution()),
     setStatus: async (payload: { id: string; status: 'active' | 'paused' }): Promise<CronJobDTO> =>
       unwrap(await window.api.cronjob.setStatus(payload))
   },

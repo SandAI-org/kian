@@ -96,7 +96,9 @@ describe("cronjobService", () => {
       scopeType: "project",
       projectId: "agent-a",
       module: "docs",
-      title: "Agent 会话",
+      kind: "normal",
+      hidden: true,
+      title: "",
       sdkSessionId: null,
       createdAt: "2026-03-10T09:00:00.000Z",
       updatedAt: "2026-03-10T09:00:00.000Z",
@@ -113,17 +115,15 @@ describe("cronjobService", () => {
     await flushAsyncWork();
     cronjobService.stop();
 
-    expect(repositoryService.listChatSessions).toHaveBeenCalledWith({
-      type: "project",
-      projectId: "agent-a",
-    });
+    expect(repositoryService.listChatSessions).not.toHaveBeenCalled();
     expect(repositoryService.createChatSession).toHaveBeenCalledWith({
       scope: {
         type: "project",
         projectId: "agent-a",
       },
       module: "docs",
-      title: "Agent 会话",
+      title: "",
+      hidden: true,
     });
     expect(chatService.send).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -134,6 +134,7 @@ describe("cronjobService", () => {
         module: "docs",
         sessionId: "session-agent-a",
         message: "整理日报",
+        skipAutoTitleGeneration: true,
       }),
     );
     expect(assistantMirrorStreamer.pushEvent).not.toHaveBeenCalled();
@@ -147,6 +148,7 @@ describe("cronjobService", () => {
         projectId: "agent-a",
         projectName: "阿青",
         sessionId: "session-agent-a",
+        assistantMessage: "已完成",
       }),
     );
   });
@@ -179,17 +181,17 @@ describe("cronjobService", () => {
       },
     ]);
     vi.mocked(repositoryService.getProjectById).mockResolvedValue(null);
-    vi.mocked(repositoryService.listChatSessions).mockResolvedValue([
-      {
-        id: "session-main",
-        scopeType: "main",
-        module: "main",
-        title: "主 Agent 会话",
-        sdkSessionId: null,
-        createdAt: "2026-03-10T09:00:00.000Z",
-        updatedAt: "2026-03-10T09:00:00.000Z",
-      },
-    ]);
+    vi.mocked(repositoryService.createChatSession).mockResolvedValue({
+      id: "session-main",
+      scopeType: "main",
+      module: "main",
+      kind: "normal",
+      hidden: true,
+      title: "",
+      sdkSessionId: null,
+      createdAt: "2026-03-10T09:00:00.000Z",
+      updatedAt: "2026-03-10T09:00:00.000Z",
+    });
     vi.mocked(chatChannelService.createCronJobAssistantMirrorStreamer).mockReturnValue(
       assistantMirrorStreamer,
     );
@@ -202,8 +204,14 @@ describe("cronjobService", () => {
     await flushAsyncWork();
     cronjobService.stop();
 
-    expect(repositoryService.listChatSessions).toHaveBeenCalledWith({
-      type: "main",
+    expect(repositoryService.listChatSessions).not.toHaveBeenCalled();
+    expect(repositoryService.createChatSession).toHaveBeenCalledWith({
+      scope: {
+        type: "main",
+      },
+      module: "main",
+      title: "",
+      hidden: true,
     });
     expect(chatService.send).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -213,6 +221,7 @@ describe("cronjobService", () => {
         module: "main",
         sessionId: "session-main",
         message: "汇总看板",
+        skipAutoTitleGeneration: true,
       }),
     );
     expect(assistantMirrorStreamer.pushEvent).not.toHaveBeenCalled();
@@ -226,6 +235,7 @@ describe("cronjobService", () => {
         projectId: "main-agent",
         projectName: "主 Agent",
         sessionId: "session-main",
+        assistantMessage: "已完成",
       }),
     );
   });

@@ -210,4 +210,23 @@ describe("chatService auto title", () => {
       title: "给我讲一个冷笑话",
     });
   });
+
+  it("skips optimistic and model title generation when requested", async () => {
+    const { chatService } = await import("../../electron/main/services/chatService");
+
+    await chatService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-1",
+      requestId: "req-skip-title",
+      message: "执行后台定时任务",
+      model: "anthropic:claude-3-7-sonnet",
+      skipAutoTitleGeneration: true,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(state.updateChatSessionTitle).not.toHaveBeenCalled();
+    expect(state.completeSimple).not.toHaveBeenCalled();
+  });
 });
