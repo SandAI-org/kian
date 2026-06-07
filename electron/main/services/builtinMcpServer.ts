@@ -4,7 +4,10 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createBrowserUseTools } from "./browserUseTools";
-import { sendFeishuWebhookMessage } from "./chatChannel/feishuWebhookTransport";
+import {
+  sendFeishuWebhookInteractiveCard,
+  sendFeishuWebhookMessage,
+} from "./chatChannel/feishuWebhookTransport";
 import { sendWechatWebhookMessage } from "./chatChannel/wechatWebhookTransport";
 import type { CustomToolDef } from "./customTools";
 import { buildMediaMarkdown } from "./mediaMarkdown";
@@ -573,6 +576,11 @@ export const createBuiltinTools = (projectCwd: string): CustomToolDef[] => {
       message: Type.String({
         description: "需要广播的消息内容（Markdown 格式）",
       }),
+      feishuCard: Type.Optional(
+        Type.Record(Type.String(), Type.Any(), {
+          description: "飞书交互卡片 JSON，仅飞书广播渠道使用",
+        }),
+      ),
     }),
     async handler(input) {
       try {
@@ -585,6 +593,12 @@ export const createBuiltinTools = (projectCwd: string): CustomToolDef[] => {
         if (!message) {
           throw new Error("message 不能为空");
         }
+        const feishuCard =
+          input.feishuCard &&
+          typeof input.feishuCard === "object" &&
+          !Array.isArray(input.feishuCard)
+            ? (input.feishuCard as Record<string, unknown>)
+            : null;
 
         const channel =
           await settingsService.getBroadcastChannelById(channelId);
@@ -612,6 +626,8 @@ export const createBuiltinTools = (projectCwd: string): CustomToolDef[] => {
             channel.webhook,
             `${message}\n\n<font color="comment">来自 ${computerName}</font>`,
           );
+        } else if (feishuCard) {
+          await sendFeishuWebhookInteractiveCard(channel.webhook, feishuCard);
         } else {
           const feishuRuntime =
             await settingsService.getFeishuChatChannelRuntime();

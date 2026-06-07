@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sendFeishuWebhookMessage } from "../../electron/main/services/chatChannel/feishuWebhookTransport";
+import {
+  sendFeishuWebhookInteractiveCard,
+  sendFeishuWebhookMessage,
+} from "../../electron/main/services/chatChannel/feishuWebhookTransport";
 
 const originalFetch = globalThis.fetch;
 const createJsonResponse = (payload: unknown): Response =>
@@ -10,6 +13,24 @@ const createJsonResponse = (payload: unknown): Response =>
     },
     json: vi.fn().mockResolvedValue(payload),
   }) as unknown as Response;
+
+const createMarkdownCardPayload = (content: string): Record<string, unknown> => ({
+  msg_type: "interactive",
+  card: {
+    schema: "2.0",
+    config: {
+      update_multi: true,
+    },
+    body: {
+      elements: [
+        {
+          tag: "markdown",
+          content,
+        },
+      ],
+    },
+  },
+});
 
 describe("sendFeishuWebhookMessage", () => {
   const fetchMock = vi.fn();
@@ -31,20 +52,7 @@ describe("sendFeishuWebhookMessage", () => {
     const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(requestInit.body));
 
-    expect(body).toEqual({
-      msg_type: "interactive",
-      card: {
-        schema: "2.0",
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: "hello world",
-            },
-          ],
-        },
-      },
-    });
+    expect(body).toEqual(createMarkdownCardPayload("hello world"));
   });
 
   it("treats JSON string as markdown content", async () => {
@@ -56,20 +64,7 @@ describe("sendFeishuWebhookMessage", () => {
     const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(requestInit.body));
 
-    expect(body).toEqual({
-      msg_type: "interactive",
-      card: {
-        schema: "2.0",
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: rawJson,
-            },
-          ],
-        },
-      },
-    });
+    expect(body).toEqual(createMarkdownCardPayload(rawJson));
   });
 
   it("uploads markdown image and replaces image url with image_key", async () => {
@@ -104,20 +99,9 @@ describe("sendFeishuWebhookMessage", () => {
 
     const [, webhookRequestInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(String(webhookRequestInit.body));
-    expect(body).toEqual({
-      msg_type: "interactive",
-      card: {
-        schema: "2.0",
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: "图像示例：![示例图](img_v3_001)",
-            },
-          ],
-        },
-      },
-    });
+    expect(body).toEqual(
+      createMarkdownCardPayload("图像示例：![示例图](img_v3_001)"),
+    );
   });
 
   it("strips unsupported attachment token and appends webhook limitation note", async () => {
@@ -134,27 +118,18 @@ describe("sendFeishuWebhookMessage", () => {
     const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(requestInit.body));
 
-    expect(body).toEqual({
-      msg_type: "interactive",
-      card: {
-        schema: "2.0",
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: [
-                "正文开始",
-                "",
-                "正文结束",
-                "",
-                "附件说明：当前飞书 Webhook 通道不支持文件消息，未发送以下附件：",
-                "- demo.txt",
-              ].join("\n"),
-            },
-          ],
-        },
-      },
-    });
+    expect(body).toEqual(
+      createMarkdownCardPayload(
+        [
+          "正文开始",
+          "",
+          "正文结束",
+          "",
+          "附件说明：当前飞书 Webhook 通道不支持文件消息，未发送以下附件：",
+          "- demo.txt",
+        ].join("\n"),
+      ),
+    );
   });
 
   it("converts image attachment token to inline image markdown", async () => {
@@ -171,23 +146,42 @@ describe("sendFeishuWebhookMessage", () => {
     const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(requestInit.body));
 
+    expect(body).toEqual(
+      createMarkdownCardPayload(
+        [
+          "正文开始",
+          "![demo.png](/tmp/demo.png)",
+          "正文结束",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("sends raw interactive card payload for Feishu webhooks", async () => {
+    const card = {
+      schema: "2.0",
+      body: {
+        elements: [
+          {
+            tag: "div",
+            text: {
+              tag: "plain_text",
+              content: "hello card",
+            },
+          },
+        ],
+      },
+    };
+
+    await sendFeishuWebhookInteractiveCard("https://example.com/webhook", card);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(requestInit.body));
+
     expect(body).toEqual({
       msg_type: "interactive",
-      card: {
-        schema: "2.0",
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: [
-                "正文开始",
-                "![demo.png](/tmp/demo.png)",
-                "正文结束",
-              ].join("\n"),
-            },
-          ],
-        },
-      },
+      card,
     });
   });
 });

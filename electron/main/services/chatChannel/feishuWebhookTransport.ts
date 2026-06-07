@@ -21,6 +21,32 @@ interface FeishuWebhookResponse {
 const FEISHU_IMAGE_MARKDOWN_MARKER_PATTERN =
   /!\[[^\]]*\]\([^)]+\)|@\[(?:image)(?:\|[^\]]*)?\]\([^)]+\)/i;
 
+const assertFeishuWebhookResponseOk = (
+  body: FeishuWebhookResponse | null,
+  fallbackMessage: string,
+): void => {
+  if (!body || typeof body !== "object") {
+    return;
+  }
+
+  const code =
+    typeof body.StatusCode === "number"
+      ? body.StatusCode
+      : typeof body.code === "number"
+        ? body.code
+        : 0;
+  if (code === 0) {
+    return;
+  }
+
+  const message =
+    (typeof body.StatusMessage === "string" && body.StatusMessage.trim()) ||
+    (typeof body.msg === "string" && body.msg.trim()) ||
+    (typeof body.message === "string" && body.message.trim()) ||
+    fallbackMessage;
+  throw new Error(message);
+};
+
 const removeUnsupportedWebhookAttachmentTokens = (content: string): {
   text: string;
   attachmentLabels: string[];
@@ -120,24 +146,32 @@ export const sendFeishuWebhookMessage = async (
   const body = (await response.json().catch(() => null)) as
     | FeishuWebhookResponse
     | null;
-  if (!body || typeof body !== "object") {
-    return;
+  assertFeishuWebhookResponseOk(body, "飞书 Webhook 消息发送失败");
+};
+
+export const sendFeishuWebhookInteractiveCard = async (
+  webhook: string,
+  card: Record<string, unknown>,
+): Promise<void> => {
+  const normalizedWebhook = webhook.trim();
+  if (!normalizedWebhook) {
+    throw new Error("飞书 Webhook 不能为空");
   }
 
-  const code =
-    typeof body.StatusCode === "number"
-      ? body.StatusCode
-      : typeof body.code === "number"
-        ? body.code
-        : 0;
-  if (code === 0) {
-    return;
-  }
+  const response = await fetch(normalizedWebhook, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      msg_type: "interactive",
+      card,
+    }),
+  });
+  await assertHttpOk(response, "飞书", "Webhook 卡片发送");
 
-  const message =
-    (typeof body.StatusMessage === "string" && body.StatusMessage.trim()) ||
-    (typeof body.msg === "string" && body.msg.trim()) ||
-    (typeof body.message === "string" && body.message.trim()) ||
-    "飞书 Webhook 消息发送失败";
-  throw new Error(message);
+  const body = (await response.json().catch(() => null)) as
+    | FeishuWebhookResponse
+    | null;
+  assertFeishuWebhookResponseOk(body, "飞书 Webhook 卡片发送失败");
 };
