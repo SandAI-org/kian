@@ -624,6 +624,11 @@ export const skillContentSchema = z.object({
   skillId: z.string().trim().min(1).max(1000)
 });
 
+export const skillFileContentSchema = z.object({
+  skillId: z.string().trim().min(1).max(1000),
+  path: z.string().trim().min(1).max(1000)
+});
+
 export const skillVisibilityUpdateSchema = z.object({
   skillId: z.string().trim().min(1).max(1000),
   mainAgentVisible: z.boolean(),

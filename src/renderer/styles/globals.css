@@ -227,6 +227,14 @@ a:focus-visible,
   background: color-mix(in srgb, var(--primary) 14%, var(--surface-2)) !important;
 }
 
+.skill-content-modal-wrap {
+  pointer-events: none;
+}
+
+.skill-content-modal-wrap .ant-modal {
+  pointer-events: auto;
+}
+
 :root.theme-dark .asset-preview-fallback {
   background:
     radial-gradient(circle at 30% 22%, rgba(91, 140, 255, 0.14), transparent 44%),

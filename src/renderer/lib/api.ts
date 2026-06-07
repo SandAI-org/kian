@@ -43,6 +43,7 @@ import type {
   ModelProviderConfigStatus,
   ProjectCreationSource,
   SkillConfigDTO,
+  SkillFileContentDTO,
   SkillListItemDTO,
   SkillMetadataRefreshDTO,
   TaskDTO,
@@ -409,6 +410,8 @@ export const api = {
     listInstalled: async (): Promise<InstalledSkillDTO[]> => unwrap(await window.api.skills.listInstalled()),
     getContent: async (payload: { skillId: string }): Promise<InstalledSkillContentDTO> =>
       unwrap(await window.api.skills.getContent(payload)),
+    getFileContent: async (payload: { skillId: string; path: string }): Promise<SkillFileContentDTO> =>
+      unwrap(await window.api.skills.getFileContent(payload)),
     listRepositorySkills: async (repositoryUrl: string): Promise<SkillListItemDTO[]> =>
       unwrap(await window.api.skills.listRepositorySkills(repositoryUrl)),
     refreshRepositoryMetadata: async (repositoryUrl: string): Promise<SkillMetadataRefreshDTO> =>

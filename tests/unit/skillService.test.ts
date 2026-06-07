@@ -419,7 +419,20 @@ describe("skillService active visibility", () => {
       "SKILL.md",
       "references/notes.md",
     ]);
-    expect(content.files[0]?.content).toContain("# content-skill");
-    expect(content.files[1]?.content).toBe("plain **markdown** text\n");
+    expect(content.files).not.toContainEqual(
+      expect.objectContaining({ content: expect.any(String) }),
+    );
+
+    const skillFile = await skillService.getInstalledSkillFileContent({
+      skillId: installed.id,
+      filePath: "SKILL.md",
+    });
+    const referenceFile = await skillService.getInstalledSkillFileContent({
+      skillId: installed.id,
+      filePath: "references/notes.md",
+    });
+
+    expect(skillFile.content).toContain("# content-skill");
+    expect(referenceFile.content).toBe("plain **markdown** text\n");
   });
 });

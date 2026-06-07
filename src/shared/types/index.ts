@@ -730,12 +730,17 @@ export interface SkillListItemDTO {
 
 export interface SkillContentFileDTO {
   path: string;
-  content: string;
 }
 
 export interface InstalledSkillContentDTO {
   skillId: string;
   files: SkillContentFileDTO[];
+}
+
+export interface SkillFileContentDTO {
+  skillId: string;
+  path: string;
+  content: string;
 }
 
 export interface SkillMetadataRefreshDTO {

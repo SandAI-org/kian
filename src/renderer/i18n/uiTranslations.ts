@@ -1065,6 +1065,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "Repository URL must include owner/repo",
     "技能路径不能为空": "Skill path cannot be empty",
     "技能路径不合法": "Skill path is invalid",
+    "技能文件路径不合法": "Skill file path is invalid",
     "未检测到 tar 命令，无法解压技能仓库归档":
       "Tar was not found, so the skill repository archive cannot be extracted",
     "未检测到 git 命令，无法通过仓库缓存安装技能":
@@ -1792,6 +1793,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "저장소 주소에는 owner/repo가 포함되어야 합니다",
     "技能路径不能为空": "스킬 경로는 비워 둘 수 없습니다",
     "技能路径不合法": "스킬 경로가 올바르지 않습니다",
+    "技能文件路径不合法": "스킬 파일 경로가 올바르지 않습니다",
     "未检测到 tar 命令，无法解压技能仓库归档":
       "tar 명령을 찾을 수 없어 스킬 저장소 아카이브를 압축 해제할 수 없습니다",
     "未检测到 git 命令，无法通过仓库缓存安装技能":
@@ -2563,6 +2565,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "リポジトリ URL には owner/repo を含める必要があります",
     "技能路径不能为空": "スキルパスは空にできません",
     "技能路径不合法": "スキルパスが不正です",
+    "技能文件路径不合法": "スキルファイルパスが不正です",
     "未检测到 tar 命令，无法解压技能仓库归档":
       "tar コマンドが見つからないため、スキルリポジトリアーカイブを展開できません",
     "未检测到 git 命令，无法通过仓库缓存安装技能":

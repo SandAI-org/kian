@@ -37,6 +37,7 @@ import {
   projectCreateSchema,
   projectUpdateSchema,
   skillContentSchema,
+  skillFileContentSchema,
   skillInstallSchema,
   skillClawHubInstallSchema,
   skillLocalSourcesInstallSchema,
@@ -806,6 +807,12 @@ export const registerHandlers = (): void => {
   handle('skills:listInstalled', z.object({}).optional(), async () => skillService.listInstalledSkills());
   handle('skills:getContent', skillContentSchema, async (input) =>
     skillService.getInstalledSkillContent({ skillId: input.skillId })
+  );
+  handle('skills:getFileContent', skillFileContentSchema, async (input) =>
+    skillService.getInstalledSkillFileContent({
+      skillId: input.skillId,
+      filePath: input.path
+    })
   );
   handle('skills:listRepositorySkills', skillRepositorySchema, async (input) =>
     skillService.listRepositorySkills(input.repositoryUrl)
