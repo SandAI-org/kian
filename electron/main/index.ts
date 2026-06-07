@@ -12,6 +12,7 @@ import {
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions
 } from 'electron';
+import { initialize, trackEvent } from '@aptabase/electron/main';
 import type { AppLanguage } from '@shared/i18n';
 import {
   DEFAULT_SHORTCUT_CONFIG,
@@ -71,6 +72,7 @@ const resolvedFixPath =
 resolvedFixPath?.();
 
 app.setName(APP_DISPLAY_NAME);
+void initialize('A-US-5497948815');
 
 let quitConfirmed = false;
 let quitInProgress = false;
@@ -1117,6 +1119,7 @@ const openMainAgentSession = (sessionId: string): void => {
 app
   .whenReady()
   .then(async () => {
+    void trackEvent('app_started');
     const appIconImage = loadAppIconImage();
     if (process.platform === 'darwin' && appIconImage) {
       try {

@@ -11,6 +11,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.0.0
         version: 6.1.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@aptabase/electron':
+        specifier: ^0.3.1
+        version: 0.3.1(electron@37.10.3)
       '@fluentui/react-file-type-icons':
         specifier: ^8.18.0
         version: 8.18.0(@types/react@19.2.13)(react@19.2.4)
@@ -258,6 +261,11 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@aptabase/electron@0.3.1':
+    resolution: {integrity: sha512-FECaGsjuoQu70F+M6V1evdgLP7yaq/sne9fC60AZZ6B9RsCDlxFBnJzdq3+xevHlUx6AB5o9ygUhQ+ONT9EqiA==}
+    peerDependencies:
+      electron: '>= 3.x'
 
   '@aws-crypto/crc32@5.2.0':
     resolution: {integrity: sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg==}
@@ -4810,6 +4818,10 @@ snapshots:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
       zod: 4.3.6
+
+  '@aptabase/electron@0.3.1(electron@37.10.3)':
+    dependencies:
+      electron: 37.10.3
 
   '@aws-crypto/crc32@5.2.0':
     dependencies:
