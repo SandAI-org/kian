@@ -113,6 +113,11 @@ const collectSkillDirectoryPaths = (files: SkillContentFileDTO[]): string[] => {
   return Array.from(directories);
 };
 
+const getDefaultSkillFilePath = (files: SkillContentFileDTO[]): string =>
+  files.find((file) => file.path.toLowerCase() === "skill.md")?.path ??
+  files[0]?.path ??
+  "";
+
 export const SkillsPage = () => {
   const { t } = useAppI18n();
   const queryClient = useQueryClient();
@@ -184,7 +189,7 @@ export const SkillsPage = () => {
     setActiveSkillFilePath((current) =>
       files.some((file) => file.path === current)
         ? current
-        : files[0]?.path ?? "",
+        : getDefaultSkillFilePath(files),
     );
   }, [skillContentQuery.data]);
 
