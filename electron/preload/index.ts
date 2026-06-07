@@ -47,6 +47,7 @@ import type {
   ProjectDTO,
   Result,
   SkillConfigDTO,
+  SkillFileContentDTO,
   SkillListItemDTO,
   SkillMetadataRefreshDTO,
   TaskDTO,
@@ -532,6 +533,8 @@ const api = {
     listInstalled: () => invoke<InstalledSkillDTO[]>("skills:listInstalled"),
     getContent: (payload: { skillId: string }) =>
       invoke<InstalledSkillContentDTO>("skills:getContent", payload),
+    getFileContent: (payload: { skillId: string; path: string }) =>
+      invoke<SkillFileContentDTO>("skills:getFileContent", payload),
     listRepositorySkills: (repositoryUrl: string) =>
       invoke<SkillListItemDTO[]>("skills:listRepositorySkills", {
         repositoryUrl,

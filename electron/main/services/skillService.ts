@@ -2,6 +2,7 @@ import type {
   InstalledSkillContentDTO,
   InstalledSkillDTO,
   SkillConfigDTO,
+  SkillFileContentDTO,
   SkillListItemDTO,
   SkillRepositoryDTO,
 } from "@shared/types";
@@ -1659,7 +1660,6 @@ const readInstalledSkillContentFiles = async (
 
       files.push({
         path: relativePath,
-        content: await fs.readFile(absolutePath, "utf8"),
       });
     }
   };
@@ -1674,6 +1674,26 @@ const readInstalledSkillContentFiles = async (
       sensitivity: "base",
     });
   });
+};
+
+const readInstalledSkillFileContent = async (input: {
+  installPath: string;
+  filePath: string;
+}): Promise<string> => {
+  const normalizedFilePath = normalizeSkillPath(input.filePath);
+  const absolutePath = path.join(
+    input.installPath,
+    ...normalizedFilePath.split("/"),
+  );
+  const relativePathFromInstall = path.relative(input.installPath, absolutePath);
+  if (
+    relativePathFromInstall.startsWith("..") ||
+    path.isAbsolute(relativePathFromInstall)
+  ) {
+    throw new Error("技能文件路径不合法");
+  }
+
+  return fs.readFile(absolutePath, "utf8");
 };
 
 const cleanupLegacyAgentResourceDirectories = async (): Promise<void> => {
@@ -1906,6 +1926,27 @@ export const skillService = {
     return {
       skillId,
       files: await readInstalledSkillContentFiles(installed.installPath),
+    };
+  },
+
+  async getInstalledSkillFileContent(input: {
+    skillId: string;
+    filePath: string;
+  }): Promise<SkillFileContentDTO> {
+    const skillId = input.skillId.trim();
+    const installed = await getInstalledSkillById(skillId);
+    if (!installed) {
+      throw new Error("技能尚未安装，无法查看内容");
+    }
+    const normalizedFilePath = normalizeSkillPath(input.filePath);
+
+    return {
+      skillId,
+      path: normalizedFilePath,
+      content: await readInstalledSkillFileContent({
+        installPath: installed.installPath,
+        filePath: normalizedFilePath,
+      }),
     };
   },
 

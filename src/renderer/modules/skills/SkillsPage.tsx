@@ -41,6 +41,8 @@ const skillCardBaseClassName =
 const skillDescriptionClassName =
   "!mt-1.5 !mb-1.5 !text-xs !leading-[1.65] !text-slate-600";
 
+const emptySkillContentFiles: SkillContentFileDTO[] = [];
+
 const buildSkillFileTree = (files: SkillContentFileDTO[]): DataNode[] => {
   const root: DataNode[] = [];
   const directories = new Map<string, DataNode[]>();
@@ -192,6 +194,12 @@ export const SkillsPage = () => {
         : getDefaultSkillFilePath(files),
     );
   }, [skillContentQuery.data]);
+
+  const closeSkillContentModal = useCallback(() => {
+    setContentSkill(null);
+    setActiveSkillFilePath("");
+    queryClient.removeQueries({ queryKey: ["skills", "fileContent"] });
+  }, [queryClient]);
 
   const refreshSkillQueries = async (): Promise<void> => {
     await Promise.all([
@@ -473,11 +481,22 @@ export const SkillsPage = () => {
     };
   }, [headerActions, setHeaderActions]);
 
-  const skillContentFiles = skillContentQuery.data?.files ?? [];
+  const skillContentFiles = skillContentQuery.data?.files ?? emptySkillContentFiles;
   const activeSkillFile =
     skillContentFiles.find((file) => file.path === activeSkillFilePath) ??
     skillContentFiles[0] ??
     null;
+  const skillFileContentQuery = useQuery({
+    queryKey: ["skills", "fileContent", contentSkill?.id, activeSkillFile?.path],
+    queryFn: () =>
+      api.skills.getFileContent({
+        skillId: contentSkill?.id ?? "",
+        path: activeSkillFile?.path ?? "",
+      }),
+    enabled: Boolean(contentSkill && activeSkillFile),
+    gcTime: 0,
+    retry: false,
+  });
   const skillFileTreeData = useMemo(
     () => buildSkillFileTree(skillContentFiles),
     [skillContentFiles],
@@ -492,7 +511,12 @@ export const SkillsPage = () => {
   );
 
   useEffect(() => {
-    setExpandedSkillFileTreeKeys(skillDirectoryPaths);
+    setExpandedSkillFileTreeKeys((current) =>
+      current.length === skillDirectoryPaths.length &&
+      current.every((key, index) => key === skillDirectoryPaths[index])
+        ? current
+        : skillDirectoryPaths,
+    );
   }, [skillDirectoryPaths]);
 
   const skillsTabs = [
@@ -894,10 +918,9 @@ export const SkillsPage = () => {
       <Modal
         title={contentSkill?.name ?? ""}
         open={Boolean(contentSkill)}
-        onCancel={() => {
-          setContentSkill(null);
-          setActiveSkillFilePath("");
-        }}
+        mask={false}
+        wrapClassName="skill-content-modal-wrap"
+        onCancel={closeSkillContentModal}
         width={960}
         footer={null}
         destroyOnClose
@@ -971,7 +994,31 @@ export const SkillsPage = () => {
                   {activeSkillFile?.path}
                 </div>
                 <ScrollArea className="h-[calc(64vh-38px)] min-h-[322px]">
-                  <pre className="m-0 inline-block min-w-full whitespace-pre p-4 font-mono text-xs leading-relaxed text-slate-700">{activeSkillFile?.content ?? ""}</pre>
+                  {skillFileContentQuery.isLoading ? (
+                    <div className="flex h-[322px] items-center justify-center">
+                      <Spin />
+                    </div>
+                  ) : skillFileContentQuery.isError ? (
+                    <div className="flex h-[322px] items-center justify-center px-6">
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={
+                          skillFileContentQuery.error instanceof Error
+                            ? t(skillFileContentQuery.error.message)
+                            : t("加载技能内容失败")
+                        }
+                      >
+                        <Button
+                          size="small"
+                          onClick={() => skillFileContentQuery.refetch()}
+                        >
+                          {t("重试")}
+                        </Button>
+                      </Empty>
+                    </div>
+                  ) : (
+                    <pre className="m-0 inline-block min-w-full whitespace-pre p-4 font-mono text-xs leading-relaxed text-slate-700">{skillFileContentQuery.data?.content ?? ""}</pre>
+                  )}
                 </ScrollArea>
               </div>
             </div>
