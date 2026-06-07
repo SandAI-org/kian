@@ -728,6 +728,16 @@ export interface SkillListItemDTO {
   installed: boolean;
 }
 
+export interface SkillContentFileDTO {
+  path: string;
+  content: string;
+}
+
+export interface InstalledSkillContentDTO {
+  skillId: string;
+  files: SkillContentFileDTO[];
+}
+
 export interface SkillMetadataRefreshDTO {
   updatedCount: number;
   totalCount: number;

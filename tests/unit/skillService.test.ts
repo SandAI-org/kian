@@ -384,4 +384,42 @@ describe("skillService active visibility", () => {
       ).resolves.toBeUndefined();
     }
   });
+
+  it("returns installed skill files without internal metadata", async () => {
+    const { skillService } = await import(
+      "../../electron/main/services/skillService"
+    );
+
+    const sourceRoot = path.join(tempRoot, "content-skill");
+    await fs.mkdir(path.join(sourceRoot, "references"), { recursive: true });
+    await fs.writeFile(
+      path.join(sourceRoot, "SKILL.md"),
+      "---\nname: content-skill\ndescription: Content skill\n---\n\n# content-skill\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sourceRoot, "references", "notes.md"),
+      "plain **markdown** text\n",
+      "utf8",
+    );
+
+    const [installed] = await skillService.installLocalSkillSources({
+      sourcePaths: [sourceRoot],
+    });
+    if (!installed) {
+      throw new Error("missing installed skill");
+    }
+
+    const content = await skillService.getInstalledSkillContent({
+      skillId: installed.id,
+    });
+
+    expect(content.skillId).toBe(installed.id);
+    expect(content.files.map((file) => file.path)).toEqual([
+      "SKILL.md",
+      "references/notes.md",
+    ]);
+    expect(content.files[0]?.content).toContain("# content-skill");
+    expect(content.files[1]?.content).toBe("plain **markdown** text\n");
+  });
 });

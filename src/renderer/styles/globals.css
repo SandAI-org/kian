@@ -177,6 +177,56 @@ a:focus-visible,
   filter: drop-shadow(0 8px 14px rgba(15, 23, 42, 0.14));
 }
 
+.skill-file-tree,
+.skill-file-tree .ant-tree-treenode,
+.skill-file-tree .ant-tree-node-content-wrapper {
+  color: var(--text-soft);
+}
+
+.skill-file-tree .ant-tree-treenode {
+  padding: 0 0 2px;
+}
+
+.skill-file-tree .ant-tree-indent-unit {
+  width: 12px;
+}
+
+.skill-file-tree .ant-tree-switcher {
+  width: 16px;
+  line-height: 22px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.skill-file-tree-flat .ant-tree-indent,
+.skill-file-tree-flat .ant-tree-switcher {
+  display: none;
+}
+
+.skill-file-tree .ant-tree-node-content-wrapper {
+  min-height: 22px;
+  line-height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.skill-file-tree .ant-tree-node-content-wrapper:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.skill-file-tree .ant-tree-node-selected,
+.skill-file-tree .ant-tree-node-selected:hover {
+  color: var(--primary) !important;
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--stroke-strong));
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface-2)) !important;
+}
+
 :root.theme-dark .asset-preview-fallback {
   background:
     radial-gradient(circle at 30% 22%, rgba(91, 140, 255, 0.14), transparent 44%),
@@ -301,6 +351,44 @@ a:focus-visible,
 
 .ant-modal .ant-modal-header {
   background: transparent;
+}
+
+.ant-modal .ant-modal-close {
+  top: 18px;
+  inset-inline-end: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ant-modal .ant-modal-close:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.ant-modal .ant-modal-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent);
+}
+
+.ant-modal .ant-modal-close-x {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ant-modal .ant-modal-close-icon {
+  display: flex;
 }
 
 .ant-form-item-extra,

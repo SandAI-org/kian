@@ -35,6 +35,7 @@ import type {
   DocumentDTO,
   FeishuChatChannelStatus,
   GeneralConfigDTO,
+  InstalledSkillContentDTO,
   ShortcutConfigDTO,
   InstalledSkillDTO,
   MediaProvider,
@@ -529,6 +530,8 @@ const api = {
     addRepository: (repositoryUrl: string) =>
       invoke<SkillConfigDTO>("skills:addRepository", { repositoryUrl }),
     listInstalled: () => invoke<InstalledSkillDTO[]>("skills:listInstalled"),
+    getContent: (payload: { skillId: string }) =>
+      invoke<InstalledSkillContentDTO>("skills:getContent", payload),
     listRepositorySkills: (repositoryUrl: string) =>
       invoke<SkillListItemDTO[]>("skills:listRepositorySkills", {
         repositoryUrl,

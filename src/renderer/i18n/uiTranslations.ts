@@ -199,6 +199,9 @@ const EN_US_EXACT: Record<string, string> = {
   "安装失败": "Install failed",
   "已安装": "Installed",
   "卸载技能失败": "Failed to uninstall skill",
+  "加载技能内容失败": "Failed to load skill content",
+  "技能尚未安装，无法查看内容":
+    "The skill is not installed, so its content cannot be viewed",
   "同步仓库元信息失败": "Failed to sync repository metadata",
   "请输入仓库地址": "Enter a repository URL",
   "暂无已安装技能，请先从仓库安装":
@@ -603,6 +606,9 @@ const KO_KR_EXACT: Record<string, string> = {
   "安装失败": "설치 실패",
   "已安装": "설치됨",
   "卸载技能失败": "스킬 제거 실패",
+  "加载技能内容失败": "스킬 내용을 불러오지 못했습니다",
+  "技能尚未安装，无法查看内容":
+    "스킬이 설치되어 있지 않아 내용을 볼 수 없습니다",
   "同步仓库元信息失败": "저장소 메타데이터 동기화 실패",
   "请输入仓库地址": "저장소 주소를 입력하세요",
   "暂无已安装技能，请先从仓库安装":
@@ -866,6 +872,9 @@ const JA_JP_EXACT: Record<string, string> = {
   "安装失败": "インストールに失敗しました",
   "已安装": "インストール済み",
   "卸载技能失败": "スキルのアンインストールに失敗しました",
+  "加载技能内容失败": "スキル内容の読み込みに失敗しました",
+  "技能尚未安装，无法查看内容":
+    "スキルがインストールされていないため、内容を表示できません",
   "同步仓库元信息失败": "リポジトリメタデータの同期に失敗しました",
   "请输入仓库地址": "リポジトリ URL を入力してください",
   "暂无已安装技能，请先从仓库安装":

@@ -1,4 +1,5 @@
 import type {
+  InstalledSkillContentDTO,
   InstalledSkillDTO,
   SkillConfigDTO,
   SkillListItemDTO,
@@ -1623,6 +1624,58 @@ const getInstalledSkillById = async (
   return installedMetas.find((meta) => meta.id === skillId) ?? null;
 };
 
+const readInstalledSkillContentFiles = async (
+  installPath: string,
+): Promise<InstalledSkillContentDTO["files"]> => {
+  const files: InstalledSkillContentDTO["files"] = [];
+
+  const walk = async (relativeDir: string): Promise<void> => {
+    const currentDir = relativeDir
+      ? path.join(installPath, ...relativeDir.split("/"))
+      : installPath;
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    entries.sort((left, right) =>
+      left.name.localeCompare(right.name, "zh-Hans-CN", {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+
+    for (const entry of entries) {
+      if (entry.name === SKILL_META_FILE) {
+        continue;
+      }
+      const relativePath = relativeDir
+        ? `${relativeDir}/${entry.name}`
+        : entry.name;
+      const absolutePath = path.join(installPath, ...relativePath.split("/"));
+      if (entry.isDirectory()) {
+        await walk(relativePath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      files.push({
+        path: relativePath,
+        content: await fs.readFile(absolutePath, "utf8"),
+      });
+    }
+  };
+
+  await walk("");
+
+  return files.sort((left, right) => {
+    if (left.path === SKILL_FILE) return -1;
+    if (right.path === SKILL_FILE) return 1;
+    return left.path.localeCompare(right.path, "zh-Hans-CN", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+};
+
 const cleanupLegacyAgentResourceDirectories = async (): Promise<void> => {
   await fs.rm(AGENT_RESOURCE_ROOT, { recursive: true, force: true });
 };
@@ -1839,6 +1892,21 @@ export const skillService = {
         return toInstalledSkillDTO(meta, presentation);
       }),
     );
+  },
+
+  async getInstalledSkillContent(input: {
+    skillId: string;
+  }): Promise<InstalledSkillContentDTO> {
+    const skillId = input.skillId.trim();
+    const installed = await getInstalledSkillById(skillId);
+    if (!installed) {
+      throw new Error("技能尚未安装，无法查看内容");
+    }
+
+    return {
+      skillId,
+      files: await readInstalledSkillContentFiles(installed.installPath),
+    };
   },
 
   async listRepositorySkills(

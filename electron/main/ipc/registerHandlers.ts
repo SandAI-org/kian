@@ -36,6 +36,7 @@ import {
   getAvailableModelsSchema,
   projectCreateSchema,
   projectUpdateSchema,
+  skillContentSchema,
   skillInstallSchema,
   skillClawHubInstallSchema,
   skillLocalSourcesInstallSchema,
@@ -803,6 +804,9 @@ export const registerHandlers = (): void => {
     skillService.addRepository({ repositoryUrl: input.repositoryUrl })
   );
   handle('skills:listInstalled', z.object({}).optional(), async () => skillService.listInstalledSkills());
+  handle('skills:getContent', skillContentSchema, async (input) =>
+    skillService.getInstalledSkillContent({ skillId: input.skillId })
+  );
   handle('skills:listRepositorySkills', skillRepositorySchema, async (input) =>
     skillService.listRepositorySkills(input.repositoryUrl)
   );

@@ -13,6 +13,7 @@ import {
 import { ScrollArea } from "@renderer/components/ScrollArea";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
+import type { InstalledSkillDTO, SkillContentFileDTO } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -26,9 +27,11 @@ import {
   Spin,
   Switch,
   Tabs,
+  Tree,
   Typography,
   message,
 } from "antd";
+import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 
@@ -37,6 +40,78 @@ const skillCardBaseClassName =
 
 const skillDescriptionClassName =
   "!mt-1.5 !mb-1.5 !text-xs !leading-[1.65] !text-slate-600";
+
+const buildSkillFileTree = (files: SkillContentFileDTO[]): DataNode[] => {
+  const root: DataNode[] = [];
+  const directories = new Map<string, DataNode[]>();
+  directories.set("", root);
+
+  for (const file of files) {
+    const parts = file.path.split("/");
+    let parentPath = "";
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const segment = parts[index] ?? "";
+      const directoryPath = parentPath ? `${parentPath}/${segment}` : segment;
+      if (!directories.has(directoryPath)) {
+        const parentChildren = directories.get(parentPath) ?? root;
+        const children: DataNode[] = [];
+        parentChildren.push({
+          key: directoryPath,
+          title: segment,
+          children,
+        });
+        directories.set(directoryPath, children);
+      }
+      parentPath = directoryPath;
+    }
+
+    const parentChildren = directories.get(parentPath) ?? root;
+    parentChildren.push({
+      key: file.path,
+      title: parts.at(-1) ?? file.path,
+      isLeaf: true,
+    });
+  }
+
+  const sortNodes = (nodes: DataNode[]): void => {
+    nodes.sort((left, right) => {
+      const leftIsDirectory = Boolean(left.children);
+      const rightIsDirectory = Boolean(right.children);
+      if (leftIsDirectory !== rightIsDirectory) {
+        return leftIsDirectory ? -1 : 1;
+      }
+      return String(left.title).localeCompare(String(right.title), "zh-Hans-CN", {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+    for (const node of nodes) {
+      if (node.children) {
+        sortNodes(node.children);
+      }
+    }
+  };
+
+  sortNodes(root);
+  return root;
+};
+
+const collectSkillDirectoryPaths = (files: SkillContentFileDTO[]): string[] => {
+  const directories = new Set<string>();
+  for (const file of files) {
+    const parts = file.path.split("/");
+    let currentPath = "";
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      currentPath = currentPath
+        ? `${currentPath}/${parts[index]}`
+        : parts[index] ?? "";
+      if (currentPath) {
+        directories.add(currentPath);
+      }
+    }
+  }
+  return Array.from(directories);
+};
 
 export const SkillsPage = () => {
   const { t } = useAppI18n();
@@ -53,6 +128,13 @@ export const SkillsPage = () => {
   const [skillMarkdown, setSkillMarkdown] = useState("");
   const [clawHubInput, setClawHubInput] = useState("");
   const [addSkillError, setAddSkillError] = useState<string | null>(null);
+  const [contentSkill, setContentSkill] = useState<InstalledSkillDTO | null>(
+    null,
+  );
+  const [activeSkillFilePath, setActiveSkillFilePath] = useState("");
+  const [expandedSkillFileTreeKeys, setExpandedSkillFileTreeKeys] = useState<
+    string[]
+  >([]);
 
   const configQuery = useQuery({
     queryKey: ["skills", "config"],
@@ -86,6 +168,25 @@ export const SkillsPage = () => {
     enabled: Boolean(selectedRepository),
     retry: false,
   });
+
+  const skillContentQuery = useQuery({
+    queryKey: ["skills", "content", contentSkill?.id],
+    queryFn: () => api.skills.getContent({ skillId: contentSkill?.id ?? "" }),
+    enabled: Boolean(contentSkill),
+    retry: false,
+  });
+
+  useEffect(() => {
+    const files = skillContentQuery.data?.files;
+    if (!files) {
+      return;
+    }
+    setActiveSkillFilePath((current) =>
+      files.some((file) => file.path === current)
+        ? current
+        : files[0]?.path ?? "",
+    );
+  }, [skillContentQuery.data]);
 
   const refreshSkillQueries = async (): Promise<void> => {
     await Promise.all([
@@ -332,6 +433,11 @@ export const SkillsPage = () => {
     setIsAddSkillModalOpen(true);
   }, []);
 
+  const openSkillContentModal = useCallback((skill: InstalledSkillDTO) => {
+    setContentSkill(skill);
+    setActiveSkillFilePath("");
+  }, []);
+
   const headerActions = useMemo(
     () => (
       <Space size={8}>
@@ -361,6 +467,28 @@ export const SkillsPage = () => {
       setHeaderActions(null);
     };
   }, [headerActions, setHeaderActions]);
+
+  const skillContentFiles = skillContentQuery.data?.files ?? [];
+  const activeSkillFile =
+    skillContentFiles.find((file) => file.path === activeSkillFilePath) ??
+    skillContentFiles[0] ??
+    null;
+  const skillFileTreeData = useMemo(
+    () => buildSkillFileTree(skillContentFiles),
+    [skillContentFiles],
+  );
+  const skillFilePathSet = useMemo(
+    () => new Set(skillContentFiles.map((file) => file.path)),
+    [skillContentFiles],
+  );
+  const skillDirectoryPaths = useMemo(
+    () => collectSkillDirectoryPaths(skillContentFiles),
+    [skillContentFiles],
+  );
+
+  useEffect(() => {
+    setExpandedSkillFileTreeKeys(skillDirectoryPaths);
+  }, [skillDirectoryPaths]);
 
   const skillsTabs = [
     {
@@ -394,7 +522,15 @@ export const SkillsPage = () => {
                   <Card
                     key={skill.id}
                     size="small"
-                    className={`${skillCardBaseClassName} !bg-white`}
+                    role="button"
+                    tabIndex={0}
+                    className={`${skillCardBaseClassName} cursor-pointer !bg-white`}
+                    onClick={() => openSkillContentModal(skill)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      openSkillContentModal(skill);
+                    }}
                   >
                     <Space direction="vertical" className="w-full" size={4}>
                       <div className="flex items-start justify-between gap-3">
@@ -409,11 +545,12 @@ export const SkillsPage = () => {
                               className="!h-7 !rounded-md !px-2 !text-xs !font-medium !text-red-500"
                               icon={<DeleteOutlined />}
                               loading={uninstallLoading}
-                              onClick={() =>
+                              onClick={(event) => {
+                                event.stopPropagation();
                                 uninstallMutation.mutate({
                                   skillId: skill.id,
-                                })
-                              }
+                                });
+                              }}
                             >
                               {t("卸载")}
                             </Button>
@@ -438,7 +575,11 @@ export const SkillsPage = () => {
                       >
                         {skill.repositoryUrl}
                       </Typography.Text>
-                      <div className="flex flex-wrap gap-2">
+                      <div
+                        className="flex flex-wrap gap-2"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
                         <div className="flex min-w-[140px] flex-1 items-center justify-between gap-3 rounded-md border border-[#e8eef8] bg-[#f8fbff] px-2.5 py-1.5">
                           <Typography.Text className="!text-xs !font-medium !text-slate-600">
                             {t("主智能体")}
@@ -745,6 +886,93 @@ export const SkillsPage = () => {
           />
         </div>
       </ScrollArea>
+      <Modal
+        title={contentSkill?.name ?? ""}
+        open={Boolean(contentSkill)}
+        onCancel={() => {
+          setContentSkill(null);
+          setActiveSkillFilePath("");
+        }}
+        width={960}
+        footer={null}
+        destroyOnClose
+      >
+        <div className="h-[64vh] min-h-[360px] rounded-lg border border-[var(--stroke-strong)] bg-[var(--surface)]">
+          {skillContentQuery.isLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Spin />
+            </div>
+          ) : skillContentQuery.isError ? (
+            <div className="flex h-full items-center justify-center px-6">
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  skillContentQuery.error instanceof Error
+                    ? t(skillContentQuery.error.message)
+                    : t("加载技能内容失败")
+                }
+              >
+                <Button size="small" onClick={() => skillContentQuery.refetch()}>
+                  {t("重试")}
+                </Button>
+              </Empty>
+            </div>
+          ) : skillContentFiles.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-6">
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t("暂无文件")}
+              />
+            </div>
+          ) : (
+            <div className="grid h-full grid-cols-[220px_minmax(0,1fr)]">
+              <div className="min-w-0 border-r border-[var(--stroke)]">
+                <div className="border-b border-[var(--stroke)] px-3 py-2 text-xs font-medium text-[var(--muted)]">
+                  {t("文件列表")}
+                </div>
+                <ScrollArea className="h-[calc(64vh-38px)] min-h-[322px]">
+                  <div className="p-2">
+                    <Tree
+                      blockNode
+                      expandedKeys={expandedSkillFileTreeKeys}
+                      selectedKeys={activeSkillFile ? [activeSkillFile.path] : []}
+                      treeData={skillFileTreeData}
+                      className={`skill-file-tree !bg-transparent !font-mono !text-xs ${
+                        skillDirectoryPaths.length === 0
+                          ? "skill-file-tree-flat"
+                          : ""
+                      }`}
+                      onExpand={(expandedKeys) =>
+                        setExpandedSkillFileTreeKeys(expandedKeys.map(String))
+                      }
+                      onSelect={(_, info) => {
+                        const selectedPath = String(info.node.key);
+                        if (skillFilePathSet.has(selectedPath)) {
+                          setActiveSkillFilePath(selectedPath);
+                          return;
+                        }
+                        setExpandedSkillFileTreeKeys((current) =>
+                          current.includes(selectedPath)
+                            ? current.filter((key) => key !== selectedPath)
+                            : [...current, selectedPath],
+                        );
+                      }}
+                    />
+                  </div>
+                </ScrollArea>
+              </div>
+              <div className="min-w-0">
+                <div className="border-b border-[var(--stroke)] px-3 py-2 font-mono text-xs text-[var(--muted)]">
+                  {activeSkillFile?.path}
+                </div>
+                <ScrollArea className="h-[calc(64vh-38px)] min-h-[322px]">
+                  <pre className="m-0 inline-block min-w-full whitespace-pre p-4 font-mono text-xs leading-relaxed text-slate-700">{activeSkillFile?.content ?? ""}</pre>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
       <Modal
         title={t("添加技能")}
         open={isAddSkillModalOpen}

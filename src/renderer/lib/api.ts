@@ -34,6 +34,7 @@ import type {
   DocExplorerEntryDTO,
   DocImportFilePayload,
   DocumentDTO,
+  InstalledSkillContentDTO,
   InstalledSkillDTO,
   MediaProvider,
   FeishuChatChannelStatus,
@@ -406,6 +407,8 @@ export const api = {
     addRepository: async (repositoryUrl: string): Promise<SkillConfigDTO> =>
       unwrap(await window.api.skills.addRepository(repositoryUrl)),
     listInstalled: async (): Promise<InstalledSkillDTO[]> => unwrap(await window.api.skills.listInstalled()),
+    getContent: async (payload: { skillId: string }): Promise<InstalledSkillContentDTO> =>
+      unwrap(await window.api.skills.getContent(payload)),
     listRepositorySkills: async (repositoryUrl: string): Promise<SkillListItemDTO[]> =>
       unwrap(await window.api.skills.listRepositorySkills(repositoryUrl)),
     refreshRepositoryMetadata: async (repositoryUrl: string): Promise<SkillMetadataRefreshDTO> =>
