@@ -16,6 +16,9 @@ const createServiceProxy = () =>
   );
 
 vi.mock("electron", () => ({
+  app: {
+    isPackaged: false,
+  },
   dialog: {
     showOpenDialog: vi.fn(),
   },

@@ -4,6 +4,7 @@ import { createWriteStream, promises as fs, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { TaskDTO, TaskDetailDTO, TaskStatus } from '@shared/types';
+import { trackAnalyticsEvent } from './analyticsService';
 import { logger } from './logger';
 import { WORKSPACE_ROOT } from './workspacePaths';
 
@@ -719,19 +720,37 @@ export const taskService = {
   },
 
   async deleteTask(taskId: string): Promise<boolean> {
-    return deleteTask(taskId);
+    const deleted = await deleteTask(taskId);
+    if (deleted) {
+      trackAnalyticsEvent('task_deleted');
+    }
+    return deleted;
   },
 
   async startTask(taskId: string): Promise<TaskDTO> {
-    return startTask(taskId);
+    const task = await startTask(taskId);
+    trackAnalyticsEvent('task_started', {
+      status: task.status
+    });
+    return task;
   },
 
   async stopTask(taskId: string): Promise<TaskDTO> {
-    return stopTask(taskId, { nextStatus: 'stopped' });
+    const task = await stopTask(taskId, { nextStatus: 'stopped' });
+    trackAnalyticsEvent('task_stopped', {
+      status: task.status
+    });
+    return task;
   },
 
   async updateTask(input: TaskUpdateInput): Promise<TaskDTO> {
-    return updateTask(input);
+    const isCreate = !input.id?.trim();
+    const task = await updateTask(input);
+    trackAnalyticsEvent(isCreate ? 'task_created' : 'task_updated', {
+      status: task.status,
+      has_command: Boolean(task.command.trim())
+    });
+    return task;
   },
 
   async ensureTaskProcess(taskId: string): Promise<TaskDTO> {

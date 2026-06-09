@@ -12,6 +12,10 @@ import {
   normalizeChatSessionTitleCandidate,
 } from "@shared/utils/chatSessionTitle";
 import { agentService } from "./agentService";
+import {
+  getChatScopeAnalyticsProps,
+  trackAnalyticsEvent,
+} from "./analyticsService";
 import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
 import {
@@ -560,6 +564,20 @@ export const chatService = {
     const queued = state.processing || state.items.length > 0;
     const queuedAt = new Date().toISOString();
 
+    trackAnalyticsEvent("chat_message_submitted", {
+      ...getChatScopeAnalyticsProps(normalizedPayload.scope),
+      module: normalizedPayload.module,
+      delivery_mode: deliveryMode,
+      queued,
+      attachment_count: normalizedPayload.attachments?.length ?? 0,
+      message_length: normalizedPayload.message.trim().length,
+      has_context_snapshot: normalizedPayload.contextSnapshot !== undefined,
+      capability_mode: normalizedPayload.capabilityMode ?? "full",
+      persist_user_message: !normalizedPayload.skipUserMessagePersistence,
+      channel_reply_enabled: !normalizedPayload.skipChannelReply,
+      auto_title_enabled: !normalizedPayload.skipAutoTitleGeneration,
+    });
+
     let resolve!: (result: ChatSendResponse) => void;
     let reject!: (error: unknown) => void;
     const completion = new Promise<ChatSendResponse>((nextResolve, nextReject) => {
@@ -658,6 +676,13 @@ export const chatService = {
       scope: payload.scope,
       sessionId: payload.sessionId,
       requestId: payload.requestId,
+    });
+
+    trackAnalyticsEvent("chat_interrupted", {
+      ...getChatScopeAnalyticsProps(payload.scope),
+      request_scoped: Boolean(payload.requestId),
+      cleared_queue: hasQueuedMessages,
+      interrupted_agent: interrupted,
     });
 
     return interrupted || hasQueuedMessages;

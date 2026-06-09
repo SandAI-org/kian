@@ -24,6 +24,10 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs, type Dirent } from "node:fs";
 import path from "node:path";
+import {
+  getChatScopeAnalyticsProps,
+  trackAnalyticsEvent,
+} from "./analyticsService";
 import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
 import { INTERNAL_ROOT, WORKSPACE_ROOT } from "./workspacePaths";
@@ -2762,7 +2766,7 @@ export const repositoryService = {
 
     await writeJson(getCronJobPath(), rows);
     const normalized = normalizeCronJobItems([rows[index]])[0];
-    return toCronJobDto(
+    const cronJob = toCronJobDto(
       normalized ?? {
         cron: "",
         content: "",
@@ -2771,6 +2775,10 @@ export const repositoryService = {
       },
       index,
     );
+    trackAnalyticsEvent("cronjob_status_changed", {
+      status: input.status,
+    });
+    return cronJob;
   },
 
   async logCronJobExecution(input: {
@@ -2870,7 +2878,13 @@ export const repositoryService = {
     await ensureProjectStructure(identity.id);
     await writeJson(getProjectMetaPath(identity.id), project);
 
-    return toProjectDto(project);
+    const projectDto = toProjectDto(project);
+    trackAnalyticsEvent("project_created", {
+      source,
+      has_description: Boolean(input.description?.trim()),
+      has_cover: Boolean(input.cover?.trim()),
+    });
+    return projectDto;
   },
 
   async updateProject(input: {
@@ -2900,12 +2914,19 @@ export const repositoryService = {
     };
 
     await writeJson(getProjectMetaPath(current.id), nextMeta);
-    return toProjectDto(nextMeta);
+    const projectDto = toProjectDto(nextMeta);
+    trackAnalyticsEvent("project_updated", {
+      changed_name: input.name !== undefined,
+      changed_description: input.description !== undefined,
+      changed_cover: input.cover !== undefined,
+    });
+    return projectDto;
   },
 
   async deleteProject(id: string): Promise<void> {
     await ensureWorkspaceRoot();
     await fs.rm(getProjectDir(id), { recursive: true, force: true });
+    trackAnalyticsEvent("project_deleted");
   },
 
   async listDocuments(projectId: string): Promise<DocumentDTO[]> {
@@ -2984,6 +3005,7 @@ export const repositoryService = {
     const finalRelativePath = toPosixPath(
       path.relative(docsDir, absoluteDirectoryPath),
     );
+    trackAnalyticsEvent("document_folder_created");
     return {
       path: finalRelativePath,
       name: path.basename(finalRelativePath),
@@ -3039,6 +3061,7 @@ export const repositoryService = {
     const finalRelativePath = toPosixPath(
       path.relative(docsDir, targetAbsolutePath),
     );
+    trackAnalyticsEvent("document_folder_renamed");
     return {
       path: finalRelativePath,
       name: path.basename(finalRelativePath),
@@ -3068,6 +3091,7 @@ export const repositoryService = {
 
     await fs.rm(absolutePath, { recursive: true, force: true });
     await touchProject(input.projectId);
+    trackAnalyticsEvent("document_folder_deleted");
   },
 
   async createDocument(input: {
@@ -3090,6 +3114,9 @@ export const repositoryService = {
     const stats = await fs.stat(absolutePath);
     const finalRelativePath = toPosixPath(path.relative(docsDir, absolutePath));
     await touchProject(input.projectId);
+    trackAnalyticsEvent("document_created", {
+      content_length: (input.content ?? "").length,
+    });
 
     return {
       id: finalRelativePath,
@@ -3149,6 +3176,9 @@ export const repositoryService = {
 
     const stats = await fs.stat(absolutePath);
     await touchProject(input.projectId);
+    if (input.title?.trim()) {
+      trackAnalyticsEvent("document_file_renamed");
+    }
 
     return {
       id: relativePath,
@@ -3206,6 +3236,7 @@ export const repositoryService = {
     const finalRelativePath = toPosixPath(
       path.relative(docsDir, targetAbsolutePath),
     );
+    trackAnalyticsEvent("document_file_renamed");
     return {
       path: finalRelativePath,
       name: path.basename(finalRelativePath),
@@ -3247,6 +3278,9 @@ export const repositoryService = {
     }
 
     await touchProject(input.projectId);
+    trackAnalyticsEvent("document_files_imported", {
+      file_count: imported.length,
+    });
     return imported;
   },
 
@@ -3264,6 +3298,7 @@ export const repositoryService = {
 
     await fs.rm(absolutePath, { force: true });
     await touchProject(projectId);
+    trackAnalyticsEvent("document_deleted");
   },
 
   async getAppWorkspaceStatus(
@@ -3281,6 +3316,9 @@ export const repositoryService = {
     if (createdFiles.length > 0) {
       await touchProject(projectId);
     }
+    trackAnalyticsEvent("app_workspace_initialized", {
+      created_file_count: createdFiles.length,
+    });
     return readAppWorkspaceStatus(projectId);
   },
 
@@ -3316,6 +3354,9 @@ export const repositoryService = {
       buildTime: stats.mtime.toISOString(),
     });
     await touchProject(projectId);
+    trackAnalyticsEvent("app_workspace_built", {
+      installed_dependencies: installedDependencies,
+    });
 
     return {
       projectId,
@@ -3340,11 +3381,13 @@ export const repositoryService = {
       ? rawName
       : `${rawName}.html`;
     const content = await inlineBuiltAppHtml(status.distIndexPath);
-    return this.createDocument({
+    const document = await this.createDocument({
       projectId,
       title: fileName,
       content,
     });
+    trackAnalyticsEvent("app_build_saved_to_docs");
+    return document;
   },
 
   async getCreationBoard(projectId: string): Promise<CreationBoardDTO> {
@@ -3366,6 +3409,9 @@ export const repositoryService = {
 
     await writeJson(getCreationBoardPath(projectId), next);
     await touchProject(projectId);
+    trackAnalyticsEvent("creation_board_saved", {
+      scene_count: next.scenes.length,
+    });
 
     return next;
   },
@@ -3485,6 +3531,10 @@ export const repositoryService = {
       metaMap,
     });
 
+    trackAnalyticsEvent("asset_imported", {
+      asset_type: input.type,
+      tag_count: input.tags?.length ?? 0,
+    });
     return {
       ...asset,
       name: finalName,
@@ -3531,6 +3581,9 @@ export const repositoryService = {
       metaMap,
     });
 
+    trackAnalyticsEvent("asset_saved", {
+      asset_type: assetType,
+    });
     return {
       ...asset,
       name: finalName,
@@ -3567,6 +3620,7 @@ export const repositoryService = {
         }
 
         await touchProject(project.id);
+        trackAnalyticsEvent("asset_deleted");
         return;
       }
 
@@ -3581,6 +3635,7 @@ export const repositoryService = {
 
       await writeJson(getAssetsLegacyIndexPath(project.id), legacyNext);
       await touchProject(project.id);
+      trackAnalyticsEvent("asset_deleted");
       return;
     }
   },
@@ -3654,6 +3709,11 @@ export const repositoryService = {
     if (input.scope.type === "project") {
       await touchProject(input.scope.projectId);
     }
+    trackAnalyticsEvent("chat_files_uploaded", {
+      ...getChatScopeAnalyticsProps(input.scope),
+      file_count: uploads.length,
+      total_size_bytes: uploads.reduce((sum, file) => sum + file.size, 0),
+    });
     return uploads;
   },
 
@@ -3711,6 +3771,13 @@ export const repositoryService = {
       sessionKind: next.kind,
       sessionHidden: next.hidden,
       sessionMetadataJson: next.metadataJson,
+    });
+
+    trackAnalyticsEvent("chat_session_created", {
+      ...getChatScopeAnalyticsProps(input.scope),
+      module: input.module,
+      kind,
+      hidden,
     });
 
     return next;
@@ -3887,6 +3954,9 @@ export const repositoryService = {
     if (input.scope.type === "project") {
       await touchProject(input.scope.projectId);
     }
+    trackAnalyticsEvent("chat_session_deleted", {
+      ...getChatScopeAnalyticsProps(input.scope),
+    });
   },
 
   async updateChatSessionTitle(input: {

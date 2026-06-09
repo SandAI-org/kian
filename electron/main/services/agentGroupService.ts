@@ -13,6 +13,7 @@ import type {
   ProjectDTO,
 } from "@shared/types";
 import type { CustomToolDef } from "./customTools";
+import { trackAnalyticsEvent } from "./analyticsService";
 import { logger } from "./logger";
 import {
   extractExtendedMarkdownTokens,
@@ -707,6 +708,10 @@ export const agentGroupService = {
     const groups = await readGroups();
     await writeGroups([...groups, group]);
     await ensureDir(getGroupDir(group.id));
+    trackAnalyticsEvent("agent_group_created", {
+      member_count: group.memberProjectIds.length,
+      has_description: Boolean(group.description),
+    });
     return group;
   },
 
@@ -726,6 +731,11 @@ export const agentGroupService = {
     }
     group.updatedAt = nowISO();
     await writeGroups(groups);
+    trackAnalyticsEvent("agent_group_updated", {
+      changed_name: input.name !== undefined,
+      changed_description: input.description !== undefined,
+      member_count: group.memberProjectIds.length,
+    });
     return group;
   },
 
@@ -733,6 +743,7 @@ export const agentGroupService = {
     const groups = await readGroups();
     await writeGroups(groups.filter((group) => group.id !== groupId));
     await fs.rm(getGroupDir(groupId), { recursive: true, force: true });
+    trackAnalyticsEvent("agent_group_deleted");
   },
 
   async addMembers(input: {
@@ -752,6 +763,10 @@ export const agentGroupService = {
     group.memberProjectIds = [...nextMembers];
     group.updatedAt = nowISO();
     await writeGroups(groups);
+    trackAnalyticsEvent("agent_group_members_added", {
+      requested_count: input.projectIds.length,
+      member_count: group.memberProjectIds.length,
+    });
     return group;
   },
 
@@ -768,6 +783,10 @@ export const agentGroupService = {
     );
     group.updatedAt = nowISO();
     await writeGroups(groups);
+    trackAnalyticsEvent("agent_group_members_removed", {
+      requested_count: input.projectIds.length,
+      member_count: group.memberProjectIds.length,
+    });
     return group;
   },
 
@@ -817,6 +836,9 @@ export const agentGroupService = {
       createdAt: nowISO(),
     });
     scheduleDispatch(message, { allowRandom: true });
+    trackAnalyticsEvent("agent_group_message_sent", {
+      content_length: message.content.length,
+    });
     return message;
   },
 
