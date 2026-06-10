@@ -1,4 +1,4 @@
-import { Type } from "@mariozechner/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import {
   getDefaultEnvironment,
@@ -15,7 +15,7 @@ import type { McpServerDTO } from "@shared/types";
 import type {
   AgentToolResult,
   ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { logger } from "./logger";
 
 const MCP_CLIENT_INFO = {

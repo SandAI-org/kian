@@ -3,8 +3,8 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
   ToolExecutionMode,
-} from "@mariozechner/pi-coding-agent";
-import type { TSchema } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { TSchema } from "@earendil-works/pi-ai";
 
 // ---------------------------------------------------------------------------
 // Shared helpers (extracted from the old MCP servers)

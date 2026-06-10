@@ -39,7 +39,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   Type: {
     Object: (value: unknown) => value,
     Optional: (value: unknown) => value,
@@ -50,7 +50,7 @@ vi.mock("@mariozechner/pi-ai", () => ({
   },
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   AuthStorage: {
     inMemory: () => ({
       setRuntimeApiKey: vi.fn(),

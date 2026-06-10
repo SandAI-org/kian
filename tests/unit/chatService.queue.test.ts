@@ -49,7 +49,7 @@ vi.mock("../../electron/main/services/chatEvents", () => ({
   },
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   completeSimple: (...args: unknown[]) => state.completeSimple(...args),
 }));
 

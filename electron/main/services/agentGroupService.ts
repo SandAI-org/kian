@@ -1,4 +1,4 @@
-import { Type } from "@mariozechner/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";

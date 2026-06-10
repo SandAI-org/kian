@@ -1,4 +1,4 @@
-import { Type } from "@mariozechner/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
 import { browserUseService } from "./browserUseService";
 import type { CustomToolDef } from "./customTools";
 import { buildMediaMarkdown } from "./mediaMarkdown";

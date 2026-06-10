@@ -1,4 +1,4 @@
-import { completeSimple } from "@mariozechner/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai";
 import { randomUUID } from "node:crypto";
 import type {
   ChatQueuedMessageDTO,

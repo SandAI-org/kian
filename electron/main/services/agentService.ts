@@ -1,4 +1,4 @@
-import { Type, type AssistantMessageEvent } from "@mariozechner/pi-ai";
+import { Type, type AssistantMessageEvent } from "@earendil-works/pi-ai";
 import {
   AuthStorage,
   createAgentSession,
@@ -7,7 +7,7 @@ import {
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type {
   ChatAttachmentDTO,
   ChatCapabilityMode,
