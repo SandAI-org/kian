@@ -1577,17 +1577,20 @@ a:focus-visible,
 }
 
 .simplebar-track.simplebar-vertical {
-  width: 10px;
+  width: 8px;
 }
 
 .simplebar-track.simplebar-horizontal {
-  height: 10px;
+  height: 8px;
 }
 
 .simplebar-scrollbar::before {
-  background: #b8c7e2;
+  background: rgba(203, 213, 225, 0.36);
   border-radius: 999px;
-  opacity: 0.85;
+  opacity: 0.32;
+  transition:
+    background-color 160ms ease,
+    opacity 160ms ease;
 }
 
 .simplebar-content-wrapper,
@@ -1611,7 +1614,7 @@ a:focus-visible,
   .simplebar-scrollbar.simplebar-visible::before,
 .simplebar-track.simplebar-horizontal
   .simplebar-scrollbar.simplebar-visible::before {
-  opacity: 1;
+  opacity: 0.48;
 }
 
 .chat-markdown.markdown-body {
@@ -1727,9 +1730,9 @@ a:focus-visible,
 }
 
 .markdown-code-scroll .simplebar-scrollbar::before {
-  background: rgba(148, 163, 184, 0.78);
+  background: rgba(203, 213, 225, 0.34);
   border-radius: 999px;
-  opacity: 0.95;
+  opacity: 0.44;
 }
 
 .markdown-code-scroll .simplebar-track.simplebar-vertical .simplebar-scrollbar::before {
@@ -1743,7 +1746,7 @@ a:focus-visible,
 }
 
 .markdown-code-scroll:hover .simplebar-scrollbar::before {
-  background: rgba(100, 116, 139, 0.95);
+  background: rgba(148, 163, 184, 0.5);
 }
 
 .tool-call-detail-scroll .simplebar-track.simplebar-vertical {
@@ -1751,13 +1754,13 @@ a:focus-visible,
 }
 
 .tool-call-detail-scroll .simplebar-track.simplebar-horizontal {
-  height: 12px;
+  height: 8px;
 }
 
 .tool-call-detail-scroll .simplebar-scrollbar::before {
-  background: rgba(148, 163, 184, 0.82);
+  background: rgba(203, 213, 225, 0.34);
   border-radius: 999px;
-  opacity: 1;
+  opacity: 0.46;
 }
 
 .tool-call-detail-scroll .simplebar-track.simplebar-vertical .simplebar-scrollbar::before {
@@ -1771,7 +1774,7 @@ a:focus-visible,
 }
 
 .tool-call-detail-scroll:hover .simplebar-scrollbar::before {
-  background: rgba(100, 116, 139, 0.94);
+  background: rgba(148, 163, 184, 0.52);
 }
 
 .markdown-code-block {
@@ -3546,23 +3549,23 @@ a:focus-visible,
 }
 
 :root.theme-dark .simplebar-scrollbar::before {
-  background: rgba(100, 116, 139, 0.85);
+  background: rgba(71, 85, 105, 0.36);
 }
 
 :root.theme-dark .simplebar-scrollbar:hover::before,
 :root.theme-dark .simplebar-track.simplebar-vertical .simplebar-scrollbar.simplebar-visible::before,
 :root.theme-dark .simplebar-track.simplebar-horizontal .simplebar-scrollbar.simplebar-visible::before {
-  background: rgba(148, 163, 184, 0.95);
+  background: rgba(100, 116, 139, 0.44);
 }
 
 :root.theme-dark .tool-call-detail-scroll .simplebar-scrollbar::before {
-  background: rgba(100, 116, 139, 0.88);
+  background: rgba(71, 85, 105, 0.38);
 }
 
 :root.theme-dark .tool-call-detail-scroll:hover .simplebar-scrollbar::before,
 :root.theme-dark .tool-call-detail-scroll .simplebar-track.simplebar-vertical .simplebar-scrollbar.simplebar-visible::before,
 :root.theme-dark .tool-call-detail-scroll .simplebar-track.simplebar-horizontal .simplebar-scrollbar.simplebar-visible::before {
-  background: rgba(148, 163, 184, 0.96);
+  background: rgba(100, 116, 139, 0.46);
 }
 
 :root.theme-dark .panel,
