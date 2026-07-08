@@ -175,22 +175,6 @@ export const api = {
     replaceBoard: async (payload: { projectId: string; scenes: Record<string, unknown>[] }) =>
       unwrap(await window.api.creation.replaceBoard(payload))
   },
-  assets: {
-    list: async (projectId: string, options?: { search?: string; tags?: string[] }) =>
-      unwrap(await window.api.assets.list(projectId, options)),
-    import: async (payload: {
-      projectId: string;
-      type: 'image' | 'video' | 'audio';
-      name: string;
-      path: string;
-      duration?: number;
-      thumbnailPath?: string;
-      tags?: string[];
-    }) => unwrap(await window.api.assets.import(payload)),
-    delete: async (id: string) => unwrap(await window.api.assets.delete(id)),
-    generateByAgent: async (payload: { projectId: string; prompt: string }) =>
-      unwrap(await window.api.assets.generateByAgent(payload))
-  },
   chat: {
     createSession: async (payload: {
       scope: ChatScope;

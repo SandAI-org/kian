@@ -1,7 +1,7 @@
 import type { AppLanguage } from "@shared/i18n";
 import type { AppThemeMode } from "@shared/theme";
 
-export type ModuleType = 'docs' | 'creation' | 'assets' | 'app';
+export type ModuleType = 'docs' | 'creation' | 'app';
 export type ChatModuleType = ModuleType | 'main';
 export type ChatSessionKind = 'normal' | 'digital_avatar' | 'channel_runtime' | 'group_runtime';
 export type ChatCapabilityMode = 'full' | 'chat_only';

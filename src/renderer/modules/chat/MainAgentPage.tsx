@@ -2,7 +2,6 @@ import { SplitPane } from "@renderer/components/SplitPane";
 import { WorkspacePaneControls } from "@renderer/components/WorkspacePaneControls";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { AppModule } from "@renderer/modules/app/AppModule";
-import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
 import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import type { ChatScope, ChatSessionKind, ModuleType } from "@shared/types";
@@ -20,19 +19,17 @@ const MAIN_SCOPE: ChatScope = { type: "main" };
 const MERGED_SESSION_KINDS: ChatSessionKind[] = ["normal", "digital_avatar"];
 const MAIN_AGENT_MODE_STORAGE_KEY = "kian.mainAgent.mode";
 
-type AgentMode = "chat" | "docs" | "assets" | "app";
+type AgentMode = "chat" | "docs" | "app";
 
 const MODES: { key: AgentMode; label: string }[] = [
   { key: "chat", label: "聊天" },
   { key: "docs", label: "文档" },
-  { key: "assets", label: "素材" },
   { key: "app", label: "应用" },
 ];
 
 const isAgentMode = (value: string | null): value is AgentMode =>
   value === "chat" ||
   value === "docs" ||
-  value === "assets" ||
   value === "app";
 
 const getStoredMainAgentMode = (): AgentMode => {
@@ -65,7 +62,6 @@ export const MainAgentPage = () => {
   const [contexts, setContexts] = useState<Record<ModuleType, unknown>>({
     docs: {},
     creation: {},
-    assets: {},
     app: {},
   });
   const queryClient = useQueryClient();
@@ -79,12 +75,6 @@ export const MainAgentPage = () => {
   const handleDocsContextChange = useCallback(
     (context: unknown) => {
       updateContext("docs", context);
-    },
-    [updateContext],
-  );
-  const handleAssetsContextChange = useCallback(
-    (context: unknown) => {
-      updateContext("assets", context);
     },
     [updateContext],
   );
@@ -187,7 +177,6 @@ export const MainAgentPage = () => {
   useEffect(() => {
     if (
       requestedModule === "docs" ||
-      requestedModule === "assets" ||
       requestedModule === "app"
     ) {
       setMode(requestedModule);
@@ -316,14 +305,6 @@ export const MainAgentPage = () => {
                     onContextChange={handleDocsContextChange}
                     sidebarCollapsed={docsSidebarCollapsed}
                     onSidebarCollapsedChange={setDocsSidebarCollapsed}
-                  />
-                </div>
-                <div
-                  className={mode === "assets" ? "h-full min-h-0" : "hidden"}
-                >
-                  <AssetsModule
-                    projectId={MAIN_AGENT_SCOPE_ID}
-                    onContextChange={handleAssetsContextChange}
                   />
                 </div>
                 <div className={mode === "app" ? "h-full min-h-0" : "hidden"}>

@@ -46,7 +46,7 @@ import remarkGfm from 'remark-gfm';
 
 const { Sider, Header, Content } = Layout;
 const GUIDE_SEEN_STORAGE_KEY = 'kian.guide.seen.v1';
-type ProjectModuleKey = Extract<ChatModuleType, 'main' | 'docs' | 'assets' | 'app'>;
+type ProjectModuleKey = Extract<ChatModuleType, 'main' | 'docs' | 'app'>;
 interface WorkspaceHeaderControls {
   left?: ReactNode;
   right?: ReactNode;
@@ -55,12 +55,11 @@ interface WorkspaceHeaderControls {
 const PROJECT_MODULE_ITEMS: Array<{ key: ProjectModuleKey; label: string }> = [
   { key: 'main', label: '聊天' },
   { key: 'docs', label: '文档' },
-  { key: 'assets', label: '素材' },
   { key: 'app', label: '应用' }
 ];
 
 const resolveProjectModule = (value: string | null): ProjectModuleKey => {
-  if (value === 'main' || value === 'assets' || value === 'docs' || value === 'app') {
+  if (value === 'main' || value === 'docs' || value === 'app') {
     return value;
   }
   return 'main';
@@ -216,7 +215,7 @@ export const MainLayout = () => {
           params.set('stamp', String(Date.now()));
 
           if (event.scope.type === 'main') {
-            if (event.module === 'docs' || event.module === 'assets' || event.module === 'app') {
+            if (event.module === 'docs' || event.module === 'app') {
               params.set('module', event.module);
             }
             navigate(

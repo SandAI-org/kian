@@ -19,7 +19,6 @@ const MODULE_LABELS: Record<ChatModuleType, string> = {
   main: "聊天",
   docs: "文档",
   creation: "音视频",
-  assets: "素材",
   app: "应用",
 };
 const MAIN_AGENT_SCOPE_ID = "main-agent";
@@ -325,16 +324,15 @@ export const createAppOperationTools = (
       name: "SwitchModule",
       label: "SwitchModule",
       description:
-        "切换当前应用模块。支持 main(聊天)、docs(文档)、assets(素材)、app(应用)。",
+        "切换当前应用模块。支持 main(聊天)、docs(文档)、app(应用)。",
       parameters: Type.Object({
         module: Type.Union(
           [
             Type.Literal("main"),
             Type.Literal("docs"),
-            Type.Literal("assets"),
             Type.Literal("app"),
           ],
-          { description: "目标模块：main | docs | assets | app" },
+          { description: "目标模块：main | docs | app" },
         ),
         project_id: Type.Optional(
           Type.String({
@@ -833,7 +831,6 @@ export const createAppOperationTools = (
             [
               Type.Literal("main"),
               Type.Literal("docs"),
-              Type.Literal("assets"),
               Type.Literal("app"),
             ],
             { description: "打开后进入的模块，默认 docs" },

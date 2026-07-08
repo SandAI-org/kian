@@ -2,7 +2,6 @@ import { SplitPane } from "@renderer/components/SplitPane";
 import type { MainLayoutOutletContext } from "@renderer/app/MainLayout";
 import { WorkspacePaneControls } from "@renderer/components/WorkspacePaneControls";
 import { AppModule } from "@renderer/modules/app/AppModule";
-import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
 import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
 import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
@@ -23,16 +22,11 @@ export const NEW_PROJECT_SESSION_EVENT = "project:new-session";
 
 export type ProjectModuleKey = Extract<
   ChatModuleType,
-  "main" | "docs" | "assets" | "app"
+  "main" | "docs" | "app"
 >;
 
 export const resolveProjectModule = (value: string | null): ProjectModuleKey => {
-  if (
-    value === "main" ||
-    value === "assets" ||
-    value === "docs" ||
-    value === "app"
-  ) {
+  if (value === "main" || value === "docs" || value === "app") {
     return value;
   }
   return "main";
@@ -66,7 +60,6 @@ export const ProjectWorkspaceContent = ({
   const [contexts, setContexts] = useState<Record<ModuleType, unknown>>({
     docs: {},
     creation: {},
-    assets: {},
     app: {},
   });
   const [currentSessionIds, setCurrentSessionIds] = useState<
@@ -234,14 +227,6 @@ export const ProjectWorkspaceContent = ({
             onContextChange={(ctx) => updateContext("docs", ctx)}
             sidebarCollapsed={docsSidebarCollapsed}
             onSidebarCollapsedChange={onDocsSidebarCollapsedChange}
-          />
-        </div>
-        <div
-          className={activeModule === "assets" ? "h-full min-h-0" : "hidden"}
-        >
-          <AssetsModule
-            projectId={projectId}
-            onContextChange={(ctx) => updateContext("assets", ctx)}
           />
         </div>
         <div className={activeModule === "app" ? "h-full min-h-0" : "hidden"}>

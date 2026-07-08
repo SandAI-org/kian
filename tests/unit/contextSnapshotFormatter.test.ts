@@ -20,11 +20,6 @@ describe("buildContextSnapshotSection", () => {
           shotCount: 0,
           updatedAt: "",
         },
-        assets: {
-          assetCount: 0,
-          keyword: "",
-          tags: [],
-        },
         app: {
           appDir: "/Users/lei/KianWorkspaceTest/p-2026-03-11-1/app",
           appType: "react",
@@ -55,11 +50,6 @@ describe("buildContextSnapshotSection", () => {
     expect(result).not.toContain("## 创作模块（creation）");
     expect(result).not.toContain("- 更新时间：");
     expect(result).not.toContain("(空字符串)");
-    expect(result).toContain("## 素材模块（assets）");
-    expect(result).toContain(
-      "- 素材存放目录：/Users/lei/KianWorkspaceTest/p-2026-03-11-1/assets",
-    );
-    expect(result).toContain("- 标签：[]");
     expect(result).toContain("## 应用模块（app）");
     expect(result).toContain(
       "- 模块描述：参考 app-creator 技能使用 React 前端技术栈开发前端应用、小游戏、小工具等。",
@@ -98,11 +88,9 @@ describe("buildContextSnapshotSection", () => {
     expect(result).not.toContain("- Agent ID：main-agent");
     expect(result).not.toContain("- 当前模块：main");
     expect(result).not.toContain("## 创作模块（creation）");
-    expect(result).not.toContain("## 素材模块（assets）");
     expect(result).not.toContain("## 应用模块（app）");
     expect(result).not.toContain("## 其他上下文字段");
     expect(result).not.toContain("- creation：{}");
-    expect(result).not.toContain("- assets：{}");
     expect(result).not.toContain("- app：{}");
   });
 });

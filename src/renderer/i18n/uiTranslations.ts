@@ -14,7 +14,6 @@ const EN_US_EXACT: Record<string, string> = {
   "定时任务": "Scheduled Tasks",
   "技能": "Skills",
   "文档": "Docs",
-  "素材": "Assets",
   "应用": "App",
   "主 Agent": "Main Agent",
   "打开主智能体": "Open main agent",
@@ -219,15 +218,9 @@ const EN_US_EXACT: Record<string, string> = {
   "保存到文档失败": "Failed to save to docs",
   "打开目录失败": "Failed to open folder",
   "打开全局预览失败": "Failed to open standalone preview",
-  "素材加载中...": "Loading assets...",
-  "暂无素材": "No assets yet",
-  "所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“":
-    "All image, audio, and video assets will appear here. Try asking me to generate a beautiful sunset photo.",
   "点击使用系统预览打开": "Click to open with the system preview",
   "悬停播放预览，点击使用系统预览打开":
     "Hover to play the preview. Click to open with the system preview",
-  "素材路径不可用，无法打开系统预览":
-    "The asset path is unavailable and cannot be opened in the system preview",
   "打开系统预览失败": "Failed to open the system preview",
   "图片": "Image",
   "视频": "Video",
@@ -463,7 +456,6 @@ const KO_KR_EXACT: Record<string, string> = {
   "定时任务": "예약 작업",
   "技能": "스킬",
   "文档": "문서",
-  "素材": "소재",
   "应用": "앱",
   "主 Agent": "메인 에이전트",
   "打开主智能体": "메인 에이전트 열기",
@@ -621,8 +613,6 @@ const KO_KR_EXACT: Record<string, string> = {
   "保存到文档中": "문서에 저장",
   "已保存到文档": "문서에 저장됨",
   "保存到文档失败": "문서에 저장하지 못했습니다",
-  "素材加载中...": "소재 불러오는 중...",
-  "暂无素材": "아직 소재가 없습니다",
   "对话列表": "대화 목록",
   "文件列表": "파일 목록",
   "展开左侧边栏": "왼쪽 사이드바 펼치기",
@@ -728,7 +718,6 @@ const JA_JP_EXACT: Record<string, string> = {
   "定时任务": "定期タスク",
   "技能": "スキル",
   "文档": "ドキュメント",
-  "素材": "アセット",
   "应用": "アプリ",
   "主 Agent": "メインエージェント",
   "打开主智能体": "メインエージェントを開く",
@@ -887,8 +876,6 @@ const JA_JP_EXACT: Record<string, string> = {
   "保存到文档中": "ドキュメントに保存",
   "已保存到文档": "ドキュメントに保存しました",
   "保存到文档失败": "ドキュメントへの保存に失敗しました",
-  "素材加载中...": "アセットを読み込み中...",
-  "暂无素材": "まだアセットはありません",
   "对话列表": "会話一覧",
   "文件列表": "ファイル一覧",
   "展开左侧边栏": "左サイドバーを展開",
@@ -1084,7 +1071,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "高": "High",
     "所有文件": "All Files",
     "打开链接失败": "Failed to open link",
-    "搜索素材": "Search assets",
     "支持的文件": "Supported Files",
     "支持逗号或换行分隔": "Comma or newline separated",
     "文件为空": "File is empty",
@@ -1365,8 +1351,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "fal is currently supported. You can configure the fal API key and enable image and video generation models.",
     "所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。":
       "All channel messages are sent to the Main Agent. Sub-agent chats can still be viewed on desktop.",
-    "所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“":
-      "All image, audio, and video assets will appear here. Try asking me to generate a beautiful sunset photo.",
     "Telegram 接入方式指引": "Telegram Setup Guide",
     "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。":
       "1. In Telegram, create a bot with BotFather and get the Bot Token.",
@@ -1822,7 +1806,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "打开链接失败": "링크를 열지 못했습니다",
     "折叠对话列表": "대화 목록 접기",
     "折叠文件列表": "파일 목록 접기",
-    "搜索素材": "소재 검색",
     "支持的文件": "지원되는 파일",
     "支持逗号或换行分隔": "쉼표 또는 줄바꿈으로 구분 가능",
     "文件为空": "파일이 비어 있습니다",
@@ -1973,8 +1956,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "视图": "보기",
     "视频": "비디오",
     "窗口": "창",
-    "素材路径不可用，无法打开系统预览":
-      "소재 경로를 사용할 수 없어 시스템 미리보기를 열 수 없습니다",
     "编辑": "편집",
     "编辑模式": "편집 모드",
     "双击开始编辑": "두 번 클릭하여 편집 시작",
@@ -2144,8 +2125,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "현재는 fal Provider를 지원합니다. fal API Key를 설정하고 이미지/비디오 생성에 사용할 모델을 활성화할 수 있습니다.",
     "所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。":
       "모든 채널 메시지는 메인 에이전트로 통합 전송되며, 하위 에이전트 채팅은 데스크톱에서 계속 확인할 수 있습니다.",
-    "所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“":
-      "모든 이미지, 오디오, 비디오 소재가 여기에 모입니다. \"아름다운 석양 사진 한 장 만들어줘\"라고 바로 말해 보세요.",
     "Telegram 接入方式指引": "Telegram 연동 가이드",
     "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。":
       "1. Telegram에서 BotFather로 봇을 만들고 Bot Token을 받으세요.",
@@ -2597,7 +2576,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "打开链接失败": "リンクを開けませんでした",
     "折叠对话列表": "会話一覧を折りたたむ",
     "折叠文件列表": "ファイル一覧を折りたたむ",
-    "搜索素材": "アセットを検索",
     "支持的文件": "対応ファイル",
     "支持逗号或换行分隔": "カンマまたは改行で区切れます",
     "文件为空": "ファイルは空です",
@@ -2750,8 +2728,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "视图": "表示",
     "视频": "動画",
     "窗口": "ウィンドウ",
-    "素材路径不可用，无法打开系统预览":
-      "アセットのパスが利用できないため、システムプレビューを開けません",
     "编辑": "編集",
     "编辑模式": "編集モード",
     "双击开始编辑": "ダブルクリックして編集を開始",
@@ -2915,8 +2891,6 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "現在は fal Provider に対応しています。fal API Key を設定し、画像生成や動画生成に使うモデルを有効化できます。",
     "所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。":
       "すべてのチャネルメッセージはメインエージェントに統一して送信され、サブエージェントの会話は引き続きデスクトップで確認できます。",
-    "所有的音视频素材都将汇聚于此，可以试试直接给我说 “生成一张漂亮的落日照片“":
-      "すべての画像・音声・動画アセットがここに集まります。たとえば「きれいな夕焼けの写真を生成して」とそのまま頼んでみてください。",
     "Telegram 接入方式指引": "Telegram 連携ガイド",
     "1. 在 Telegram 中通过 BotFather 创建 Bot，并获取 Bot Token。":
       "1. Telegram で BotFather を使って Bot を作成し、Bot Token を取得します。",

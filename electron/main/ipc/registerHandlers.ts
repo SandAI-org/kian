@@ -5,7 +5,6 @@ import path from 'node:path';
 import { z } from 'zod';
 import { handle } from './handlerUtils';
 import {
-  assetImportSchema,
   agentGroupCreateSchema,
   agentGroupMembersSchema,
   agentGroupMessageListSchema,
@@ -370,38 +369,6 @@ export const registerHandlers = (): void => {
 
   handle('creation:replaceBoard', creationReplaceSchema, async (input) =>
     repositoryService.replaceCreationBoard(input.projectId, input.scenes)
-  );
-
-  handle(
-    'assets:list',
-    z.object({ projectId: z.string(), search: z.string().optional(), tags: z.array(z.string()).optional() }),
-    async (input) =>
-      repositoryService.listAssets(input.projectId, {
-        search: input.search,
-        tags: input.tags
-      })
-  );
-  handle('assets:import', assetImportSchema, async (input) => repositoryService.importAsset(input));
-  handle('assets:delete', z.object({ id: z.string() }), async (input) => {
-    await repositoryService.deleteAsset(input.id);
-    return true;
-  });
-  handle(
-    'assets:search',
-    z.object({ projectId: z.string(), keyword: z.string().optional(), tags: z.array(z.string()).optional() }),
-    async (input) =>
-      repositoryService.listAssets(input.projectId, {
-        search: input.keyword,
-        tags: input.tags
-      })
-  );
-  handle(
-    'assets:generateByAgent',
-    z.object({ projectId: z.string(), prompt: z.string() }),
-    async (input) => ({
-      prompt: input.prompt,
-      suggestions: [`建议镜头素材：${input.prompt}`, '建议补充氛围音效', '建议过场 B-roll']
-    })
   );
 
   handle('chat:createSession', sessionCreateSchema, async (input) => repositoryService.createChatSession(input));

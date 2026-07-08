@@ -44,7 +44,6 @@ type TeamSelection = { type: "agent"; id: string } | { type: "group"; id: string
 const PROJECT_MODULE_ITEMS: Array<{ key: ProjectModuleKey; label: string }> = [
   { key: "main", label: "聊天" },
   { key: "docs", label: "文档" },
-  { key: "assets", label: "素材" },
   { key: "app", label: "应用" },
 ];
 

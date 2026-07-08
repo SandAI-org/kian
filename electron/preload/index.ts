@@ -12,7 +12,6 @@ import type {
   AppUpdateStatusDTO,
   AppOperationEvent,
   AppWorkspaceStatusDTO,
-  AssetDTO,
   ChatAttachmentDTO,
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
@@ -210,31 +209,6 @@ const api = {
       projectId: string;
       scenes: Record<string, unknown>[];
     }) => invoke<CreationBoardDTO>("creation:replaceBoard", payload),
-  },
-  assets: {
-    list: (projectId: string, options?: { search?: string; tags?: string[] }) =>
-      invoke<AssetDTO[]>("assets:list", {
-        projectId,
-        search: options?.search,
-        tags: options?.tags,
-      }),
-    import: (payload: {
-      projectId: string;
-      type: "image" | "video" | "audio";
-      name: string;
-      path: string;
-      duration?: number;
-      thumbnailPath?: string;
-      tags?: string[];
-    }) => invoke<AssetDTO>("assets:import", payload),
-    delete: (id: string) => invoke<boolean>("assets:delete", { id }),
-    search: (projectId: string, keyword?: string, tags?: string[]) =>
-      invoke<AssetDTO[]>("assets:search", { projectId, keyword, tags }),
-    generateByAgent: (payload: { projectId: string; prompt: string }) =>
-      invoke<{ prompt: string; suggestions: string[] }>(
-        "assets:generateByAgent",
-        payload,
-      ),
   },
   chat: {
     createSession: (payload: {

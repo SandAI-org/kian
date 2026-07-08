@@ -1251,7 +1251,6 @@ export const createDelegationTools = (input: {
           Type.Union([
             Type.Literal("main"),
             Type.Literal("docs"),
-            Type.Literal("assets"),
             Type.Literal("app"),
           ]),
         ),
@@ -1266,7 +1265,6 @@ export const createDelegationTools = (input: {
         const task = typeof params.task === "string" ? params.task.trim() : "";
         const module =
           params.module === "main" ||
-          params.module === "assets" ||
           params.module === "app" ||
           params.module === "docs"
             ? (params.module as ChatModuleType)
@@ -1717,7 +1715,7 @@ const createOrResumeSession = async (
     module: moduleName ?? "unknown",
     projectCwd,
     contextSnapshot,
-    moduleKeys: scope.type === "main" ? ["docs", "assets", "app"] : undefined,
+    moduleKeys: scope.type === "main" ? ["docs", "app"] : undefined,
     includeAgentSummary: scope.type !== "main",
     includeSummaryHeading: scope.type !== "main",
   });

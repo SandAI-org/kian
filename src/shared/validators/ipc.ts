@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { APP_LANGUAGES } from '../i18n';
 import { APP_THEME_MODES } from '../theme';
 
-export const moduleSchema = z.enum(['docs', 'creation', 'assets', 'app']);
-export const chatModuleSchema = z.enum(['docs', 'creation', 'assets', 'app', 'main']);
+export const moduleSchema = z.enum(['docs', 'creation', 'app']);
+export const chatModuleSchema = z.enum(['docs', 'creation', 'app', 'main']);
 export const chatScopeSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('project'),
@@ -103,16 +103,6 @@ export const docUpdateSchema = z.object({
 export const creationReplaceSchema = z.object({
   projectId: z.string().min(1),
   scenes: z.array(z.record(z.string(), z.any()))
-});
-
-export const assetImportSchema = z.object({
-  projectId: z.string().min(1),
-  type: z.enum(['image', 'video', 'audio']),
-  name: z.string().min(1),
-  path: z.string().min(1),
-  duration: z.number().optional(),
-  thumbnailPath: z.string().optional(),
-  tags: z.array(z.string()).optional()
 });
 
 const chatAttachmentSchema = z.object({

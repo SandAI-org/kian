@@ -1,24 +1,21 @@
 import path from "node:path";
 
-type SnapshotModuleKey = "docs" | "creation" | "assets" | "app";
+type SnapshotModuleKey = "docs" | "creation" | "app";
 
 const KNOWN_MODULE_KEYS: SnapshotModuleKey[] = [
   "docs",
   "creation",
-  "assets",
   "app",
 ];
 
 const SNAPSHOT_MODULE_KEYS: SnapshotModuleKey[] = [
   "docs",
-  "assets",
   "app",
 ];
 
 const MODULE_DESCRIPTIONS: Record<SnapshotModuleKey, string> = {
   docs: "管理用户的文字知识，包括笔记、日记、资料等，也可以通过文档模块获取当前 Agent 更多的信息。",
   creation: "进行专业的视频创作。",
-  assets: "管理图片、视频、音频等素材。",
   app: "参考 app-creator 技能使用 React 前端技术栈开发前端应用、小游戏、小工具等。",
 };
 
@@ -128,23 +125,6 @@ const buildCreationModuleLines = (
   return lines;
 };
 
-const buildAssetsModuleLines = (
-  moduleContext: unknown,
-  projectCwd: string,
-): string[] => {
-  const record = isRecord(moduleContext) ? moduleContext : {};
-  const lines = [
-    "## 素材模块（assets）",
-    `- 模块描述：${MODULE_DESCRIPTIONS.assets}`,
-    `- 素材存放目录：${normalizeDisplayPath(path.join(projectCwd, "assets"))}`,
-    `- 素材数量：${formatFieldValue(record.assetCount)}`,
-    `- 关键词：${formatFieldValue(record.keyword)}`,
-    `- 标签：${formatFieldValue(record.tags)}`,
-  ];
-  appendExtraModuleFields(lines, record, ["assetCount", "keyword", "tags"]);
-  return lines;
-};
-
 const buildAppModuleLines = (
   moduleContext: unknown,
   projectCwd: string,
@@ -187,8 +167,6 @@ const buildModuleSummaryLines = (input: {
       return buildDocsModuleLines(input.moduleContext, input.projectCwd);
     case "creation":
       return buildCreationModuleLines(input.moduleContext, input.projectCwd);
-    case "assets":
-      return buildAssetsModuleLines(input.moduleContext, input.projectCwd);
     case "app":
       return buildAppModuleLines(input.moduleContext, input.projectCwd);
   }
