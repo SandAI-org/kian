@@ -83,6 +83,7 @@ export const AgentChatWorkspace = ({
   const sidebarPanelClassName = inlineHistoryCollapsed
     ? sidebarWidthClass
     : `${sidebarWidthClass} rounded-lg bg-[var(--surface-2)] py-3`;
+  const shellGapClassName = inlineHistoryCollapsed ? "" : "gap-2";
   const historyList = (
     <ChatSessionList
       scope={scope}
@@ -96,7 +97,7 @@ export const AgentChatWorkspace = ({
 
   return (
     <div
-      className={`flex h-full min-h-0 w-full gap-2 overflow-hidden rounded-xl bg-[rgba(var(--surface-rgb),0.78)] p-2 ${
+      className={`flex h-full min-h-0 w-full ${shellGapClassName} overflow-hidden rounded-xl bg-[rgba(var(--surface-rgb),0.78)] p-2 ${
         hideBorder
           ? ""
           : "border border-[var(--stroke)] shadow-[0_2px_12px_rgba(15,23,42,0.04)]"
