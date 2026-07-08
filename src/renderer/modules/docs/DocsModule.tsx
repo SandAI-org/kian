@@ -1492,7 +1492,7 @@ export const DocsModule = ({
                     currentName: node.name,
                   });
                 }}
-                className="flex w-full items-center gap-2 rounded-md py-1.5 pr-8 text-left text-sm text-slate-700 transition-colors hover:bg-[#f4f7fd]"
+                className="flex w-full items-center gap-2 rounded-md py-1.5 pr-1 text-left text-sm text-slate-700 transition-[background-color,color,padding-right] hover:bg-[#f4f7fd] group-hover:pr-8"
                 style={{ paddingLeft }}
               >
                 {expanded ? (
@@ -1510,7 +1510,7 @@ export const DocsModule = ({
                   </div>
                 ) : (
                   <Typography.Text
-                    className="!mb-0 !text-sm !text-slate-800"
+                    className="!mb-0 min-w-0 flex-1 !text-sm !text-slate-800"
                     ellipsis
                   >
                     {node.name}
@@ -1638,7 +1638,7 @@ export const DocsModule = ({
               });
             }}
             aria-current={active ? "page" : undefined}
-            className={`flex w-full items-center gap-2 rounded-md py-1.5 pr-8 text-left text-sm transition-colors ${
+            className={`flex w-full items-center gap-2 rounded-md py-1.5 pr-1 text-left text-sm transition-[background-color,color,padding-right] group-hover:pr-8 ${
               selectable
                 ? active
                   ? "bg-[#edf3ff] text-[#1f4fcc]"
@@ -1700,7 +1700,7 @@ export const DocsModule = ({
                       ? "!text-[#1f4fcc]"
                       : "!text-slate-900"
                     : "!text-slate-400"
-                }`}
+                } min-w-0 flex-1`}
                 ellipsis
               >
                 {node.name}
@@ -1765,10 +1765,10 @@ export const DocsModule = ({
         className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${
           sidebarCollapsed
             ? "w-0"
-            : "w-72 rounded-lg bg-[var(--surface-2)] px-3 py-3"
+            : "w-72 rounded-lg bg-[var(--surface-2)] py-3"
         }`}
       >
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between px-3">
           {!sidebarCollapsed ? (
             <Typography.Text className="!font-semibold !text-slate-900">
               {t("文件")}
@@ -1796,15 +1796,17 @@ export const DocsModule = ({
 
         {!sidebarCollapsed ? (
           docsTree.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-1 py-8">
+            <div className="flex flex-col items-center justify-center gap-1 px-3 py-8">
               <IllustrationEmptyFiles size={64} />
               <Typography.Text className="!text-xs !text-slate-400">
                 {t("暂无文件")}
               </Typography.Text>
             </div>
           ) : (
-            <ScrollArea className="min-h-0 flex-1 pr-[10px]">
-              <div className="space-y-0.5">{renderTree(docsTree)}</div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="space-y-0.5 pl-3 pr-[18px]">
+                {renderTree(docsTree)}
+              </div>
             </ScrollArea>
           )
         ) : null}

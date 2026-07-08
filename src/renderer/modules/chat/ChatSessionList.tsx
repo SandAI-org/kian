@@ -325,8 +325,8 @@ export const ChatSessionList = ({
       )}
     </div>
   ) : (
-    <ScrollArea className="min-h-0 flex-1 pr-[10px]">
-      <div className="space-y-0.5">
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="space-y-0.5 pl-3 pr-[18px]">
         {sessions.map((session) => {
           const isActive = session.id === currentSessionId;
           const isEditing = session.id === editingSessionId;
@@ -421,7 +421,7 @@ export const ChatSessionList = ({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between px-3">
         <Typography.Text className="!font-semibold !text-slate-900">
           {scope.type === "main" ? t("对话历史") : t("对话")}
         </Typography.Text>

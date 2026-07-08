@@ -82,7 +82,7 @@ export const AgentChatWorkspace = ({
     : "w-64 min-w-[16rem] max-w-[16rem] basis-[16rem]";
   const sidebarPanelClassName = inlineHistoryCollapsed
     ? sidebarWidthClass
-    : `${sidebarWidthClass} rounded-lg bg-[var(--surface-2)] px-3 py-3`;
+    : `${sidebarWidthClass} rounded-lg bg-[var(--surface-2)] py-3`;
   const historyList = (
     <ChatSessionList
       scope={scope}
