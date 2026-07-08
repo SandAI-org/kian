@@ -312,8 +312,8 @@ export const ChatComposer = ({
   const disableModelSelector = modelOptions.length <= 1 || !onModelChange;
   const containerClassName =
     variant === "embedded"
-      ? "no-drag rounded-[24px] border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.92)] px-4 py-4"
-      : "no-drag rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.92)] px-3 py-3 shadow-[var(--shadow-panel)]";
+      ? "no-drag rounded-[24px] bg-[var(--surface)] px-4 py-4 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary)_24%,var(--stroke)),0_8px_18px_rgba(15,23,42,0.04)]"
+      : "no-drag rounded-xl bg-[var(--surface)] px-3 py-3 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary)_24%,var(--stroke)),0_8px_18px_rgba(15,23,42,0.04)]";
   const lastEmittedValueRef = useRef(input);
   const [editorVersion, setEditorVersion] = useState(0);
   const editor = useMemo(() => createComposerEditor(), [editorVersion]);

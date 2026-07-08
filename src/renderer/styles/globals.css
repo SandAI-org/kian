@@ -306,13 +306,10 @@ a:focus-visible,
 }
 
 .docs-editor-panel {
-  border: 1px solid var(--stroke);
   background: var(--surface);
-  box-shadow: var(--shadow-panel);
 }
 
 .docs-editor-panel__header {
-  border-bottom: 1px solid color-mix(in srgb, var(--stroke) 82%, transparent);
   background:
     linear-gradient(180deg, rgba(var(--surface-rgb), 0.98), rgba(var(--surface-rgb), 0.94));
 }

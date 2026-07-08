@@ -41,7 +41,6 @@ import {
   useState,
   type DragEvent,
 } from "react";
-import { ChatSessionList } from "@renderer/modules/chat/ChatSessionList";
 import { detectDocMediaKind, resolveDocLocalUrl } from "./docMedia";
 import { MarkdownEditor } from "./MarkdownEditor";
 
@@ -49,11 +48,6 @@ interface DocsModuleProps {
   projectId: string;
   requestedDocumentId?: string;
   onContextChange?: (context: unknown) => void;
-  chatScope?: import("@shared/types").ChatScope;
-  chatModule?: import("@shared/types").ChatModuleType;
-  currentSessionId?: string;
-  onSelectSession?: (sessionId: string) => void;
-  onNewSession?: () => void;
   sidebarCollapsed?: boolean;
   onSidebarCollapsedChange?: (collapsed: boolean) => void;
 }
@@ -395,7 +389,7 @@ const MediaPreviewPanel = ({
   });
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
       <div className="flex items-center justify-between px-3 py-2">
         <Typography.Text
           className="!mb-0 !font-semibold !text-slate-900"
@@ -453,7 +447,7 @@ const FilePreviewPanel = ({
   openLabel,
   typeLabel,
 }: FilePreviewPanelProps) => (
-  <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white">
+  <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
     <div className="flex items-center justify-between px-3 py-2">
       <Typography.Text
         className="!mb-0 !font-semibold !text-slate-900"
@@ -478,11 +472,6 @@ export const DocsModule = ({
   projectId,
   requestedDocumentId,
   onContextChange,
-  chatScope,
-  chatModule,
-  currentSessionId,
-  onSelectSession,
-  onNewSession,
   sidebarCollapsed: controlledSidebarCollapsed,
   onSidebarCollapsedChange,
 }: DocsModuleProps) => {
@@ -511,9 +500,6 @@ export const DocsModule = ({
     },
     [controlledSidebarCollapsed, onSidebarCollapsedChange, sidebarCollapsed],
   );
-  const hasChatProps = Boolean(chatScope);
-  type SidebarTab = "files" | "conversations";
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("files");
   const hasInitializedExpansionRef = useRef(false);
   const docsDragDepthRef = useRef(0);
   const editorValueRef = useRef(editorValue);
@@ -925,7 +911,6 @@ export const DocsModule = ({
       await invalidateDocQueries();
       const firstImported = imported[0];
       if (firstImported) {
-        setSidebarTab("files");
         setActiveEntryPath(stripDocsPrefix(firstImported.path));
       }
       message.success(t("文件已导入"));
@@ -1705,50 +1690,27 @@ export const DocsModule = ({
 
   return (
     <div
-      className="relative flex h-full min-h-0 gap-0.5 rounded-xl"
+      className="relative flex h-full min-h-0 gap-2 overflow-hidden rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.78)] p-2 shadow-[0_2px_12px_rgba(15,23,42,0.04)]"
       onDragEnter={handleDocsDragEnter}
       onDragLeave={handleDocsDragLeave}
       onDragOver={handleDocsDragOver}
       onDrop={handleDocsDrop}
     >
       <div
-        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${sidebarCollapsed ? "w-0" : "w-72"}`}
+        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${
+          sidebarCollapsed
+            ? "w-0"
+            : "w-72 rounded-lg bg-[var(--surface-2)] px-3 py-3"
+        }`}
       >
         <div className="mb-3 flex items-center justify-between">
           {!sidebarCollapsed ? (
-            hasChatProps ? (
-              <div className="flex items-center gap-0.5 rounded-full border border-[#dce5f4] bg-white/90 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setSidebarTab("files")}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-all duration-200 ${
-                    sidebarTab === "files"
-                      ? "bg-[#2f6ff7] text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {t("文件列表")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSidebarTab("conversations")}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-all duration-200 ${
-                    sidebarTab === "conversations"
-                      ? "bg-[#2f6ff7] text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {t("对话列表")}
-                </button>
-              </div>
-            ) : (
-              <Typography.Text className="!font-semibold !text-slate-900">
-                {t("文件")}
-              </Typography.Text>
-            )
+            <Typography.Text className="!font-semibold !text-slate-900">
+              {t("文件")}
+            </Typography.Text>
           ) : null}
           <div className="flex items-center gap-0.5">
-            {!sidebarCollapsed && sidebarTab === "files" ? (
+            {!sidebarCollapsed ? (
               <CompactDropdown
                 menu={createActionMenu}
                 trigger={["hover"]}
@@ -1763,31 +1725,12 @@ export const DocsModule = ({
                   size="small"
                 />
               </CompactDropdown>
-            ) : !sidebarCollapsed && sidebarTab === "conversations" && onNewSession ? (
-              <Button
-                type="text"
-                shape="circle"
-                icon={<PlusOutlined />}
-                title={t("新建对话")}
-                aria-label={t("新建对话")}
-                size="small"
-                onClick={onNewSession}
-              />
             ) : null}
           </div>
         </div>
 
         {!sidebarCollapsed ? (
-          sidebarTab === "conversations" && chatScope && chatModule && onSelectSession && onNewSession ? (
-            <ChatSessionList
-              scope={chatScope}
-              module={chatModule}
-              currentSessionId={currentSessionId}
-              onSelectSession={onSelectSession}
-              onNewSession={onNewSession}
-              hideHeader
-            />
-          ) : docsTree.length === 0 ? (
+          docsTree.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-1 py-8">
               <IllustrationEmptyFiles size={64} />
               <Typography.Text className="!text-xs !text-slate-400">
@@ -1802,7 +1745,7 @@ export const DocsModule = ({
         ) : null}
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg">
         {activeDoc ? (
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -1847,7 +1790,7 @@ export const DocsModule = ({
             onOpen={() => handleOpenFile(activeExplorerEntry.path)}
           />
         ) : (
-          <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#dbe5f5] bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)]">
+          <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2">
               <IllustrationEmptyEditor size={80} />
               <Typography.Text className="!text-sm !text-slate-400">

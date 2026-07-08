@@ -3692,10 +3692,10 @@ export const ModuleChatPane = ({
     : "w-full flex h-full min-h-0 flex-col";
   const timelineContainerClassName = isAutoLayout
     ? hideBorder
-      ? "no-drag p-3 pb-0"
+      ? "no-drag rounded-lg bg-[var(--surface)] p-3 pb-0"
       : "no-drag rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0"
     : hideBorder
-      ? "no-drag min-h-0 flex-1 p-3 pb-0"
+      ? "no-drag min-h-0 flex-1 rounded-lg bg-[var(--surface)] p-3 pb-0"
       : "no-drag min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0";
 
   const composer = (
@@ -3858,7 +3858,7 @@ export const ModuleChatPane = ({
       <div className={chatContainerClassName}>
         {showEmptyState ? (
           <div
-            className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3 select-none ${hideBorder ? "" : "rounded-lg border border-[#e2e8f5] bg-white"}`}
+            className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3 select-none ${hideBorder ? "rounded-lg bg-[var(--surface)]" : "rounded-lg border border-[#e2e8f5] bg-white"}`}
           >
             <svg
               width="64"

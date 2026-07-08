@@ -327,7 +327,7 @@ export const MarkdownEditor = ({
   }, []);
 
   return (
-    <div className="docs-editor-panel flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl">
+    <div className="docs-editor-panel flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg">
       <div className="docs-editor-panel__header flex items-center justify-between px-3 py-2">
         <div className="min-w-0">
           <Typography.Text
