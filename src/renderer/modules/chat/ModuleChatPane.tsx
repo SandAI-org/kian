@@ -106,6 +106,7 @@ interface ModuleChatPaneProps {
   module: ChatModuleType;
   chatVariant?: "project" | "main";
   acceptMainInputFocusEvents?: boolean;
+  inputFocusRequestId?: number;
   contextSnapshot?: unknown;
   hideBorder?: boolean;
   sessionId?: string;
@@ -2293,6 +2294,7 @@ export const ModuleChatPane = ({
   module,
   chatVariant = "project",
   acceptMainInputFocusEvents = true,
+  inputFocusRequestId,
   contextSnapshot,
   hideBorder = false,
   sessionId: externalSessionId,
@@ -3587,21 +3589,22 @@ export const ModuleChatPane = ({
     });
   };
 
-  const focusChatInput = useCallback((): void => {
+  const focusChatInput = useCallback((): boolean => {
     const editorElement = chatInputContainerRef.current?.querySelector(
       '[data-chat-composer-editor="true"]',
     );
     if (!(editorElement instanceof HTMLElement)) {
-      return;
+      return false;
     }
     editorElement.focus();
     const selection = window.getSelection();
-    if (!selection) return;
+    if (!selection) return document.activeElement === editorElement;
     const range = document.createRange();
     range.selectNodeContents(editorElement);
     range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
+    return document.activeElement === editorElement;
   }, []);
 
   useEffect(() => {
@@ -3636,6 +3639,47 @@ export const ModuleChatPane = ({
       );
     };
   }, [acceptMainInputFocusEvents, chatVariant, focusChatInput]);
+
+  useEffect(() => {
+    if (!inputFocusRequestId || chatVariant !== "main") {
+      return;
+    }
+
+    let frameId: number | undefined;
+    let cancelled = false;
+    const startedAt = window.performance.now();
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        chatInputContainerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      cancelled = true;
+    };
+
+    const tryFocus = (): void => {
+      if (cancelled) {
+        return;
+      }
+      focusChatInput();
+      if (window.performance.now() - startedAt < 1200) {
+        frameId = window.requestAnimationFrame(tryFocus);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    frameId = window.requestAnimationFrame(tryFocus);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      if (frameId !== undefined) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [chatVariant, focusChatInput, inputFocusRequestId]);
 
   const canSend =
     !readOnly &&

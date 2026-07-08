@@ -183,6 +183,18 @@ export const MainLayout = () => {
     },
     [generalConfigQuery.data, queryClient]
   );
+  const navigateToMainAgentWithFocus = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('focusInput', '1');
+    params.set('stamp', String(Date.now()));
+    navigate(
+      {
+        pathname: '/main-agent',
+        search: `?${params.toString()}`
+      },
+      { replace: false }
+    );
+  }, [navigate]);
 
   useEffect(() => {
     if (!isTitleEditing) {
@@ -277,15 +289,14 @@ export const MainLayout = () => {
         return;
       }
 
-      pendingMainAgentInputFocusRef.current = true;
-      navigate('/main-agent');
+      navigateToMainAgentWithFocus();
     };
 
     window.addEventListener('keydown', handleShortcut);
     return () => {
       window.removeEventListener('keydown', handleShortcut);
     };
-  }, [isMainAgentPage, navigate, shortcutConfig.focusMainAgentInput]);
+  }, [isMainAgentPage, navigateToMainAgentWithFocus, shortcutConfig.focusMainAgentInput]);
 
   useEffect(() => {
     const unsubscribe = api.window.subscribeFocusMainAgentShortcut(() => {
@@ -294,12 +305,11 @@ export const MainLayout = () => {
         return;
       }
 
-      pendingMainAgentInputFocusRef.current = true;
-      navigate('/main-agent');
+      navigateToMainAgentWithFocus();
     });
 
     return unsubscribe;
-  }, [isMainAgentPage, navigate]);
+  }, [isMainAgentPage, navigateToMainAgentWithFocus]);
 
   useEffect(
     () =>

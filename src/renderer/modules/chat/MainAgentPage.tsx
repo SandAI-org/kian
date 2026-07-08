@@ -6,7 +6,7 @@ import { AssetsModule } from "@renderer/modules/assets/AssetsModule";
 import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import type { ChatScope, ChatSessionKind, ModuleType } from "@shared/types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { api } from "@renderer/lib/api";
@@ -18,6 +18,7 @@ import { useSearchParams } from "react-router-dom";
 const MAIN_AGENT_SCOPE_ID = "main-agent";
 const MAIN_SCOPE: ChatScope = { type: "main" };
 const MERGED_SESSION_KINDS: ChatSessionKind[] = ["normal", "digital_avatar"];
+const MAIN_AGENT_MODE_STORAGE_KEY = "kian.mainAgent.mode";
 
 type AgentMode = "chat" | "docs" | "assets" | "app";
 
@@ -28,14 +29,33 @@ const MODES: { key: AgentMode; label: string }[] = [
   { key: "app", label: "应用" },
 ];
 
+const isAgentMode = (value: string | null): value is AgentMode =>
+  value === "chat" ||
+  value === "docs" ||
+  value === "assets" ||
+  value === "app";
+
+const getStoredMainAgentMode = (): AgentMode => {
+  try {
+    const storedMode = window.localStorage.getItem(MAIN_AGENT_MODE_STORAGE_KEY);
+    return isAgentMode(storedMode) ? storedMode : "chat";
+  } catch {
+    return "chat";
+  }
+};
+
 export const NEW_CURRENT_AGENT_SESSION_EVENT = "main-agent:new-session";
 
 export const MainAgentPage = () => {
   const { t } = useAppI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingRouteSessionId = searchParams.get("session")?.trim() ?? "";
+  const shouldFocusInput = searchParams.get("focusInput") === "1";
+  const focusInputStamp = searchParams.get("stamp") ?? "";
   const requestedModule = searchParams.get("module");
-  const [mode, setMode] = useState<AgentMode>("chat");
+  const [mode, setMode] = useState<AgentMode>(() => getStoredMainAgentMode());
+  const [inputFocusRequestId, setInputFocusRequestId] = useState(0);
+  const handledFocusInputStampRef = useRef<string | null>(null);
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
   const [docsSidebarCollapsed, setDocsSidebarCollapsed] = useState(false);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
@@ -110,6 +130,14 @@ export const MainAgentPage = () => {
     }
   }, [mode]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MAIN_AGENT_MODE_STORAGE_KEY, mode);
+    } catch {
+      return;
+    }
+  }, [mode]);
+
   const toggleRightPane = useCallback(() => {
     setRightPaneCollapsed((current) => !current);
   }, []);
@@ -165,6 +193,28 @@ export const MainAgentPage = () => {
       setMode(requestedModule);
     }
   }, [requestedModule]);
+
+  useEffect(() => {
+    if (!shouldFocusInput) {
+      return;
+    }
+
+    const requestStamp = focusInputStamp || "focus";
+    if (handledFocusInputStampRef.current === requestStamp) {
+      return;
+    }
+    handledFocusInputStampRef.current = requestStamp;
+    setInputFocusRequestId((current) => current + 1);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("focusInput");
+    nextParams.delete("stamp");
+    const nextSearch = nextParams.toString();
+    const nextUrl = `${window.location.pathname}${
+      nextSearch ? `?${nextSearch}` : ""
+    }${window.location.hash}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+  }, [focusInputStamp, searchParams, shouldFocusInput]);
 
   return (
     <div className="flex h-full min-h-0 flex-col px-5 pt-3 pb-5">
@@ -238,6 +288,9 @@ export const MainAgentPage = () => {
             onSessionCreated={handleSessionCreated}
             sessionKinds={MERGED_SESSION_KINDS}
             acceptMainInputFocusEvents={mode === "chat"}
+            inputFocusRequestId={
+              mode === "chat" ? inputFocusRequestId : undefined
+            }
             contextSnapshot={contexts}
             hideBorder={false}
             sidebarCollapsed={chatSidebarCollapsed}
@@ -293,6 +346,9 @@ export const MainAgentPage = () => {
                   onSessionCreated={handleSessionCreated}
                   sessionKinds={MERGED_SESSION_KINDS}
                   acceptMainInputFocusEvents
+                  inputFocusRequestId={
+                    mode === "docs" ? inputFocusRequestId : undefined
+                  }
                   contextSnapshot={contexts}
                   hideBorder={false}
                   historyPresentation="popover"
@@ -303,6 +359,9 @@ export const MainAgentPage = () => {
                   module="main"
                   chatVariant="main"
                   acceptMainInputFocusEvents={mode !== "chat"}
+                  inputFocusRequestId={
+                    mode !== "chat" ? inputFocusRequestId : undefined
+                  }
                   contextSnapshot={contexts}
                   sessionId={currentSessionId}
                   onSessionCreated={handleSessionCreated}

@@ -28,6 +28,7 @@ interface AgentChatWorkspaceProps {
   contextSnapshot?: unknown;
   sessionKinds?: ChatSessionKind[];
   acceptMainInputFocusEvents?: boolean;
+  inputFocusRequestId?: number;
   hideBorder?: boolean;
   sidebarCollapsed?: boolean;
   historyPresentation?: "inline" | "popover" | "none";
@@ -58,6 +59,7 @@ export const AgentChatWorkspace = ({
   contextSnapshot,
   sessionKinds,
   acceptMainInputFocusEvents,
+  inputFocusRequestId,
   hideBorder,
   sidebarCollapsed = false,
   historyPresentation = "inline",
@@ -144,6 +146,7 @@ export const AgentChatWorkspace = ({
               module={module}
               chatVariant={chatVariant}
               acceptMainInputFocusEvents={acceptMainInputFocusEvents}
+              inputFocusRequestId={inputFocusRequestId}
               contextSnapshot={contextSnapshot}
               hideBorder
               sessionId={currentSessionId}
