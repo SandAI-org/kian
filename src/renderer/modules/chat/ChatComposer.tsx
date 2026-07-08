@@ -14,6 +14,7 @@ import { Button, Tooltip } from "antd";
 import type {
   ClipboardEvent,
   KeyboardEvent,
+  MouseEvent,
   ReactNode,
 } from "react";
 import {
@@ -499,8 +500,27 @@ export const ChatComposer = ({
     onEditorKeyDown?.(event, helpers);
   };
 
+  const handleComposerMouseDown = (
+    event: MouseEvent<HTMLDivElement>,
+  ): void => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (
+      target.closest(
+        'button,a,input,textarea,select,[contenteditable="true"],[role="button"],[data-chat-composer-editor="true"],.simplebar-track,.simplebar-scrollbar',
+      )
+    ) {
+      return;
+    }
+    event.preventDefault();
+    focusEditor();
+  };
+
   return (
-    <div className={containerClassName}>
+    <div
+      className={containerClassName}
+      onMouseDown={controlsOnly ? undefined : handleComposerMouseDown}
+    >
       {!controlsOnly && queuedMessages.length > 0 ? (
         <div className="mb-3 rounded-lg border border-[var(--stroke)] bg-[var(--surface-2)]">
           <div className="border-b border-[var(--stroke)] px-3 py-2 text-[12px] font-medium text-[var(--text-soft)]">

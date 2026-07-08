@@ -3774,7 +3774,7 @@ export const ModuleChatPane = ({
       placeholder={
         canInterrupt
           ? t("继续发送消息修正我的行为...")
-          : t("有什么吩咐...")
+          : t("今天想聊点什么呢……")
       }
       fileInputRef={fileInputRef}
       onSelectFiles={handleSelectFiles}

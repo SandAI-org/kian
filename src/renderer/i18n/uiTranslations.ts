@@ -252,7 +252,7 @@ const EN_US_EXACT: Record<string, string> = {
   "当前环境无法读取文件路径":
     "File paths cannot be read in the current environment",
   "添加文件": "Add file",
-  "有什么吩咐...": "What would you like me to do?",
+  "今天想聊点什么呢……": "What would you like to talk about today...",
   "有什么想快速处理的？": "What do you want to handle quickly?",
   "继续发送消息修正我的行为...":
     "Keep sending messages to correct my behavior...",
@@ -633,7 +633,7 @@ const KO_KR_EXACT: Record<string, string> = {
   "发送失败": "전송 실패",
   "打断失败": "중단 실패",
   "添加文件": "파일 추가",
-  "有什么吩咐...": "무엇을 도와드릴까요?",
+  "今天想聊点什么呢……": "오늘은 어떤 이야기를 나눠볼까요...",
   "继续发送消息修正我的行为...": "계속 메시지를 보내 제 동작을 수정해 주세요...",
   "有什么想快速处理的？": "빠르게 처리하고 싶은 일이 있나요?",
   "排队中的消息": "대기 중인 메시지",
@@ -899,7 +899,7 @@ const JA_JP_EXACT: Record<string, string> = {
   "发送失败": "送信に失敗しました",
   "打断失败": "中断に失敗しました",
   "添加文件": "ファイルを追加",
-  "有什么吩咐...": "何をしましょうか？",
+  "今天想聊点什么呢……": "今日は何を話しましょうか...",
   "有什么想快速处理的？": "すぐに片付けたいことはありますか？",
   "继续发送消息修正我的行为...": "続けてメッセージを送り、私の動作を修正してください...",
   "排队中的消息": "キュー中のメッセージ",
