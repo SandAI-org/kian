@@ -242,6 +242,8 @@ const AUDIO_FILE_EXTENSIONS = new Set([
   ".opus",
 ]);
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 56;
+const FULL_HEIGHT_SCROLL_CONTENT_CLASS =
+  "[&_.simplebar-wrapper]:h-full [&_.simplebar-mask]:h-full [&_.simplebar-offset]:!h-full [&_.simplebar-content-wrapper]:h-full [&_.simplebar-content]:min-h-full";
 const TEXT_FILE_EXTENSIONS = new Set([
   ".txt",
   ".md",
@@ -3695,8 +3697,8 @@ export const ModuleChatPane = ({
       ? "no-drag rounded-lg bg-[var(--surface)] p-3 pb-0"
       : "no-drag rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0"
     : hideBorder
-      ? "no-drag min-h-0 flex-1 rounded-lg bg-[var(--surface)] p-3 pb-0"
-      : "no-drag min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0";
+      ? `no-drag min-h-0 flex-1 rounded-lg bg-[var(--surface)] p-3 pb-0 ${FULL_HEIGHT_SCROLL_CONTENT_CLASS}`
+      : `no-drag min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0 ${FULL_HEIGHT_SCROLL_CONTENT_CLASS}`;
 
   const composer = (
     <ChatComposer
@@ -3968,9 +3970,7 @@ export const ModuleChatPane = ({
           </ScrollArea>
         ) : null}
 
-        <div
-          className="z-10 mt-2"
-        >
+        <div className="z-10 mt-2 shrink-0">
           {composer}
         </div>
       </div>

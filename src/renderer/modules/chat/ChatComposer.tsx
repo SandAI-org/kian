@@ -615,7 +615,7 @@ export const ChatComposer = ({
             onChange={handleSlateChange}
             onSelectionChange={refreshMentionTarget}
           >
-            <ScrollArea className="min-h-[84px] max-h-40 pr-2">
+            <ScrollArea className="chat-composer-input-scroll pr-2">
               <Editable
                 data-chat-composer-editor="true"
                 renderElement={renderElement}

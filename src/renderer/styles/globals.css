@@ -285,6 +285,20 @@ a:focus-visible,
   word-break: break-word;
 }
 
+.chat-composer-input-scroll {
+  min-height: 84px;
+  max-height: 160px;
+}
+
+.chat-composer-input-scroll .simplebar-content-wrapper {
+  max-height: 160px;
+  overscroll-behavior: contain;
+}
+
+.chat-composer-input-scroll .simplebar-content {
+  min-height: 84px;
+}
+
 .chat-composer-editor [data-slate-placeholder="true"] {
   color: var(--muted-2) !important;
   opacity: 1 !important;
