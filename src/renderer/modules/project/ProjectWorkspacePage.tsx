@@ -232,11 +232,6 @@ export const ProjectWorkspaceContent = ({
             projectId={projectId}
             requestedDocumentId={activeDocumentId}
             onContextChange={(ctx) => updateContext("docs", ctx)}
-            chatScope={chatScope}
-            chatModule={activeModule}
-            currentSessionId={currentSessionId}
-            onSelectSession={handleSelectSession}
-            onNewSession={handleNewSession}
             sidebarCollapsed={docsSidebarCollapsed}
             onSidebarCollapsedChange={onDocsSidebarCollapsedChange}
           />
@@ -260,11 +255,7 @@ export const ProjectWorkspaceContent = ({
     [
       activeDocumentId,
       activeModule,
-      chatScope,
-      currentSessionId,
       docsSidebarCollapsed,
-      handleNewSession,
-      handleSelectSession,
       onDocsSidebarCollapsedChange,
       projectId,
       updateContext,
@@ -292,15 +283,30 @@ export const ProjectWorkspaceContent = ({
           rightCollapsed={rightPaneCollapsed}
           left={left}
           right={
-            <ModuleChatPane
-              projectId={projectId}
-              scope={chatScope}
-              module={activeModule}
-              chatVariant="project"
-              contextSnapshot={contexts}
-              sessionId={currentSessionId}
-              onSessionCreated={handleSessionCreated}
-            />
+            activeModule === "docs" ? (
+              <AgentChatWorkspace
+                projectId={projectId}
+                scope={chatScope}
+                module={activeModule}
+                chatVariant="project"
+                currentSessionId={currentSessionId}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onSessionCreated={handleSessionCreated}
+                contextSnapshot={contexts}
+                historyPresentation="popover"
+              />
+            ) : (
+              <ModuleChatPane
+                projectId={projectId}
+                scope={chatScope}
+                module={activeModule}
+                chatVariant="project"
+                contextSnapshot={contexts}
+                sessionId={currentSessionId}
+                onSessionCreated={handleSessionCreated}
+              />
+            )
           }
         />
       )}

@@ -261,11 +261,6 @@ export const MainAgentPage = () => {
                   <DocsModule
                     projectId={MAIN_AGENT_SCOPE_ID}
                     onContextChange={handleDocsContextChange}
-                    chatScope={MAIN_SCOPE}
-                    chatModule="main"
-                    currentSessionId={currentSessionId}
-                    onSelectSession={handleSelectSession}
-                    onNewSession={handleNewSession}
                     sidebarCollapsed={docsSidebarCollapsed}
                     onSidebarCollapsedChange={setDocsSidebarCollapsed}
                   />
@@ -287,15 +282,32 @@ export const MainAgentPage = () => {
               </div>
             }
             right={
-              <ModuleChatPane
-                scope={MAIN_SCOPE}
-                module="main"
-                chatVariant="main"
-                acceptMainInputFocusEvents={mode !== "chat"}
-                contextSnapshot={contexts}
-                sessionId={currentSessionId}
-                onSessionCreated={handleSessionCreated}
-              />
+              mode === "docs" ? (
+                <AgentChatWorkspace
+                  scope={MAIN_SCOPE}
+                  module="main"
+                  chatVariant="main"
+                  currentSessionId={currentSessionId}
+                  onSelectSession={handleSelectSession}
+                  onNewSession={handleNewSession}
+                  onSessionCreated={handleSessionCreated}
+                  sessionKinds={MERGED_SESSION_KINDS}
+                  acceptMainInputFocusEvents
+                  contextSnapshot={contexts}
+                  hideBorder={false}
+                  historyPresentation="popover"
+                />
+              ) : (
+                <ModuleChatPane
+                  scope={MAIN_SCOPE}
+                  module="main"
+                  chatVariant="main"
+                  acceptMainInputFocusEvents={mode !== "chat"}
+                  contextSnapshot={contexts}
+                  sessionId={currentSessionId}
+                  onSessionCreated={handleSessionCreated}
+                />
+              )
             }
           />
         </div>
