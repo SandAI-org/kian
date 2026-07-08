@@ -11,7 +11,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@renderer/lib/api";
 import { MAIN_AGENT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
 import { toggleWindowMaximizeFromChrome } from "@renderer/lib/windowChrome";
-import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
 import { useSearchParams } from "react-router-dom";
 
 const MAIN_AGENT_SCOPE_ID = "main-agent";
@@ -316,38 +315,23 @@ export const MainAgentPage = () => {
               </div>
             }
             right={
-              mode === "docs" ? (
-                <AgentChatWorkspace
-                  scope={MAIN_SCOPE}
-                  module="main"
-                  chatVariant="main"
-                  currentSessionId={currentSessionId}
-                  onSelectSession={handleSelectSession}
-                  onNewSession={handleNewSession}
-                  onSessionCreated={handleSessionCreated}
-                  sessionKinds={MERGED_SESSION_KINDS}
-                  acceptMainInputFocusEvents
-                  inputFocusRequestId={
-                    mode === "docs" ? inputFocusRequestId : undefined
-                  }
-                  contextSnapshot={contexts}
-                  hideBorder={false}
-                  historyPresentation="popover"
-                />
-              ) : (
-                <ModuleChatPane
-                  scope={MAIN_SCOPE}
-                  module="main"
-                  chatVariant="main"
-                  acceptMainInputFocusEvents={mode !== "chat"}
-                  inputFocusRequestId={
-                    mode !== "chat" ? inputFocusRequestId : undefined
-                  }
-                  contextSnapshot={contexts}
-                  sessionId={currentSessionId}
-                  onSessionCreated={handleSessionCreated}
-                />
-              )
+              <AgentChatWorkspace
+                scope={MAIN_SCOPE}
+                module="main"
+                chatVariant="main"
+                currentSessionId={currentSessionId}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onSessionCreated={handleSessionCreated}
+                sessionKinds={MERGED_SESSION_KINDS}
+                acceptMainInputFocusEvents
+                inputFocusRequestId={
+                  mode !== "chat" ? inputFocusRequestId : undefined
+                }
+                contextSnapshot={contexts}
+                hideBorder={false}
+                historyPresentation="popover"
+              />
             }
           />
         </div>

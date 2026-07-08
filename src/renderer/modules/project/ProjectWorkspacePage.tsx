@@ -3,7 +3,6 @@ import type { MainLayoutOutletContext } from "@renderer/app/MainLayout";
 import { WorkspacePaneControls } from "@renderer/components/WorkspacePaneControls";
 import { AppModule } from "@renderer/modules/app/AppModule";
 import { AgentChatWorkspace } from "@renderer/modules/chat/AgentChatWorkspace";
-import { ModuleChatPane } from "@renderer/modules/chat/ModuleChatPane";
 import { DocsModule } from "@renderer/modules/docs/DocsModule";
 import { api } from "@renderer/lib/api";
 import { CHAT_INPUT_FOCUS_EVENT } from "@renderer/lib/shortcuts";
@@ -269,30 +268,18 @@ export const ProjectWorkspaceContent = ({
           rightCollapsed={rightPaneCollapsed}
           left={left}
           right={
-            activeModule === "docs" ? (
-              <AgentChatWorkspace
-                projectId={projectId}
-                scope={chatScope}
-                module={activeModule}
-                chatVariant="project"
-                currentSessionId={currentSessionId}
-                onSelectSession={handleSelectSession}
-                onNewSession={handleNewSession}
-                onSessionCreated={handleSessionCreated}
-                contextSnapshot={contexts}
-                historyPresentation="popover"
-              />
-            ) : (
-              <ModuleChatPane
-                projectId={projectId}
-                scope={chatScope}
-                module={activeModule}
-                chatVariant="project"
-                contextSnapshot={contexts}
-                sessionId={currentSessionId}
-                onSessionCreated={handleSessionCreated}
-              />
-            )
+            <AgentChatWorkspace
+              projectId={projectId}
+              scope={chatScope}
+              module={activeModule}
+              chatVariant="project"
+              currentSessionId={currentSessionId}
+              onSelectSession={handleSelectSession}
+              onNewSession={handleNewSession}
+              onSessionCreated={handleSessionCreated}
+              contextSnapshot={contexts}
+              historyPresentation="popover"
+            />
           }
         />
       )}

@@ -163,8 +163,8 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="relative flex h-full min-h-0 flex-col gap-2 overflow-hidden rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.78)] p-2 shadow-[0_2px_12px_rgba(15,23,42,0.04)]">
+      <div className="docs-editor-panel__header flex shrink-0 items-center justify-between gap-3 rounded-lg px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Tooltip
             title={buildTimeText ? t(`上次构建：${buildTimeText}`) : undefined}
@@ -215,9 +215,12 @@ export const AppModule = ({ projectId, onContextChange }: AppModuleProps) => {
         </Space>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[#dbe5f5] bg-white">
+      <div className="docs-editor-panel__body min-h-0 flex-1 overflow-hidden rounded-lg">
         {previewUrl ? (
-          <AppPreviewWebview previewUrl={previewUrl} />
+          <AppPreviewWebview
+            previewUrl={previewUrl}
+            className="relative h-full w-full overflow-hidden rounded-lg"
+          />
         ) : (
           <div className="app-empty-shell">
             <div className="app-empty-shell__glow app-empty-shell__glow--one" />
