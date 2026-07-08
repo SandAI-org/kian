@@ -320,12 +320,24 @@ a:focus-visible,
 }
 
 .docs-editor-panel {
-  background: var(--surface);
+  background: transparent;
 }
 
 .docs-editor-panel__header {
-  background:
-    linear-gradient(180deg, rgba(var(--surface-rgb), 0.98), rgba(var(--surface-rgb), 0.94));
+  background: var(--surface-2);
+}
+
+.docs-editor-panel__body {
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+
+.docs-editor-panel__body--editor {
+  box-shadow: none;
+}
+
+.docs-editor-panel__body--empty {
+  background: var(--surface-2);
+  box-shadow: none;
 }
 
 .docs-editor-panel__body,
@@ -339,12 +351,62 @@ a:focus-visible,
   background: var(--surface-2);
 }
 
+.docs-editor-panel__preview .simplebar-wrapper,
+.docs-editor-panel__preview .simplebar-mask,
+.docs-editor-panel__preview .simplebar-offset,
+.docs-editor-panel__preview .simplebar-content-wrapper {
+  height: 100%;
+}
+
+.docs-editor-panel__preview .simplebar-content {
+  min-height: 100%;
+}
+
+.docs-editor-panel__empty {
+  display: flex;
+  min-height: 100%;
+  height: 100%;
+  cursor: text;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  background: var(--surface-2);
+  user-select: none;
+}
+
+.docs-editor-panel__empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  transform: translateY(-2%);
+}
+
+.docs-editor-panel__empty-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.docs-editor-panel__empty-hint {
+  color: color-mix(in srgb, var(--muted) 76%, var(--surface) 24%) !important;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
 :root.theme-dark .docs-editor-panel__body,
 :root.theme-dark .docs-editor-panel__body .monaco-editor,
 :root.theme-dark .docs-editor-panel__body .monaco-editor .margin,
 :root.theme-dark .docs-editor-panel__body .monaco-editor-background,
 :root.theme-dark .docs-editor-panel__body .monaco-editor .inputarea.ime-input {
-  background: #0d1728;
+  background: var(--surface-2);
+}
+
+:root.theme-dark .docs-editor-panel__body--empty,
+:root.theme-dark .docs-editor-panel__empty {
+  background: var(--surface-2);
 }
 
 .ant-tabs-content,

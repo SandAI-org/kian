@@ -1,4 +1,5 @@
 import { EditOutlined, ExportOutlined, ReadOutlined } from "@ant-design/icons";
+import { IllustrationEmptyEditor } from "@renderer/components/EmptyIllustrations";
 import { MarkdownPreBlock } from "@renderer/components/MarkdownPreBlock";
 import { RevealableImage } from "@renderer/components/RevealableImage";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
@@ -203,10 +204,12 @@ interface MarkdownEditorProps {
   projectId: string;
   documentPath: string;
   title: string;
+  titleContent?: ReactNode;
   documentVersion?: string | number;
   statusText?: string;
   value: string;
   onChange: (next: string) => void;
+  onTitleDoubleClick?: () => void;
   onOpenInNewWindow?: () => void;
 }
 
@@ -214,14 +217,17 @@ export const MarkdownEditor = ({
   projectId,
   documentPath,
   title,
+  titleContent,
   documentVersion,
   statusText,
   value,
   onChange,
+  onTitleDoubleClick,
   onOpenInNewWindow,
 }: MarkdownEditorProps) => {
   const { resolvedTheme, t } = useAppI18n();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const pendingEditorFocusRef = useRef(false);
   const [readMode, setReadMode] = useState(true);
   const markdownPreviewEnabled = useMemo(() => isMarkdownDocument(title), [title]);
   const htmlPreviewEnabled = useMemo(() => isHtmlDocument(title), [title]);
@@ -271,8 +277,8 @@ export const MarkdownEditor = ({
       inherit: true,
       rules: [],
       colors: {
-        "editor.background": "#0d1728",
-        "editorGutter.background": "#0d1728",
+        "editor.background": "#111b2e",
+        "editorGutter.background": "#111b2e",
         "editorLineNumber.foreground": "#536b8e",
         "editorLineNumber.activeForeground": "#c9d6ea",
         "editor.lineHighlightBackground": "#15243c",
@@ -286,10 +292,23 @@ export const MarkdownEditor = ({
     });
   }, []);
 
+  const focusEditor = useCallback(
+    (target?: editor.IStandaloneCodeEditor | null) => {
+      window.requestAnimationFrame(() => {
+        (target ?? editorRef.current)?.focus();
+      });
+    },
+    [],
+  );
+
   const handleMount = useCallback<OnMount>((instance, monaco) => {
     monaco.editor.setTheme(editorTheme);
     editorRef.current = instance;
-  }, [editorTheme]);
+    if (pendingEditorFocusRef.current) {
+      pendingEditorFocusRef.current = false;
+      focusEditor(instance);
+    }
+  }, [editorTheme, focusEditor]);
 
   const options = useMemo<editor.IStandaloneEditorConstructionOptions>(
     () => ({
@@ -303,10 +322,22 @@ export const MarkdownEditor = ({
       glyphMargin: false,
       folding: false,
       wordWrap: markdownPreviewEnabled ? "on" : "off",
+      scrollbar: {
+        vertical: "auto",
+        horizontal: "auto",
+        useShadows: false,
+        alwaysConsumeMouseWheel: false,
+        verticalScrollbarSize: 10,
+        horizontalScrollbarSize: 10,
+      },
       scrollBeyondLastLine: false,
       automaticLayout: true,
       tabSize: 2,
       renderLineHighlight: markdownPreviewEnabled ? "none" : "line",
+      renderValidationDecorations: "off",
+      overviewRulerBorder: false,
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
       quickSuggestions: !markdownPreviewEnabled,
       readOnly: false,
       unicodeHighlight: {
@@ -326,16 +357,54 @@ export const MarkdownEditor = ({
     return () => window.removeEventListener("resize", handler);
   }, []);
 
+  const hasContent = value.trim().length > 0;
+  const handleStartEditing = useCallback(() => {
+    pendingEditorFocusRef.current = true;
+    setReadMode(false);
+    focusEditor();
+  }, [focusEditor]);
+  const showingEmptyPreview =
+    (showingHtmlPreview || showingMarkdownPreview) && !hasContent;
+  const emptyPreview = (
+    <div
+      className="docs-editor-panel__empty"
+      title={t("双击开始编辑")}
+      onDoubleClick={handleStartEditing}
+    >
+      <div className="docs-editor-panel__empty-content">
+        <div className="docs-editor-panel__empty-visual">
+          <IllustrationEmptyEditor size={82} />
+        </div>
+        <Typography.Text className="docs-editor-panel__empty-hint">
+          {t("双击开始编辑")}
+        </Typography.Text>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="docs-editor-panel flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg">
-      <div className="docs-editor-panel__header flex items-center justify-between px-3 py-2">
-        <div className="min-w-0">
-          <Typography.Text
-            className="!mb-0 !font-semibold !text-slate-900"
-            ellipsis
-          >
-            {title}
-          </Typography.Text>
+    <div className="docs-editor-panel flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg">
+      <div className="docs-editor-panel__header flex items-center justify-between rounded-lg px-3 py-2">
+        <div
+          className={`min-w-0 flex-1 ${onTitleDoubleClick ? "cursor-text" : ""}`}
+          title={onTitleDoubleClick ? t("双击修改标题") : undefined}
+          onDoubleClickCapture={(event) => {
+            if (!onTitleDoubleClick || titleContent) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onTitleDoubleClick();
+          }}
+        >
+          {titleContent ?? (
+            <Typography.Text
+              className={`!mb-0 !font-semibold !text-slate-900 ${
+                onTitleDoubleClick ? "cursor-text" : ""
+              }`}
+              ellipsis
+            >
+              {title}
+            </Typography.Text>
+          )}
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-2">
           {showStatusText ? (
@@ -377,250 +446,252 @@ export const MarkdownEditor = ({
           ) : null}
         </div>
       </div>
-      <div className="docs-editor-panel__body min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div
+        className={`docs-editor-panel__body docs-editor-panel__body--editor min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg ${
+          showingEmptyPreview ? "docs-editor-panel__body--empty" : ""
+        }`}
+      >
         {showingHtmlPreview ? (
-          value.trim() ? (
+          hasContent ? (
             <AppPreviewWebview previewUrl={htmlPreviewUrl} />
           ) : (
-            <ScrollArea className="h-full">
-              <div className="px-3 py-2">
-                <Typography.Text className="!text-sm !text-slate-400">
-                  {t("暂无内容")}
-                </Typography.Text>
-              </div>
-            </ScrollArea>
+            emptyPreview
           )
         ) : showingMarkdownPreview ? (
-          <ScrollArea className="docs-editor-panel__preview h-full">
-            <div className="px-3 py-2">
-              {value.trim() ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex, rehypeHighlight]}
-                  components={{
-                    h1: ({ children }) => (
-                      <h1 className="mb-3 mt-1 text-2xl font-semibold text-slate-900">
-                        {children}
-                      </h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="mb-2 mt-4 text-xl font-semibold text-slate-900">
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="mb-2 mt-3 text-lg font-semibold text-slate-900">
-                        {children}
-                      </h3>
-                    ),
-                    h4: ({ children }) => (
-                      <h4 className="mb-2 mt-3 text-base font-semibold text-slate-900">
-                        {children}
-                      </h4>
-                    ),
-                    h5: ({ children }) => (
-                      <h5 className="mb-1.5 mt-2 text-sm font-semibold text-slate-900">
-                        {children}
-                      </h5>
-                    ),
-                    h6: ({ children }) => (
-                      <h6 className="mb-1.5 mt-2 text-sm font-medium text-slate-500">
-                        {children}
-                      </h6>
-                    ),
-                    p: ({ children }) => (
-                      <p className="mb-3 leading-7 text-slate-700">
-                        {children}
-                      </p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="mb-3 list-disc pl-5 text-slate-700">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="mb-3 list-decimal pl-5 text-slate-700">
-                        {children}
-                      </ol>
-                    ),
-                    li: ({ children, node }) => {
-                      const hasCheckbox =
-                        node?.children?.[0]?.type === "element" &&
-                        (node.children[0] as any).tagName === "input";
-                      return (
-                        <li
-                          className={`mb-1 text-slate-700${hasCheckbox ? " list-none -ml-5" : ""}`}
-                        >
+          hasContent ? (
+            <div
+              className="h-full cursor-text"
+              title={t("双击开始编辑")}
+              onDoubleClickCapture={handleStartEditing}
+            >
+              <ScrollArea className="docs-editor-panel__preview h-full">
+                <div className="px-3 py-2">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                    components={{
+                      h1: ({ children }) => (
+                        <h1 className="mb-3 mt-1 text-2xl font-semibold text-slate-900">
                           {children}
-                        </li>
-                      );
-                    },
-                    input: ({ checked, type }) => {
-                      if (type !== "checkbox") return null;
-                      return (
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          readOnly
-                          className="mr-2 h-3.5 w-3.5 translate-y-[1px] accent-blue-600"
-                        />
-                      );
-                    },
-                    blockquote: ({ children }) => (
-                      <blockquote className="my-3 border-l-[3px] border-slate-300 bg-slate-50 py-1 pl-4 pr-3 text-slate-600 [&>p]:mb-1">
-                        {children}
-                      </blockquote>
-                    ),
-                    hr: () => (
-                      <hr className="my-4 border-0 border-t border-slate-200" />
-                    ),
-                    strong: ({ children }) => (
-                      <strong className="font-semibold text-slate-900">
-                        {children}
-                      </strong>
-                    ),
-                    em: ({ children }) => (
-                      <em className="italic text-slate-700">{children}</em>
-                    ),
-                    del: ({ children }) => (
-                      <del className="text-slate-400 line-through">
-                        {children}
-                      </del>
-                    ),
-                    table: ({ children }) => (
-                      <table className="mb-3 table w-full table-fixed border-collapse border border-slate-300 text-left text-sm text-slate-700">
-                        {children}
-                      </table>
-                    ),
-                    th: ({ children }) => (
-                      <th className="break-words border border-slate-300 bg-slate-100 px-3 py-2 font-semibold text-slate-900">
-                        {children}
-                      </th>
-                    ),
-                    td: ({ children }) => (
-                      <td className="break-words border border-slate-300 px-3 py-2 align-top">
-                        {children}
-                      </td>
-                    ),
-                    code: ({ children, className }) => {
-                      const source = extractTextFromReactNode(children);
-                      const isBlock =
-                        Boolean(className?.includes("language-")) ||
-                        source.includes("\n");
-                      if (isBlock) {
+                        </h1>
+                      ),
+                      h2: ({ children }) => (
+                        <h2 className="mb-2 mt-4 text-xl font-semibold text-slate-900">
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="mb-2 mt-3 text-lg font-semibold text-slate-900">
+                          {children}
+                        </h3>
+                      ),
+                      h4: ({ children }) => (
+                        <h4 className="mb-2 mt-3 text-base font-semibold text-slate-900">
+                          {children}
+                        </h4>
+                      ),
+                      h5: ({ children }) => (
+                        <h5 className="mb-1.5 mt-2 text-sm font-semibold text-slate-900">
+                          {children}
+                        </h5>
+                      ),
+                      h6: ({ children }) => (
+                        <h6 className="mb-1.5 mt-2 text-sm font-medium text-slate-500">
+                          {children}
+                        </h6>
+                      ),
+                      p: ({ children }) => (
+                        <p className="mb-3 leading-7 text-slate-700">
+                          {children}
+                        </p>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="mb-3 list-disc pl-5 text-slate-700">
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="mb-3 list-decimal pl-5 text-slate-700">
+                          {children}
+                        </ol>
+                      ),
+                      li: ({ children, node }) => {
+                        const hasCheckbox =
+                          node?.children?.[0]?.type === "element" &&
+                          (node.children[0] as any).tagName === "input";
                         return (
-                          <code className={className}>{children}</code>
+                          <li
+                            className={`mb-1 text-slate-700${hasCheckbox ? " list-none -ml-5" : ""}`}
+                          >
+                            {children}
+                          </li>
                         );
-                      }
-                      return (
-                        <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px] text-slate-800">
-                          {children}
-                        </code>
-                      );
-                    },
-                    pre: ({ children }) => (
-                      <MarkdownPreBlock variant="editor">
-                        {children}
-                      </MarkdownPreBlock>
-                    ),
-                    img: ({ src, alt }) => {
-                      const raw = String(src ?? "");
-                      if (!raw) return null;
-                      const resolved = resolveDocLocalUrl(raw, {
-                        projectId,
-                        documentPath,
-                      });
-                      if (!resolved) return null;
-                      const { cleanAlt, width, height } = parseSizeFromAlt(
-                        String(alt ?? ""),
-                      );
-                      const altKind = cleanAlt.toLowerCase();
-                      const kind =
-                        altKind === "video" || altKind === "audio"
-                          ? altKind
-                          : (detectMarkdownMediaKindFromSource(raw) ?? "image");
-                      if (kind === "video") {
+                      },
+                      input: ({ checked, type }) => {
+                        if (type !== "checkbox") return null;
                         return (
-                          <video
-                            controls
-                            preload="metadata"
-                            className="chat-markdown__media chat-markdown__media--video"
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            readOnly
+                            className="mr-2 h-3.5 w-3.5 translate-y-[1px] accent-blue-600"
+                          />
+                        );
+                      },
+                      blockquote: ({ children }) => (
+                        <blockquote className="my-3 border-l-[3px] border-slate-300 bg-slate-50 py-1 pl-4 pr-3 text-slate-600 [&>p]:mb-1">
+                          {children}
+                        </blockquote>
+                      ),
+                      hr: () => (
+                        <hr className="my-4 border-0 border-t border-slate-200" />
+                      ),
+                      strong: ({ children }) => (
+                        <strong className="font-semibold text-slate-900">
+                          {children}
+                        </strong>
+                      ),
+                      em: ({ children }) => (
+                        <em className="italic text-slate-700">{children}</em>
+                      ),
+                      del: ({ children }) => (
+                        <del className="text-slate-400 line-through">
+                          {children}
+                        </del>
+                      ),
+                      table: ({ children }) => (
+                        <table className="mb-3 table w-full table-fixed border-collapse border border-slate-300 text-left text-sm text-slate-700">
+                          {children}
+                        </table>
+                      ),
+                      th: ({ children }) => (
+                        <th className="break-words border border-slate-300 bg-slate-100 px-3 py-2 font-semibold text-slate-900">
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="break-words border border-slate-300 px-3 py-2 align-top">
+                          {children}
+                        </td>
+                      ),
+                      code: ({ children, className }) => {
+                        const source = extractTextFromReactNode(children);
+                        const isBlock =
+                          Boolean(className?.includes("language-")) ||
+                          source.includes("\n");
+                        if (isBlock) {
+                          return (
+                            <code className={className}>{children}</code>
+                          );
+                        }
+                        return (
+                          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px] text-slate-800">
+                            {children}
+                          </code>
+                        );
+                      },
+                      pre: ({ children }) => (
+                        <MarkdownPreBlock variant="editor">
+                          {children}
+                        </MarkdownPreBlock>
+                      ),
+                      img: ({ src, alt }) => {
+                        const raw = String(src ?? "");
+                        if (!raw) return null;
+                        const resolved = resolveDocLocalUrl(raw, {
+                          projectId,
+                          documentPath,
+                        });
+                        if (!resolved) return null;
+                        const { cleanAlt, width, height } = parseSizeFromAlt(
+                          String(alt ?? ""),
+                        );
+                        const altKind = cleanAlt.toLowerCase();
+                        const kind =
+                          altKind === "video" || altKind === "audio"
+                            ? altKind
+                            : (detectMarkdownMediaKindFromSource(raw) ?? "image");
+                        if (kind === "video") {
+                          return (
+                            <video
+                              controls
+                              preload="metadata"
+                              className="chat-markdown__media chat-markdown__media--video"
+                              style={sizeStyle(width, height)}
+                              src={resolved}
+                            />
+                          );
+                        }
+                        if (kind === "audio") {
+                          return (
+                            <audio
+                              controls
+                              preload="metadata"
+                              className="chat-markdown__audio"
+                              src={resolved}
+                            />
+                          );
+                        }
+                        return (
+                          <RevealableImage
+                            src={resolved}
+                            alt={cleanAlt || "image"}
+                            filePath={isDocPassthroughUrl(raw) ? undefined : raw}
+                            projectId={projectId}
+                            documentPath={documentPath}
+                            className="chat-markdown__media chat-markdown__media--image"
+                            imageClassName="chat-markdown__media-image"
                             style={sizeStyle(width, height)}
-                            src={resolved}
                           />
                         );
-                      }
-                      if (kind === "audio") {
-                        return (
-                          <audio
-                            controls
-                            preload="metadata"
-                            className="chat-markdown__audio"
-                            src={resolved}
-                          />
-                        );
-                      }
-                      return (
-                        <RevealableImage
-                          src={resolved}
-                          alt={cleanAlt || "image"}
-                          filePath={isDocPassthroughUrl(raw) ? undefined : raw}
-                          projectId={projectId}
-                          documentPath={documentPath}
-                          className="chat-markdown__media chat-markdown__media--image"
-                          imageClassName="chat-markdown__media-image"
-                          style={sizeStyle(width, height)}
-                        />
-                      );
-                    },
-                    a: ({ children, href }) => {
-                      const raw = String(href ?? "");
-                      if (!raw.trim()) {
-                        return <span>{children}</span>;
-                      }
-                      if (isDocPassthroughUrl(raw)) {
+                      },
+                      a: ({ children, href }) => {
+                        const raw = String(href ?? "");
+                        if (!raw.trim()) {
+                          return <span>{children}</span>;
+                        }
+                        if (isDocPassthroughUrl(raw)) {
+                          return (
+                            <a
+                              href={raw}
+                              className="text-blue-600 underline underline-offset-2 hover:text-blue-500"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                void openUrl(raw);
+                              }}
+                            >
+                              {children}
+                            </a>
+                          );
+                        }
+                        const resolved = resolveDocLocalUrl(raw, {
+                          projectId,
+                          documentPath,
+                        });
+                        if (!resolved) return <span>{children}</span>;
                         return (
                           <a
-                            href={raw}
+                            href={resolved}
                             className="text-blue-600 underline underline-offset-2 hover:text-blue-500"
                             onClick={(event) => {
                               event.preventDefault();
-                              void openUrl(raw);
+                              void api.file.open(raw, projectId, documentPath);
                             }}
                           >
                             {children}
                           </a>
                         );
-                      }
-                      const resolved = resolveDocLocalUrl(raw, {
-                        projectId,
-                        documentPath,
-                      });
-                      if (!resolved) return <span>{children}</span>;
-                      return (
-                        <a
-                          href={resolved}
-                          className="text-blue-600 underline underline-offset-2 hover:text-blue-500"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            void api.file.open(raw, projectId, documentPath);
-                          }}
-                        >
-                          {children}
-                        </a>
-                      );
-                    },
-                  }}
-                >
-                  {preprocessExtendedMedia(value)}
-                </ReactMarkdown>
-              ) : (
-                <Typography.Text className="!text-sm !text-slate-400">
-                  {t("暂无内容")}
-                </Typography.Text>
-              )}
+                      },
+                    }}
+                  >
+                    {preprocessExtendedMedia(value)}
+                  </ReactMarkdown>
+                </div>
+              </ScrollArea>
             </div>
-          </ScrollArea>
+          ) : (
+            emptyPreview
+          )
         ) : (
           <Editor
             beforeMount={handleBeforeMount}

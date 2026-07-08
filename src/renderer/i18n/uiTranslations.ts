@@ -1225,6 +1225,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "窗口": "Window",
     "编辑": "Edit",
     "编辑模式": "Edit Mode",
+    "双击开始编辑": "Double-click to start editing",
+    "双击修改标题": "Double-click to rename the title",
     "预览模式": "Preview Mode",
     "缺少待编辑的 MCP 服务": "No MCP service selected for editing",
     "自动保存中...": "Auto-saving...",
@@ -1975,6 +1977,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "소재 경로를 사용할 수 없어 시스템 미리보기를 열 수 없습니다",
     "编辑": "편집",
     "编辑模式": "편집 모드",
+    "双击开始编辑": "두 번 클릭하여 편집 시작",
+    "双击修改标题": "두 번 클릭하여 제목 수정",
     "预览模式": "미리보기 모드",
     "缺少待编辑的 MCP 服务":
       "편집할 MCP 서비스가 선택되지 않았습니다",
@@ -2750,6 +2754,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "アセットのパスが利用できないため、システムプレビューを開けません",
     "编辑": "編集",
     "编辑模式": "編集モード",
+    "双击开始编辑": "ダブルクリックして編集を開始",
+    "双击修改标题": "ダブルクリックしてタイトルを変更",
     "预览模式": "プレビューモード",
     "缺少待编辑的 MCP 服务":
       "編集する MCP サービスが選択されていません",

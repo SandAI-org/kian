@@ -40,6 +40,7 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type ReactNode,
 } from "react";
 import { detectDocMediaKind, resolveDocLocalUrl } from "./docMedia";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -373,35 +374,56 @@ interface MediaPreviewPanelProps {
   projectId: string;
   filePath: string;
   title: string;
+  titleContent?: ReactNode;
+  titleActionLabel?: string;
   typeLabel: string;
   mediaKind: "image" | "video" | "audio";
+  onTitleDoubleClick?: () => void;
 }
 
 const MediaPreviewPanel = ({
   projectId,
   filePath,
   title,
+  titleContent,
+  titleActionLabel,
   typeLabel,
   mediaKind,
+  onTitleDoubleClick,
 }: MediaPreviewPanelProps) => {
   const previewSrc = resolveDocLocalUrl(`docs/${stripDocsPrefix(filePath)}`, {
     projectId,
   });
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
-      <div className="flex items-center justify-between px-3 py-2">
-        <Typography.Text
-          className="!mb-0 !font-semibold !text-slate-900"
-          ellipsis
+    <div className="docs-editor-panel flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg">
+      <div className="docs-editor-panel__header flex items-center justify-between gap-3 rounded-lg px-3 py-2">
+        <div
+          className={`min-w-0 flex-1 ${onTitleDoubleClick ? "cursor-text" : ""}`}
+          title={titleActionLabel}
+          onDoubleClickCapture={(event) => {
+            if (!onTitleDoubleClick || titleContent) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onTitleDoubleClick();
+          }}
         >
-          {title}
-        </Typography.Text>
+          {titleContent ?? (
+            <Typography.Text
+              className={`!mb-0 !font-semibold !text-slate-900 ${
+                onTitleDoubleClick ? "cursor-text" : ""
+              }`}
+              ellipsis
+            >
+              {title}
+            </Typography.Text>
+          )}
+        </div>
         <Typography.Text className="!text-xs !text-slate-500">
           {typeLabel}
         </Typography.Text>
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="docs-editor-panel__body min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg">
         {mediaKind === "audio" ? (
           <div className="flex h-full min-h-0 items-center justify-center px-6 py-8">
             <audio controls preload="metadata" className="w-full max-w-xl" src={previewSrc} />
@@ -436,30 +458,51 @@ const MediaPreviewPanel = ({
 
 interface FilePreviewPanelProps {
   title: string;
+  titleContent?: ReactNode;
+  titleActionLabel?: string;
   onOpen: () => void;
   openLabel: string;
   typeLabel: string;
+  onTitleDoubleClick?: () => void;
 }
 
 const FilePreviewPanel = ({
   title,
+  titleContent,
+  titleActionLabel,
   onOpen,
   openLabel,
   typeLabel,
+  onTitleDoubleClick,
 }: FilePreviewPanelProps) => (
-  <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
-    <div className="flex items-center justify-between px-3 py-2">
-      <Typography.Text
-        className="!mb-0 !font-semibold !text-slate-900"
-        ellipsis
+  <div className="docs-editor-panel flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg">
+    <div className="docs-editor-panel__header flex items-center justify-between gap-3 rounded-lg px-3 py-2">
+      <div
+        className={`min-w-0 flex-1 ${onTitleDoubleClick ? "cursor-text" : ""}`}
+        title={titleActionLabel}
+        onDoubleClickCapture={(event) => {
+          if (!onTitleDoubleClick || titleContent) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onTitleDoubleClick();
+        }}
       >
-        {title}
-      </Typography.Text>
+        {titleContent ?? (
+          <Typography.Text
+            className={`!mb-0 !font-semibold !text-slate-900 ${
+              onTitleDoubleClick ? "cursor-text" : ""
+            }`}
+            ellipsis
+          >
+            {title}
+          </Typography.Text>
+        )}
+      </div>
       <Typography.Text className="!text-xs !text-slate-500">
         {typeLabel}
       </Typography.Text>
     </div>
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 px-6 py-8">
+    <div className="docs-editor-panel__body flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden rounded-lg px-6 py-8">
       <FileTextOutlined className="text-4xl text-slate-300" />
       <Button type="primary" onClick={onOpen}>
         {openLabel}
@@ -578,7 +621,7 @@ export const DocsModule = ({
     saveState === "saving"
       ? t("自动保存中...")
       : saveState === "error"
-        ? t("保存失败")
+        ? undefined
         : t("已自动保存");
 
   const fallbackDocPath = docs[0] ? stripDocsPrefix(docs[0].id) : undefined;
@@ -730,7 +773,7 @@ export const DocsModule = ({
       const created = await api.docs.create({
         projectId,
         title: targetPath,
-        content: t("# 新文档\n\n在这里记录你的想法和资料。\n"),
+        content: "",
       });
       const createdPath = stripDocsPrefix(created.id);
       const createdEntry: DocExplorerEntryDTO = {
@@ -1688,6 +1731,28 @@ export const DocsModule = ({
       );
     });
 
+  const beginRenameFile = (rawPath: string): void => {
+    const path = stripDocsPrefix(rawPath);
+    beginRename({
+      kind: "file",
+      path,
+      currentName: getPathBaseName(path),
+    });
+  };
+
+  const renderTitleContent = (rawPath: string): ReactNode | undefined => {
+    const path = stripDocsPrefix(rawPath);
+    if (renaming?.kind !== "file" || renaming.path !== path) {
+      return undefined;
+    }
+
+    return (
+      <div className="min-w-0 flex-1 rounded-md bg-[rgba(var(--surface-rgb),0.52)] px-1 py-0.5 font-semibold text-[var(--text)] shadow-[inset_0_0_0_1px_var(--stroke)]">
+        {renderRenameInput("file", path, t("输入文件名称"))}
+      </div>
+    );
+  };
+
   return (
     <div
       className="relative flex h-full min-h-0 gap-2 overflow-hidden rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.78)] p-2 shadow-[0_2px_12px_rgba(15,23,42,0.04)]"
@@ -1754,10 +1819,12 @@ export const DocsModule = ({
                 projectId={projectId}
                 documentPath={stripDocsPrefix(activeDoc.id)}
                 title={toDocPath(activeDoc.id) || toDocPath(activeDoc.title)}
+                titleContent={renderTitleContent(activeDoc.id)}
                 documentVersion={activeDoc.version}
                 statusText={saveStatusText}
                 value={visibleEditorValue}
                 onChange={setEditorValue}
+                onTitleDoubleClick={() => beginRenameFile(activeDoc.id)}
                 onOpenInNewWindow={() =>
                   handleOpenInNewWindow({
                     path: stripDocsPrefix(activeDoc.id),
@@ -1773,6 +1840,8 @@ export const DocsModule = ({
             projectId={projectId}
             filePath={resolvedActivePath ?? activeExplorerEntry.path}
             title={toDocPath(activeExplorerEntry.path)}
+            titleContent={renderTitleContent(activeExplorerEntry.path)}
+            titleActionLabel={t("双击修改标题")}
             typeLabel={
               activeMediaKind === "image"
                 ? t("图片")
@@ -1781,13 +1850,17 @@ export const DocsModule = ({
                   : t("音频")
             }
             mediaKind={activeMediaKind}
+            onTitleDoubleClick={() => beginRenameFile(activeExplorerEntry.path)}
           />
         ) : activeExplorerEntry ? (
           <FilePreviewPanel
             title={toDocPath(activeExplorerEntry.path)}
+            titleContent={renderTitleContent(activeExplorerEntry.path)}
+            titleActionLabel={t("双击修改标题")}
             typeLabel={t("文件")}
             openLabel={t("打开")}
             onOpen={() => handleOpenFile(activeExplorerEntry.path)}
+            onTitleDoubleClick={() => beginRenameFile(activeExplorerEntry.path)}
           />
         ) : (
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
