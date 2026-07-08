@@ -115,9 +115,10 @@ export const AgentChatWorkspace = ({
                 trigger="hover"
                 placement="bottomLeft"
                 arrow={false}
+                styles={{ body: { overflow: "hidden", padding: 0 } }}
                 content={
                   <div
-                    className="w-72 p-1"
+                    className="w-72 py-3"
                     style={{ height: "min(520px, calc(100vh - 160px))" }}
                   >
                     {historyList}
