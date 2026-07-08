@@ -8,8 +8,10 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
+  LoadingOutlined,
   PlusOutlined,
   SaveOutlined,
+  UnorderedListOutlined,
   VideoCameraOutlined,
 } from "@ant-design/icons";
 import { CompactDropdown } from "@renderer/components/CompactDropdown";
@@ -32,7 +34,7 @@ import type {
   DocumentDTO,
 } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Typography, message, type MenuProps } from "antd";
+import { Button, Popover, Typography, message, type MenuProps } from "antd";
 import {
   useCallback,
   useEffect,
@@ -51,14 +53,17 @@ interface DocsModuleProps {
   onContextChange?: (context: unknown) => void;
   sidebarCollapsed?: boolean;
   onSidebarCollapsedChange?: (collapsed: boolean) => void;
+  fileListPresentation?: "inline" | "popover";
 }
 
 type SaveState = "saved" | "saving" | "error";
 type RenameKind = "file" | "directory";
+type RenameSource = "explorer" | "title";
 interface RenameState {
   kind: RenameKind;
   path: string;
   value: string;
+  source: RenameSource;
 }
 
 const docSortOptions: Intl.CollatorOptions = {
@@ -517,6 +522,7 @@ export const DocsModule = ({
   onContextChange,
   sidebarCollapsed: controlledSidebarCollapsed,
   onSidebarCollapsedChange,
+  fileListPresentation = "inline",
 }: DocsModuleProps) => {
   const { t } = useAppI18n();
   const queryClient = useQueryClient();
@@ -617,12 +623,14 @@ export const DocsModule = ({
         .map((node) => node.path),
     [docsTree],
   );
-  const saveStatusText =
-    saveState === "saving"
-      ? t("自动保存中...")
-      : saveState === "error"
-        ? undefined
-        : t("已自动保存");
+  const saveStatusIndicator =
+    saveState === "saving" ? (
+      <LoadingOutlined
+        className="text-xs text-slate-500"
+        spin
+        aria-label={t("自动保存中...")}
+      />
+    ) : undefined;
 
   const fallbackDocPath = docs[0] ? stripDocsPrefix(docs[0].id) : undefined;
   const resolvedActivePath = activeEntryPath ?? fallbackDocPath;
@@ -1072,12 +1080,12 @@ export const DocsModule = ({
       return;
     }
 
-    lastQueuedSaveSnapshotRef.current = nextSaveSnapshot;
     setSaveState("saving");
     const requestSeq = nextSaveRequestSeqRef.current + 1;
     nextSaveRequestSeqRef.current = requestSeq;
     latestSaveRequestSeqByDocRef.current.set(activeDoc.id, requestSeq);
     const timer = setTimeout(() => {
+      lastQueuedSaveSnapshotRef.current = nextSaveSnapshot;
       updateMutation.mutate({
         id: activeDoc.id,
         content: visibleEditorValue,
@@ -1104,11 +1112,13 @@ export const DocsModule = ({
     kind: RenameKind;
     path: string;
     currentName?: string;
+    source?: RenameSource;
   }): void => {
     setRenaming({
       kind: input.kind,
       path: input.path,
       value: input.currentName ?? getPathBaseName(input.path),
+      source: input.source ?? "explorer",
     });
   };
 
@@ -1547,7 +1557,9 @@ export const DocsModule = ({
       const selectable = true;
       const actionable = true;
       const renamingFile =
-        renaming?.kind === "file" && renaming.path === node.path;
+        renaming?.kind === "file" &&
+        renaming.path === node.path &&
+        renaming.source === "explorer";
       const fileMenuItems: NonNullable<MenuProps["items"]> = [
         {
           key: "rename",
@@ -1737,12 +1749,17 @@ export const DocsModule = ({
       kind: "file",
       path,
       currentName: getPathBaseName(path),
+      source: "title",
     });
   };
 
   const renderTitleContent = (rawPath: string): ReactNode | undefined => {
     const path = stripDocsPrefix(rawPath);
-    if (renaming?.kind !== "file" || renaming.path !== path) {
+    if (
+      renaming?.kind !== "file" ||
+      renaming.path !== path ||
+      renaming.source !== "title"
+    ) {
       return undefined;
     }
 
@@ -1753,127 +1770,163 @@ export const DocsModule = ({
     );
   };
 
+  const fileExplorerList =
+    docsTree.length === 0 ? (
+      <div className="flex flex-col items-center justify-center gap-1 px-3 py-8">
+        <IllustrationEmptyFiles size={64} />
+        <Typography.Text className="!text-xs !text-slate-400">
+          {t("暂无文件")}
+        </Typography.Text>
+      </div>
+    ) : (
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-0.5 pl-3 pr-[18px]">{renderTree(docsTree)}</div>
+      </ScrollArea>
+    );
+
+  const fileExplorerContent = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-3 flex items-center justify-between px-3">
+        <Typography.Text className="!font-semibold !text-slate-900">
+          {t("文件")}
+        </Typography.Text>
+        <div className="flex items-center gap-0.5">
+          <CompactDropdown
+            menu={createActionMenu}
+            trigger={["hover"]}
+            placement="bottomRight"
+          >
+            <Button
+              type="text"
+              shape="circle"
+              icon={<PlusOutlined />}
+              title={t("新建")}
+              aria-label={t("新建")}
+              size="small"
+            />
+          </CompactDropdown>
+        </div>
+      </div>
+      {fileExplorerList}
+    </div>
+  );
+
+  const showFileListPopover = fileListPresentation === "popover";
+  const showInlineFileList = !showFileListPopover && !sidebarCollapsed;
+  const shellGapClassName = showFileListPopover ? "" : "gap-2";
+  const fileSidebarClassName = showInlineFileList
+    ? "w-72 rounded-lg bg-[var(--surface-2)] py-3"
+    : "w-0 min-w-0 max-w-0 basis-0";
+
   return (
     <div
-      className="relative flex h-full min-h-0 gap-2 overflow-hidden rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.78)] p-2 shadow-[0_2px_12px_rgba(15,23,42,0.04)]"
+      className={`relative flex h-full min-h-0 ${shellGapClassName} overflow-hidden rounded-xl border border-[var(--stroke)] bg-[rgba(var(--surface-rgb),0.78)] p-2 shadow-[0_2px_12px_rgba(15,23,42,0.04)]`}
       onDragEnter={handleDocsDragEnter}
       onDragLeave={handleDocsDragLeave}
       onDragOver={handleDocsDragOver}
       onDrop={handleDocsDrop}
     >
       <div
-        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${
-          sidebarCollapsed
-            ? "w-0"
-            : "w-72 rounded-lg bg-[var(--surface-2)] py-3"
-        }`}
+        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden ${fileSidebarClassName}`}
       >
-        <div className="mb-3 flex items-center justify-between px-3">
-          {!sidebarCollapsed ? (
-            <Typography.Text className="!font-semibold !text-slate-900">
-              {t("文件")}
-            </Typography.Text>
-          ) : null}
-          <div className="flex items-center gap-0.5">
-            {!sidebarCollapsed ? (
-              <CompactDropdown
-                menu={createActionMenu}
-                trigger={["hover"]}
-                placement="bottomRight"
-              >
-                <Button
-                  type="text"
-                  shape="circle"
-                  icon={<PlusOutlined />}
-                  title={t("新建")}
-                  aria-label={t("新建")}
-                  size="small"
-                />
-              </CompactDropdown>
-            ) : null}
-          </div>
-        </div>
-
-        {!sidebarCollapsed ? (
-          docsTree.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-1 px-3 py-8">
-              <IllustrationEmptyFiles size={64} />
-              <Typography.Text className="!text-xs !text-slate-400">
-                {t("暂无文件")}
-              </Typography.Text>
-            </div>
-          ) : (
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="space-y-0.5 pl-3 pr-[18px]">
-                {renderTree(docsTree)}
-              </div>
-            </ScrollArea>
-          )
-        ) : null}
+        {showInlineFileList ? fileExplorerContent : null}
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg">
-        {activeDoc ? (
-          <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-              <MarkdownEditor
-                key={activeDoc.id}
-                projectId={projectId}
-                documentPath={stripDocsPrefix(activeDoc.id)}
-                title={toDocPath(activeDoc.id) || toDocPath(activeDoc.title)}
-                titleContent={renderTitleContent(activeDoc.id)}
-                documentVersion={activeDoc.version}
-                statusText={saveStatusText}
-                value={visibleEditorValue}
-                onChange={setEditorValue}
-                onTitleDoubleClick={() => beginRenameFile(activeDoc.id)}
-                onOpenInNewWindow={() =>
-                  handleOpenInNewWindow({
-                    path: stripDocsPrefix(activeDoc.id),
-                    name: getPathBaseName(activeDoc.id),
-                    builtAt: activeDoc.updatedAt || String(activeDoc.version),
-                  })
-                }
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg">
+        {showFileListPopover ? (
+          <div className="no-drag mb-2 flex h-9 shrink-0 items-center">
+            <Popover
+              trigger="hover"
+              placement="bottomLeft"
+              arrow={false}
+              styles={{ body: { overflow: "hidden", padding: 0 } }}
+              content={
+                <div
+                  className="w-72 py-3"
+                  style={{ height: "min(520px, calc(100vh - 160px))" }}
+                >
+                  {fileExplorerContent}
+                </div>
+              }
+            >
+              <Button
+                type="text"
+                size="small"
+                className="!h-9 !w-9 !rounded-xl !bg-[rgba(var(--surface-rgb),0.9)] !text-slate-600 shadow-[0_4px_12px_rgba(15,23,42,0.08)] hover:!bg-[#eef3fc] hover:!text-slate-900"
+                icon={<UnorderedListOutlined />}
+                title={t("文件列表")}
+                aria-label={t("文件列表")}
               />
-            </div>
+            </Popover>
           </div>
-        ) : activeExplorerEntry && activeMediaKind ? (
-          <MediaPreviewPanel
-            projectId={projectId}
-            filePath={resolvedActivePath ?? activeExplorerEntry.path}
-            title={toDocPath(activeExplorerEntry.path)}
-            titleContent={renderTitleContent(activeExplorerEntry.path)}
-            titleActionLabel={t("双击修改标题")}
-            typeLabel={
-              activeMediaKind === "image"
-                ? t("图片")
-                : activeMediaKind === "video"
-                  ? t("视频")
-                  : t("音频")
-            }
-            mediaKind={activeMediaKind}
-            onTitleDoubleClick={() => beginRenameFile(activeExplorerEntry.path)}
-          />
-        ) : activeExplorerEntry ? (
-          <FilePreviewPanel
-            title={toDocPath(activeExplorerEntry.path)}
-            titleContent={renderTitleContent(activeExplorerEntry.path)}
-            titleActionLabel={t("双击修改标题")}
-            typeLabel={t("文件")}
-            openLabel={t("打开")}
-            onOpen={() => handleOpenFile(activeExplorerEntry.path)}
-            onTitleDoubleClick={() => beginRenameFile(activeExplorerEntry.path)}
-          />
-        ) : (
-          <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2">
-              <IllustrationEmptyEditor size={80} />
-              <Typography.Text className="!text-sm !text-slate-400">
-                {t("可以试试让 Kian 来帮你修改或者创建文档")}
-              </Typography.Text>
+        ) : null}
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          {activeDoc ? (
+            <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+              <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                <MarkdownEditor
+                  key={activeDoc.id}
+                  projectId={projectId}
+                  documentPath={stripDocsPrefix(activeDoc.id)}
+                  title={toDocPath(activeDoc.id) || toDocPath(activeDoc.title)}
+                  titleContent={renderTitleContent(activeDoc.id)}
+                  documentVersion={activeDoc.version}
+                  statusIndicator={saveStatusIndicator}
+                  value={visibleEditorValue}
+                  onChange={setEditorValue}
+                  onTitleDoubleClick={() => beginRenameFile(activeDoc.id)}
+                  onOpenInNewWindow={() =>
+                    handleOpenInNewWindow({
+                      path: stripDocsPrefix(activeDoc.id),
+                      name: getPathBaseName(activeDoc.id),
+                      builtAt: activeDoc.updatedAt || String(activeDoc.version),
+                    })
+                  }
+                />
+              </div>
             </div>
-          </div>
-        )}
+          ) : activeExplorerEntry && activeMediaKind ? (
+            <MediaPreviewPanel
+              projectId={projectId}
+              filePath={resolvedActivePath ?? activeExplorerEntry.path}
+              title={toDocPath(activeExplorerEntry.path)}
+              titleContent={renderTitleContent(activeExplorerEntry.path)}
+              titleActionLabel={t("双击修改标题")}
+              typeLabel={
+                activeMediaKind === "image"
+                  ? t("图片")
+                  : activeMediaKind === "video"
+                    ? t("视频")
+                    : t("音频")
+              }
+              mediaKind={activeMediaKind}
+              onTitleDoubleClick={() =>
+                beginRenameFile(activeExplorerEntry.path)
+              }
+            />
+          ) : activeExplorerEntry ? (
+            <FilePreviewPanel
+              title={toDocPath(activeExplorerEntry.path)}
+              titleContent={renderTitleContent(activeExplorerEntry.path)}
+              titleActionLabel={t("双击修改标题")}
+              typeLabel={t("文件")}
+              openLabel={t("打开")}
+              onOpen={() => handleOpenFile(activeExplorerEntry.path)}
+              onTitleDoubleClick={() =>
+                beginRenameFile(activeExplorerEntry.path)
+              }
+            />
+          ) : (
+            <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2">
+                <IllustrationEmptyEditor size={80} />
+                <Typography.Text className="!text-sm !text-slate-400">
+                  {t("可以试试让 Kian 来帮你修改或者创建文档")}
+                </Typography.Text>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       {isDraggingDocumentFile ? (
         <div

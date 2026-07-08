@@ -196,6 +196,33 @@ describe("repositoryService project management", () => {
     });
   });
 
+  it("saves a document after its content is cleared", async () => {
+    const { repositoryService } = await import(
+      "../../electron/main/services/repositoryService"
+    );
+
+    const project = await repositoryService.createProject({});
+    await repositoryService.createDocument({
+      projectId: project.id,
+      title: "note.md",
+      content: "draft content",
+    });
+
+    const updated = await repositoryService.updateDocument({
+      projectId: project.id,
+      id: "note.md",
+      content: "",
+    });
+
+    expect(updated.content).toBe("");
+    await expect(
+      fs.readFile(
+        path.join(tempRoot, project.id, "docs", "note.md"),
+        "utf8",
+      ),
+    ).resolves.toBe("");
+  });
+
   it("resets daily sequence on a new day", async () => {
     const { repositoryService } = await import(
       "../../electron/main/services/repositoryService"

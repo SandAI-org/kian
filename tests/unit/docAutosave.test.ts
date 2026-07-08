@@ -89,6 +89,23 @@ describe("doc autosave helpers", () => {
     ).toBe(true);
   });
 
+  it("schedules autosave when the editor content is cleared", () => {
+    expect(
+      shouldScheduleDocAutosave({
+        previousSnapshot: {
+          docId: "docs/note.md",
+          remoteContent: "server v1",
+          editorValue: "server v1",
+        },
+        nextSnapshot: {
+          docId: "docs/note.md",
+          remoteContent: "server v1",
+          editorValue: "",
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("treats older save responses as stale", () => {
     expect(isStaleDocSaveResponse(2, 3)).toBe(true);
     expect(isStaleDocSaveResponse(3, 3)).toBe(false);

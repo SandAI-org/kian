@@ -148,7 +148,6 @@ export const AgentChatWorkspace = ({
               acceptMainInputFocusEvents={acceptMainInputFocusEvents}
               inputFocusRequestId={inputFocusRequestId}
               contextSnapshot={contextSnapshot}
-              hideBorder
               sessionId={currentSessionId}
               onSessionCreated={onSessionCreated}
             />

@@ -373,7 +373,6 @@ export const QuickLauncherPage = () => {
             module="main"
             chatVariant="main"
             acceptMainInputFocusEvents={false}
-            hideBorder={false}
             sessionId={currentSessionId}
             onSessionCreated={handleSessionCreated}
             layoutMode={hasConversationContent ? "fill" : "auto"}

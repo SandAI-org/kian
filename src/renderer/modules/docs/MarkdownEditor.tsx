@@ -206,7 +206,7 @@ interface MarkdownEditorProps {
   title: string;
   titleContent?: ReactNode;
   documentVersion?: string | number;
-  statusText?: string;
+  statusIndicator?: ReactNode;
   value: string;
   onChange: (next: string) => void;
   onTitleDoubleClick?: () => void;
@@ -219,7 +219,7 @@ export const MarkdownEditor = ({
   title,
   titleContent,
   documentVersion,
-  statusText,
+  statusIndicator,
   value,
   onChange,
   onTitleDoubleClick,
@@ -236,7 +236,7 @@ export const MarkdownEditor = ({
   const showingHtmlPreview = htmlPreviewEnabled && readMode;
   const previewEnabled = markdownPreviewEnabled || htmlPreviewEnabled;
   const canOpenInNewWindow = htmlPreviewEnabled && Boolean(onOpenInNewWindow);
-  const showStatusText = Boolean(statusText) && !htmlPreviewEnabled;
+  const showStatusIndicator = Boolean(statusIndicator) && !htmlPreviewEnabled;
   const showPreviewToggle = previewEnabled && !htmlPreviewEnabled;
   const editorTheme = resolvedTheme === "dark" ? "kian-docs-dark" : "kian-docs-light";
   const htmlPreviewUrl = useMemo(
@@ -407,10 +407,10 @@ export const MarkdownEditor = ({
           )}
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-2">
-          {showStatusText ? (
-            <Typography.Text className="!text-xs !text-slate-500">
-              {statusText}
-            </Typography.Text>
+          {showStatusIndicator ? (
+            <span className="flex h-5 w-5 items-center justify-center">
+              {statusIndicator}
+            </span>
           ) : null}
           {canOpenInNewWindow ? (
             <Button

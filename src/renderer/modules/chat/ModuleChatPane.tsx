@@ -108,7 +108,6 @@ interface ModuleChatPaneProps {
   acceptMainInputFocusEvents?: boolean;
   inputFocusRequestId?: number;
   contextSnapshot?: unknown;
-  hideBorder?: boolean;
   sessionId?: string;
   onSessionCreated?: (sessionId: string) => void;
   layoutMode?: "fill" | "auto";
@@ -2296,7 +2295,6 @@ export const ModuleChatPane = ({
   acceptMainInputFocusEvents = true,
   inputFocusRequestId,
   contextSnapshot,
-  hideBorder = false,
   sessionId: externalSessionId,
   onSessionCreated,
   layoutMode = "fill",
@@ -3737,12 +3735,8 @@ export const ModuleChatPane = ({
     ? "w-full flex min-h-0 flex-col"
     : "w-full flex h-full min-h-0 flex-col";
   const timelineContainerClassName = isAutoLayout
-    ? hideBorder
-      ? "no-drag rounded-lg bg-[var(--surface)] p-3 pb-0"
-      : "no-drag rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0"
-    : hideBorder
-      ? `no-drag min-h-0 flex-1 rounded-lg bg-[var(--surface)] p-3 pb-0 ${FULL_HEIGHT_SCROLL_CONTENT_CLASS}`
-      : `no-drag min-h-0 flex-1 rounded-lg border border-[#e2e8f5] bg-white p-3 pb-0 ${FULL_HEIGHT_SCROLL_CONTENT_CLASS}`;
+    ? "no-drag rounded-lg bg-[var(--surface-2)] p-3 pb-0"
+    : `no-drag min-h-0 flex-1 rounded-lg bg-[var(--surface-2)] p-3 pb-0 ${FULL_HEIGHT_SCROLL_CONTENT_CLASS}`;
 
   const composer = (
     <ChatComposer
@@ -3904,7 +3898,7 @@ export const ModuleChatPane = ({
       <div className={chatContainerClassName}>
         {showEmptyState ? (
           <div
-            className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3 select-none ${hideBorder ? "rounded-lg bg-[var(--surface)]" : "rounded-lg border border-[#e2e8f5] bg-white"}`}
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-lg bg-[var(--surface-2)] select-none"
           >
             <svg
               width="64"

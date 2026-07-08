@@ -16,7 +16,6 @@ import {
   resolveProjectModule,
   type ProjectModuleKey,
 } from "@renderer/modules/project/ProjectWorkspacePage";
-import { WorkspacePaneControls } from "@renderer/components/WorkspacePaneControls";
 import type { AgentGroupDTO, ProjectDTO } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -55,9 +54,6 @@ export const ProjectListPage = () => {
   const [selection, setSelection] = useState<TeamSelection | null>(null);
   const pendingRouteSelectionRef = useRef<TeamSelection | null>(null);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
-  const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
-  const [docsSidebarCollapsed, setDocsSidebarCollapsed] = useState(false);
-  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
   const [createGroupForm] = Form.useForm<{
     name: string;
     description?: string;
@@ -231,25 +227,6 @@ export const ProjectListPage = () => {
     [searchParams, selectedAgent, setSearchParams],
   );
 
-  const toggleLeftPane = useCallback(() => {
-    if (activeProjectModule === "main") {
-      setChatSidebarCollapsed((current) => !current);
-      return;
-    }
-
-    if (activeProjectModule === "docs") {
-      setDocsSidebarCollapsed((current) => !current);
-      return;
-    }
-  }, [activeProjectModule]);
-
-  const toggleRightPane = useCallback(() => {
-    setRightPaneCollapsed((current) => {
-      const next = !current;
-      return next;
-    });
-  }, []);
-
   const handlePendingRouteSessionConsumed = useCallback(() => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("session");
@@ -260,24 +237,9 @@ export const ProjectListPage = () => {
 
   const agentModuleHeaderActions = useMemo(() => {
     if (!selectedAgent) return null;
-    const leftCollapsed =
-      activeProjectModule === "main"
-        ? chatSidebarCollapsed
-        : activeProjectModule === "docs"
-          ? docsSidebarCollapsed
-          : false;
 
     return (
       <div className="flex items-center gap-3">
-        {activeProjectModule === "main" || activeProjectModule === "docs" ? (
-          <WorkspacePaneControls
-            leftCollapsed={leftCollapsed}
-            rightCollapsed={rightPaneCollapsed}
-            onToggleLeft={toggleLeftPane}
-            onToggleRight={toggleRightPane}
-            showRight={false}
-          />
-        ) : null}
         <div className="flex items-center gap-2 rounded-full border border-[#dce5f4] bg-white/90 p-1 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
           {PROJECT_MODULE_ITEMS.map((item) => {
             const active = activeProjectModule === item.key;
@@ -298,27 +260,13 @@ export const ProjectListPage = () => {
             );
           })}
         </div>
-        {activeProjectModule !== "main" ? (
-          <WorkspacePaneControls
-            leftCollapsed={leftCollapsed}
-            rightCollapsed={rightPaneCollapsed}
-            onToggleLeft={toggleLeftPane}
-            onToggleRight={toggleRightPane}
-            showLeft={false}
-          />
-        ) : null}
       </div>
     );
   }, [
     activeProjectModule,
-    chatSidebarCollapsed,
-    docsSidebarCollapsed,
-    rightPaneCollapsed,
     selectedAgent,
     switchSelectedAgentModule,
     t,
-    toggleLeftPane,
-    toggleRightPane,
   ]);
 
   useEffect(() => {
@@ -467,7 +415,7 @@ export const ProjectListPage = () => {
         </span>
         {onDelete ? (
           <span
-            className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] opacity-0 hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+            className="pointer-events-none flex h-6 w-0 shrink-0 items-center justify-center overflow-hidden rounded text-[var(--muted)] opacity-0 transition-[width,opacity] hover:bg-red-500/10 hover:text-red-500 group-hover:pointer-events-auto group-hover:w-6 group-hover:opacity-100"
             title={t("删除")}
             aria-label={t("删除")}
             onClick={(event) => {
@@ -567,10 +515,6 @@ export const ProjectListPage = () => {
             activeModule={activeProjectModule}
             activeDocumentId={activeDocumentId}
             pendingRouteSessionId={pendingRouteSessionId}
-            rightPaneCollapsed={rightPaneCollapsed}
-            docsSidebarCollapsed={docsSidebarCollapsed}
-            onDocsSidebarCollapsedChange={setDocsSidebarCollapsed}
-            chatSidebarCollapsed={chatSidebarCollapsed}
             className="min-h-0 flex-1"
             onPendingRouteSessionConsumed={handlePendingRouteSessionConsumed}
           />

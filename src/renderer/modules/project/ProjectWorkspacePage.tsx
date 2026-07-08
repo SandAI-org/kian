@@ -227,6 +227,7 @@ export const ProjectWorkspaceContent = ({
             onContextChange={(ctx) => updateContext("docs", ctx)}
             sidebarCollapsed={docsSidebarCollapsed}
             onSidebarCollapsedChange={onDocsSidebarCollapsedChange}
+            fileListPresentation="popover"
           />
         </div>
         <div className={activeModule === "app" ? "h-full min-h-0" : "hidden"}>
