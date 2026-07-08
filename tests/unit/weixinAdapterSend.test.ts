@@ -55,5 +55,6 @@ describe("WeixinAdapterClient sendText", () => {
     expect(body.msg.from_user_id).toBe("bot-account@im.bot");
     expect(body.msg.to_user_id).toBe("user@im.wechat");
     expect(body.msg.context_token).toBe("ctx-token");
+    expect(requestInit.headers).not.toMatchObject({ "Content-Length": expect.any(String) });
   });
 });

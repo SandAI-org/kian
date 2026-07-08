@@ -56,14 +56,12 @@ export function buildBaseInfo(channelVersion = PACKAGE_VERSION): BaseInfo {
 }
 
 export function buildHeaders(options: {
-  body: string;
   token?: string;
   routeTag?: string;
 }): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     AuthorizationType: "ilink_bot_token",
-    "Content-Length": String(Buffer.byteLength(options.body, "utf-8")),
     "X-WECHAT-UIN": randomWechatUin(),
   };
 
@@ -98,7 +96,6 @@ async function postJson<TResponse>(options: {
     const response = await fetchImpl(url, {
       method: "POST",
       headers: buildHeaders({
-        body,
         ...(options.apiOptions.token ? { token: options.apiOptions.token } : {}),
         ...(options.apiOptions.routeTag ? { routeTag: options.apiOptions.routeTag } : {}),
       }),
