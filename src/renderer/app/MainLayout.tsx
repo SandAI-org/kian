@@ -351,9 +351,14 @@ export const MainLayout = () => {
         return;
       }
       event.preventDefault();
-      if (isProjectPage) {
-        window.dispatchEvent(new Event(NEW_PROJECT_SESSION_EVENT));
-      } else if (isMainAgentPage) {
+      const projectSessionEvent = new Event(NEW_PROJECT_SESSION_EVENT, {
+        cancelable: true
+      });
+      window.dispatchEvent(projectSessionEvent);
+      if (projectSessionEvent.defaultPrevented) {
+        return;
+      }
+      if (isMainAgentPage) {
         window.dispatchEvent(new Event(NEW_CURRENT_AGENT_SESSION_EVENT));
         window.requestAnimationFrame(() => {
           window.dispatchEvent(new Event(MAIN_AGENT_INPUT_FOCUS_EVENT));
@@ -369,7 +374,7 @@ export const MainLayout = () => {
     return () => {
       window.removeEventListener('keydown', handleNewSession);
     };
-  }, [isMainAgentPage, isProjectPage, navigate, shortcutConfig.newChatSession]);
+  }, [isMainAgentPage, navigate, shortcutConfig.newChatSession]);
 
   useEffect(() => {
     if (

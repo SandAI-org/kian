@@ -135,7 +135,8 @@ export const ProjectWorkspaceContent = ({
   );
 
   useEffect(() => {
-    const onNewSession = () => {
+    const onNewSession = (event: Event) => {
+      event.preventDefault();
       void handleNewSession();
     };
     window.addEventListener(NEW_PROJECT_SESSION_EVENT, onNewSession);
