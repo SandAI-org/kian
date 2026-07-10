@@ -64,6 +64,7 @@ export const ProjectWorkspaceContent = ({
   const [currentSessionIds, setCurrentSessionIds] = useState<
     Record<string, string | undefined>
   >({});
+  const [inputFocusRequestId, setInputFocusRequestId] = useState(0);
   const consumedRouteSessionRef = useRef("");
   const queryClient = useQueryClient();
 
@@ -107,6 +108,7 @@ export const ProjectWorkspaceContent = ({
     void queryClient.invalidateQueries({
       queryKey: ["chat-sessions", scopeKey],
     });
+    setInputFocusRequestId((current) => current + 1);
   }, [activeModule, chatScope, queryClient, scopeKey]);
 
   const handleSelectSession = useCallback(
@@ -259,6 +261,7 @@ export const ProjectWorkspaceContent = ({
           onSelectSession={handleSelectSession}
           onNewSession={handleNewSession}
           onSessionCreated={handleSessionCreated}
+          inputFocusRequestId={inputFocusRequestId}
           contextSnapshot={contexts}
           sidebarCollapsed={chatSidebarCollapsed}
         />
@@ -277,6 +280,7 @@ export const ProjectWorkspaceContent = ({
               onSelectSession={handleSelectSession}
               onNewSession={handleNewSession}
               onSessionCreated={handleSessionCreated}
+              inputFocusRequestId={inputFocusRequestId}
               contextSnapshot={contexts}
               historyPresentation="popover"
             />

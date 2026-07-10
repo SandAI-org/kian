@@ -3639,7 +3639,7 @@ export const ModuleChatPane = ({
   }, [acceptMainInputFocusEvents, chatVariant, focusChatInput]);
 
   useEffect(() => {
-    if (!inputFocusRequestId || chatVariant !== "main") {
+    if (!inputFocusRequestId) {
       return;
     }
 
@@ -3677,7 +3677,7 @@ export const ModuleChatPane = ({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [chatVariant, focusChatInput, inputFocusRequestId]);
+  }, [focusChatInput, inputFocusRequestId]);
 
   const canSend =
     !readOnly &&

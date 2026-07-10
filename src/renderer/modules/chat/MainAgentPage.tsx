@@ -92,6 +92,7 @@ export const MainAgentPage = () => {
     });
     setCurrentSessionId(created.id);
     void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "main"] });
+    setInputFocusRequestId((current) => current + 1);
   }, [queryClient]);
 
   const handleSelectSession = useCallback((sessionId: string) => {
