@@ -1,4 +1,4 @@
-import { streamSimple } from "@earendil-works/pi-ai";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { ChatScope } from "@shared/types";
 import { app } from "electron";
 import { randomUUID } from "node:crypto";

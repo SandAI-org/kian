@@ -1,4 +1,10 @@
-import { getModel, getModels, getProviders, type Api, type Model } from "@earendil-works/pi-ai";
+import {
+  getModel,
+  getModels,
+  getProviders,
+  type Api,
+  type Model,
+} from "@earendil-works/pi-ai/compat";
 import type {
   AgentModelDTO,
   AgentProviderDTO,
