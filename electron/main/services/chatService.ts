@@ -1,10 +1,12 @@
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { randomUUID } from "node:crypto";
 import type {
+  ChatContinueInNewSessionPayload,
   ChatQueuedMessageDTO,
   ChatSendPayload,
   ChatSendDispatchResponse,
   ChatSendResponse,
+  ChatSessionDTO,
   ChatStreamEvent,
 } from "@shared/types";
 import {
@@ -16,6 +18,7 @@ import {
   getChatScopeAnalyticsProps,
   trackAnalyticsEvent,
 } from "./analyticsService";
+import { appOperationEvents } from "./appOperationEvents";
 import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
 import {
@@ -695,6 +698,52 @@ export const chatService = {
     const { editTargetMessageId: _editTargetMessageId, ...sendPayload } =
       payload;
     return chatService.sendFromRenderer(sendPayload);
+  },
+
+  async continueInNewSession(
+    payload: ChatContinueInNewSessionPayload,
+  ): Promise<ChatSessionDTO> {
+    const { scope, sessionId, messageId } = payload;
+
+    const { session, copiedMessages, nextUserMessageText } =
+      await repositoryService.duplicateChatSessionUpToMessage({
+        scope,
+        sessionId,
+        messageId,
+      });
+
+    try {
+      await agentService.forkSessionContext({
+        scope,
+        sourceSessionId: sessionId,
+        targetSessionId: session.id,
+        keepUserMessageCount: copiedMessages.filter(
+          (item) => item.role === "user",
+        ).length,
+        nextUserMessageText,
+      });
+    } catch (error) {
+      logger.error("continueInNewSession: fork failed, rolling back", error);
+      await repositoryService
+        .deleteChatSession({ scope, sessionId: session.id })
+        .catch(() => undefined);
+      throw error;
+    }
+
+    trackAnalyticsEvent("chat_continued_in_new_session", {
+      ...getChatScopeAnalyticsProps(scope),
+      module: session.module,
+      copied_message_count: copiedMessages.length,
+    });
+
+    appOperationEvents.emit({
+      type: "open_chat_session",
+      scope,
+      sessionId: session.id,
+      module: session.module,
+    });
+
+    return session;
   },
 
   async interrupt(

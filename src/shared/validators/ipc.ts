@@ -188,6 +188,12 @@ export const chatInterruptSchema = z.object({
   requestId: z.string().min(1).optional()
 });
 
+export const chatContinueInNewSessionSchema = z.object({
+  scope: chatScopeSchema,
+  sessionId: z.string().min(1),
+  messageId: z.string().min(1)
+});
+
 export const chatQueuedMessagesSchema = z.object({
   scope: chatScopeSchema,
   sessionId: z.string().min(1)

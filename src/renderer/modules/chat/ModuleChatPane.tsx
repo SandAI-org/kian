@@ -5,6 +5,7 @@ import {
   EditOutlined,
   FileOutlined,
   FolderOpenOutlined,
+  ForkOutlined,
   LoadingOutlined,
   PushpinOutlined,
   SaveOutlined,
@@ -1446,6 +1447,8 @@ export const AssistantMessageContextMenu = memo(
     copyMarkdownLabel,
     copyMarkdownSuccessLabel,
     copyMarkdownFailedLabel,
+    continueInNewChatLabel,
+    onContinueInNewChat,
   }: {
     content: string;
     projectId?: string;
@@ -1461,6 +1464,8 @@ export const AssistantMessageContextMenu = memo(
     copyMarkdownLabel: string;
     copyMarkdownSuccessLabel: string;
     copyMarkdownFailedLabel: string;
+    continueInNewChatLabel?: string;
+    onContinueInNewChat?: () => void;
   }) => {
     const messageContentRef = useRef<HTMLDivElement | null>(null);
     const [menuPosition, setMenuPosition] = useState<{
@@ -1577,6 +1582,18 @@ export const AssistantMessageContextMenu = memo(
                   <CopyOutlined />
                   {saveImageToClipboardLabel}
                 </button>
+                {onContinueInNewChat && continueInNewChatLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuPosition(null);
+                      onContinueInNewChat();
+                    }}
+                  >
+                    <ForkOutlined />
+                    {continueInNewChatLabel}
+                  </button>
+                ) : null}
               </div>,
               document.body,
             )
@@ -2088,7 +2105,9 @@ interface ChatTimelineProps {
   copyMessageLabel: string;
   copyMessageSuccessLabel: string;
   copyMessageFailedLabel: string;
+  continueInNewChatLabel: string;
   onEditUserMessage?: (message: ChatMessageDTO) => void;
+  onContinueInNewChat?: (message: ChatMessageDTO) => void;
 }
 
 const CopySquareIcon = () => (
@@ -2170,7 +2189,9 @@ const ChatTimeline = memo(
     copyMessageLabel,
     copyMessageSuccessLabel,
     copyMessageFailedLabel,
+    continueInNewChatLabel,
     onEditUserMessage,
+    onContinueInNewChat,
   }: ChatTimelineProps) => {
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const copiedResetTimerRef = useRef<number | null>(null);
@@ -2405,6 +2426,12 @@ const ChatTimeline = memo(
                       copyMarkdownLabel={copyMarkdownLabel}
                       copyMarkdownSuccessLabel={copyMarkdownSuccessLabel}
                       copyMarkdownFailedLabel={copyMarkdownFailedLabel}
+                      continueInNewChatLabel={continueInNewChatLabel}
+                      onContinueInNewChat={
+                        onContinueInNewChat
+                          ? () => onContinueInNewChat(item)
+                          : undefined
+                      }
                     />
                   )
                 )}
@@ -3907,6 +3934,23 @@ export const ModuleChatPane = ({
     ],
   );
 
+  const handleContinueInNewChat = useCallback(
+    (target: ChatMessageDTO): void => {
+      const sessionId = currentSessionId;
+      if (!sessionId || target.sessionId !== sessionId) return;
+      void api.chat
+        .continueInNewSession({
+          scope: effectiveScope,
+          sessionId,
+          messageId: target.id,
+        })
+        .catch(() => {
+          message.error(t("在新对话中继续失败"));
+        });
+    },
+    [currentSessionId, effectiveScope, t],
+  );
+
   const handleCancelEditMessage = useCallback((): void => {
     setEditingMessage(null);
     setInput("");
@@ -4341,7 +4385,11 @@ export const ModuleChatPane = ({
               copyMessageLabel={t("复制消息")}
               copyMessageSuccessLabel={t("已复制")}
               copyMessageFailedLabel={t("复制失败")}
+              continueInNewChatLabel={t("在新对话中继续")}
               onEditUserMessage={readOnly ? undefined : handleEditUserMessage}
+              onContinueInNewChat={
+                readOnly ? undefined : handleContinueInNewChat
+              }
             />
           </ScrollArea>
         ) : null}

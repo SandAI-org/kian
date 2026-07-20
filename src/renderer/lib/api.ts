@@ -18,6 +18,7 @@ import type {
   AppUpdateStatusDTO,
   AppWorkspaceStatusDTO,
   ChatAttachmentDTO,
+  ChatContinueInNewSessionPayload,
   ChatEditMessagePayload,
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
@@ -209,6 +210,8 @@ export const api = {
       unwrap(await window.api.chat.interrupt(payload)),
     editMessage: async (payload: ChatEditMessagePayload): Promise<ChatSendDispatchResponse> =>
       unwrap(await window.api.chat.editMessage(payload)),
+    continueInNewSession: async (payload: ChatContinueInNewSessionPayload) =>
+      unwrap(await window.api.chat.continueInNewSession(payload)),
     deleteSession: async (scope: ChatScope, sessionId: string) =>
       unwrap(await window.api.chat.deleteSession({ scope, sessionId })),
     updateSessionTitle: async (scope: ChatScope, sessionId: string, title: string) =>

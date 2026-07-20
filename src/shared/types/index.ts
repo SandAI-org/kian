@@ -373,6 +373,12 @@ export interface ChatInterruptPayload {
   requestId?: string;
 }
 
+export interface ChatContinueInNewSessionPayload {
+  scope: ChatScope;
+  sessionId: string;
+  messageId: string;
+}
+
 export interface ChatAttachmentDTO {
   name: string;
   path: string;

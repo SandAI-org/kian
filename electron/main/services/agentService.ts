@@ -29,7 +29,7 @@ import type {
 } from "@shared/types";
 import { app } from "electron";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildSessionSystemPrompt,
@@ -2781,6 +2781,97 @@ export const agentService = {
     if (result.cancelled) {
       throw new Error("重置会话上下文失败");
     }
+  },
+
+  /**
+   * Copy the source chat session's agent context into the target chat
+   * session's directory, keeping only the turns that cover the first
+   * `keepUserMessageCount` user messages. The cut always lands on a turn
+   * boundary (right before the next user message) so no dangling tool
+   * calls are carried over.
+   */
+  async forkSessionContext(payload: {
+    scope: ChatScope;
+    sourceSessionId: string;
+    targetSessionId: string;
+    keepUserMessageCount: number;
+    nextUserMessageText?: string;
+  }): Promise<boolean> {
+    const projectCwd = getScopeCwd(payload.scope);
+    const sourceDir = getPersistentSessionDir(projectCwd, payload.sourceSessionId);
+    const sourceFile = SessionManager.continueRecent(
+      projectCwd,
+      sourceDir,
+    ).getSessionFile();
+    if (!sourceFile) {
+      logger.info("forkSessionContext: no persisted source session, skipping", {
+        scope: getScopeKey(payload.scope),
+        sourceSessionId: payload.sourceSessionId,
+        targetSessionId: payload.targetSessionId,
+      });
+      return false;
+    }
+
+    const targetDir = getPersistentSessionDir(projectCwd, payload.targetSessionId);
+    await mkdir(targetDir, { recursive: true });
+    const manager = SessionManager.open(sourceFile, targetDir, projectCwd);
+    const branch = manager.getBranch();
+    const userEntries = branch.filter(
+      (entry) => entry.type === "message" && entry.message.role === "user",
+    );
+
+    let cutEntryId: string | undefined = branch[branch.length - 1]?.id;
+    if (payload.keepUserMessageCount < userEntries.length) {
+      // The boundary is the first user message NOT included in the copy.
+      // Index by count, but let an unambiguous text match win when the
+      // repository history and the agent session diverge (e.g. messages
+      // sent with skipUserMessagePersistence).
+      let boundary = userEntries[payload.keepUserMessageCount];
+      const expectedHead = payload.nextUserMessageText
+        ?.trim()
+        .split("\n")[0]
+        ?.trim();
+      if (expectedHead) {
+        const matches = userEntries.filter((entry) => {
+          const text =
+            entry.type === "message"
+              ? getUserMessageText(entry.message).trim()
+              : "";
+          if (!text) return false;
+          const head = text.split("\n")[0]?.trim() ?? "";
+          return text.startsWith(expectedHead) || head === expectedHead;
+        });
+        if (matches.length === 1) {
+          boundary = matches[0];
+        }
+      }
+      const boundaryIndex = branch.findIndex(
+        (entry) => entry.id === boundary?.id,
+      );
+      cutEntryId = boundaryIndex > 0 ? branch[boundaryIndex - 1]?.id : undefined;
+    }
+
+    if (!cutEntryId) {
+      logger.info("forkSessionContext: nothing to keep before the cut point", {
+        scope: getScopeKey(payload.scope),
+        sourceSessionId: payload.sourceSessionId,
+        targetSessionId: payload.targetSessionId,
+      });
+      return false;
+    }
+
+    const newSessionFile = manager.createBranchedSession(cutEntryId);
+    logger.info("forkSessionContext: created branched session", {
+      scope: getScopeKey(payload.scope),
+      sourceSessionId: payload.sourceSessionId,
+      targetSessionId: payload.targetSessionId,
+      sourceFile,
+      newSessionFile,
+      keepUserMessageCount: payload.keepUserMessageCount,
+      branchLength: branch.length,
+      userEntryCount: userEntries.length,
+    });
+    return true;
   },
 
   async queueMessage(payload: ChatQueuePayload): Promise<boolean> {

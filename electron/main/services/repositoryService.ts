@@ -3724,12 +3724,13 @@ export const repositoryService = {
     kind?: ChatSessionKind;
     hidden?: boolean;
     metadataJson?: string | null;
+    forceNew?: boolean;
   }): Promise<ChatSessionDTO> {
     await ensureChatScopeStructure(input.scope);
     const kind = input.kind ?? "normal";
     const hidden = input.hidden ?? false;
     const reusableSession =
-      kind === "normal" && hidden === false
+      kind === "normal" && hidden === false && !input.forceNew
         ? await findLatestEmptyChatSession(input.scope, { kind, hidden })
         : null;
     if (reusableSession) {
@@ -3781,6 +3782,75 @@ export const repositoryService = {
     });
 
     return next;
+  },
+
+  async duplicateChatSessionUpToMessage(input: {
+    scope: ChatScope;
+    sessionId: string;
+    messageId: string;
+  }): Promise<{
+    session: ChatSessionDTO;
+    copiedMessages: ChatMessageDTO[];
+    nextUserMessageText?: string;
+  }> {
+    await ensureChatScopeStructure(input.scope);
+    const sourceSession = await this.getChatSession(input.scope, input.sessionId);
+    if (!sourceSession) {
+      throw new Error("会话不存在");
+    }
+    const rows = await loadCachedChatMessages(input.scope, input.sessionId);
+    const targetIndex = rows.findIndex((item) => item.id === input.messageId);
+    if (targetIndex < 0) {
+      throw new Error("消息不存在");
+    }
+
+    const session = await this.createChatSession({
+      scope: input.scope,
+      module: sourceSession.module,
+      title: sourceSession.title,
+      forceNew: true,
+    });
+
+    const copiedMessages = rows.slice(0, targetIndex + 1).map((item) => ({
+      ...item,
+      id: randomUUID(),
+      sessionId: session.id,
+    }));
+    const nextUserMessageText = rows
+      .slice(targetIndex + 1)
+      .find((item) => item.role === "user")?.content;
+
+    const messagesPath = getChatMessagesPathByScope(input.scope, session.id);
+    await enqueueMessageAppend(messagesPath, async () => {
+      updateCachedChatMessages(input.scope, session.id, copiedMessages);
+      await writeJson(messagesPath, copiedMessages);
+    });
+
+    const sessionUpdatedAt = nowISO();
+    await updateChatSessionTimestamp(input.scope, session.id, sessionUpdatedAt);
+    if (input.scope.type === "project") {
+      await touchProject(input.scope.projectId);
+    }
+    const lastCopied = copiedMessages[copiedMessages.length - 1];
+    chatEvents.emitHistoryUpdated({
+      scope: input.scope,
+      sessionId: session.id,
+      messageId: lastCopied?.id ?? "",
+      role: lastCopied?.role ?? "system",
+      createdAt: lastCopied?.createdAt ?? sessionUpdatedAt,
+      sessionUpdatedAt,
+      sessionTitle: session.title,
+      sessionModule: session.module,
+      sessionKind: session.kind,
+      sessionHidden: session.hidden,
+      sessionMetadataJson: session.metadataJson,
+    });
+
+    return {
+      session: { ...session, updatedAt: sessionUpdatedAt },
+      copiedMessages,
+      nextUserMessageText,
+    };
   },
 
   async listChatSessions(
