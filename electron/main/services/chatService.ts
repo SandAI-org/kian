@@ -492,6 +492,16 @@ const processQueuedMessage = async (
   return result;
 };
 
+const waitForSessionQueueIdle = async (
+  payload: Pick<ChatSendPayload, "scope" | "sessionId">,
+): Promise<void> => {
+  const storeKey = getQueueStoreKey(payload);
+  const deadline = Date.now() + 10_000;
+  while (sessionQueueStore.get(storeKey)?.processing && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+};
+
 const processSessionQueue = async (
   payload: Pick<ChatSendPayload, "scope" | "sessionId">,
 ): Promise<void> => {
@@ -638,6 +648,50 @@ export const chatService = {
       return [];
     }
     return state.items.map(buildQueuedMessageDto);
+  },
+
+  async editMessage(
+    payload: ChatSendPayload & { editTargetMessageId: string },
+  ): Promise<ChatSendDispatchResponse> {
+    const { scope, sessionId, editTargetMessageId } = payload;
+
+    const messages = await repositoryService.listMessages(scope, sessionId);
+    const targetIndex = messages.findIndex(
+      (item) => item.id === editTargetMessageId && item.role === "user",
+    );
+    if (targetIndex < 0) {
+      throw new Error("找不到要编辑的消息");
+    }
+    const target = messages[targetIndex];
+    const userMessageIndexFromEnd = messages
+      .slice(targetIndex + 1)
+      .filter((item) => item.role === "user").length;
+
+    await chatService.interrupt({ scope, sessionId });
+    await waitForSessionQueueIdle({ scope, sessionId });
+
+    await agentService.rewindToUserMessage({
+      scope,
+      sessionId,
+      userMessageIndexFromEnd,
+      expectedText: target.content,
+    });
+
+    await repositoryService.truncateChatMessagesFrom({
+      scope,
+      sessionId,
+      messageId: editTargetMessageId,
+    });
+
+    trackAnalyticsEvent("chat_message_edited", {
+      ...getChatScopeAnalyticsProps(scope),
+      module: payload.module,
+      message_length: payload.message.trim().length,
+    });
+
+    const { editTargetMessageId: _editTargetMessageId, ...sendPayload } =
+      payload;
+    return chatService.sendFromRenderer(sendPayload);
   },
 
   async interrupt(

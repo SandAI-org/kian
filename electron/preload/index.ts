@@ -13,6 +13,7 @@ import type {
   AppOperationEvent,
   AppWorkspaceStatusDTO,
   ChatAttachmentDTO,
+  ChatEditMessagePayload,
   ChatHistoryUpdatedEvent,
   ChatInterruptPayload,
   ChatQueuedMessageDTO,
@@ -246,6 +247,8 @@ const api = {
       invoke<boolean>("chat:queueMessage", payload),
     interrupt: (payload: ChatInterruptPayload) =>
       invoke<boolean>("chat:interrupt", payload),
+    editMessage: (payload: ChatEditMessagePayload) =>
+      invoke<ChatSendDispatchResponse>("chat:editMessage", payload),
     uploadFiles: (payload: {
       scope: ChatScope;
       files: ChatUploadFilePayload[];

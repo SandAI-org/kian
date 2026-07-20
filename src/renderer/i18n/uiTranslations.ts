@@ -140,6 +140,9 @@ const EN_US_EXACT: Record<string, string> = {
   "图片已保存到剪贴板": "Image saved to clipboard",
   "保存图片到剪贴板失败": "Failed to save image to clipboard",
   "复制 Markdown": "Copy Markdown",
+  "编辑消息": "Edit message",
+  "正在编辑历史消息，发送后其后的对话将被移除":
+    "Editing an earlier message. Sending will remove the conversation after it.",
   "Markdown 已复制": "Markdown copied",
   "复制 Markdown 失败": "Failed to copy Markdown",
   "移除": "Remove",
@@ -560,6 +563,9 @@ const KO_KR_EXACT: Record<string, string> = {
   "图片已保存": "이미지가 저장됨",
   "保存图片失败": "이미지 저장 실패",
   "复制 Markdown": "Markdown 복사",
+  "编辑消息": "메시지 편집",
+  "正在编辑历史消息，发送后其后的对话将被移除":
+    "이전 메시지를 편집 중입니다. 전송하면 이후 대화가 삭제됩니다.",
   "Markdown 已复制": "Markdown 복사됨",
   "复制 Markdown 失败": "Markdown 복사 실패",
   "移除": "제거",
@@ -823,6 +829,9 @@ const JA_JP_EXACT: Record<string, string> = {
   "图片已保存": "画像を保存しました",
   "保存图片失败": "画像の保存に失敗しました",
   "复制 Markdown": "Markdown をコピー",
+  "编辑消息": "メッセージを編集",
+  "正在编辑历史消息，发送后其后的对话将被移除":
+    "以前のメッセージを編集中です。送信すると、それ以降の会話は削除されます。",
   "Markdown 已复制": "Markdown をコピーしました",
   "复制 Markdown 失败": "Markdown のコピーに失敗しました",
   "移除": "削除",

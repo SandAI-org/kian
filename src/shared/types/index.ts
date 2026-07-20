@@ -324,6 +324,7 @@ export interface ChatSendPayload {
   skipUserMessagePersistence?: boolean;
   skipChannelReply?: boolean;
   skipAutoTitleGeneration?: boolean;
+  editTargetMessageId?: string;
 }
 
 export type ChatQueueDeliveryMode = 'steer' | 'followUp';
@@ -350,6 +351,20 @@ export interface ChatQueuedMessageDTO {
   queuedAt: string;
   persistUserMessage: boolean;
   sourceName?: string;
+}
+
+export interface ChatEditMessagePayload {
+  scope: ChatScope;
+  module: ChatModuleType;
+  sessionId: string;
+  requestId?: string;
+  editTargetMessageId: string;
+  message: string;
+  model?: string;
+  thinkingLevel?: ChatThinkingLevel;
+  attachments?: ChatAttachmentDTO[];
+  contextSnapshot?: unknown;
+  capabilityMode?: ChatCapabilityMode;
 }
 
 export interface ChatInterruptPayload {

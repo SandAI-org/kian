@@ -2726,6 +2726,63 @@ export const agentService = {
     }
   },
 
+  async rewindToUserMessage(payload: {
+    scope: ChatScope;
+    sessionId: string;
+    userMessageIndexFromEnd: number;
+    expectedText?: string;
+  }): Promise<void> {
+    const { session } = await createOrResumeSession(
+      payload.scope,
+      getScopeCwd(payload.scope),
+      payload.sessionId,
+    );
+
+    const userEntries: Array<{ id: string; text: string }> = [];
+    for (const entry of session.sessionManager.getBranch()) {
+      if (entry.type === "message" && entry.message.role === "user") {
+        userEntries.push({
+          id: entry.id,
+          text: getUserMessageText(entry.message).trim(),
+        });
+      }
+    }
+    if (userEntries.length === 0) {
+      throw new Error("没有可编辑的历史对话");
+    }
+
+    const expectedHead = payload.expectedText?.trim().split("\n")[0]?.trim();
+    const matchesExpected = (entry: { text: string }): boolean => {
+      if (!expectedHead) return true;
+      if (!entry.text) return false;
+      const entryHead = entry.text.split("\n")[0]?.trim() ?? "";
+      return entry.text.startsWith(expectedHead) || entryHead === expectedHead;
+    };
+
+    const indexCandidate =
+      userEntries[userEntries.length - 1 - payload.userMessageIndexFromEnd];
+    const target =
+      indexCandidate && matchesExpected(indexCandidate)
+        ? indexCandidate
+        : ([...userEntries].reverse().find(matchesExpected) ?? indexCandidate);
+    if (!target) {
+      throw new Error("无法定位要编辑的消息");
+    }
+
+    logger.info("Rewinding agent session for message edit", {
+      scope: getScopeKey(payload.scope),
+      chatSessionId: payload.sessionId,
+      targetEntryId: target.id,
+      userMessageIndexFromEnd: payload.userMessageIndexFromEnd,
+      matchedByExpectedText: matchesExpected(target),
+    });
+
+    const result = await session.navigateTree(target.id);
+    if (result.cancelled) {
+      throw new Error("重置会话上下文失败");
+    }
+  },
+
   async queueMessage(payload: ChatQueuePayload): Promise<boolean> {
     const storeKey = getSessionStoreKey(payload.scope, payload.sessionId);
     const requestState = activeAgentRequestStore.get(storeKey);

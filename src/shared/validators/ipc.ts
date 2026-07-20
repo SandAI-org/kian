@@ -124,6 +124,7 @@ export const chatSendSchema = z.object({
   contextSnapshot: z.any().optional(),
   capabilityMode: z.enum(['full', 'chat_only']).optional(),
   skipUserMessagePersistence: z.boolean().optional(),
+  editTargetMessageId: z.string().min(1).optional(),
   delegationContext: z
     .object({
       delegationId: z.string().min(1),
@@ -160,6 +161,20 @@ export const chatQueueSchema = z.object({
     path: ['message']
   }
 );
+
+export const chatEditMessageSchema = z.object({
+  scope: chatScopeSchema,
+  module: chatModuleSchema,
+  sessionId: z.string().min(1),
+  requestId: z.string().min(1).optional(),
+  editTargetMessageId: z.string().min(1),
+  message: z.string().min(1),
+  model: z.string().min(1).optional(),
+  thinkingLevel: z.enum(['low', 'medium', 'high']).optional(),
+  attachments: z.array(chatAttachmentSchema).max(20).optional(),
+  contextSnapshot: z.any().optional(),
+  capabilityMode: z.enum(['full', 'chat_only']).optional()
+});
 
 export const chatInterruptSchema = z.object({
   scope: chatScopeSchema,
