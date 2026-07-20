@@ -34,18 +34,8 @@ interface AgentChatWorkspaceProps {
   historyPresentation?: "inline" | "popover" | "none";
 }
 
-const isGroupChatSession = (session?: ChatSessionDTO): boolean => {
-  if (!session) return false;
-  if (session.kind === "group_runtime") return true;
-  if (!session.metadataJson) return false;
-
-  try {
-    const metadata = JSON.parse(session.metadataJson);
-    return metadata?.chatType === "group";
-  } catch {
-    return false;
-  }
-};
+const isGroupChatSession = (session?: ChatSessionDTO): boolean =>
+  session?.kind === "group_runtime";
 
 export const AgentChatWorkspace = ({
   projectId,
