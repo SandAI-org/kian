@@ -1874,45 +1874,31 @@ const ChannelEventCard = memo(
     const containerClassName = isInbound
       ? "w-full"
       : "w-full rounded-2xl border border-[#dbe5f5] bg-[#f8fbff] px-4 py-3 text-slate-800";
-    const pillClassName = isInbound
-      ? "inline-flex rounded-full border border-[#99b8ff]/45 bg-[#2149b8]/55 px-2.5 py-1 text-[11px] text-[#f3f7ff]"
-      : "inline-flex rounded-full border border-[#d8e2f2] bg-white px-2.5 py-1 text-[11px] text-slate-600";
-    const headerPillClassName = isInbound
-      ? `${pillClassName} font-semibold text-white`
-      : "inline-flex rounded-full border border-[#d8e2f2] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700";
+    const headerClassName = isInbound
+      ? "mb-1.5 text-[11px] leading-4 text-white/75"
+      : "mb-1.5 text-[11px] leading-4 text-slate-400";
+    const providerLabel =
+      metadata?.provider === "feishu"
+        ? "Feishu"
+        : metadata?.provider === "discord"
+          ? "Discord"
+          : metadata?.provider === "telegram"
+            ? "Telegram"
+            : metadata?.provider ?? "";
+    const headerParts = [
+      headerLabel,
+      providerLabel,
+      channelLabel,
+      metadata?.isOwner ? labels.owner : labels.visitor,
+      metadata?.mentioned ? labels.mentioned : "",
+      metadata?.batchedCount
+        ? `${labels.batchedReply} × ${metadata.batchedCount}`
+        : "",
+    ].filter(Boolean);
 
     return (
       <div className={containerClassName}>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className={headerPillClassName}>
-            {headerLabel}
-          </span>
-          <span className={pillClassName}>
-            {metadata?.provider === "feishu"
-              ? "Feishu"
-              : metadata?.provider === "discord"
-                ? "Discord"
-              : metadata?.provider === "telegram"
-                ? "Telegram"
-                  : metadata?.provider ?? ""}
-          </span>
-          <span className={pillClassName}>
-            {channelLabel}
-          </span>
-          <span className={pillClassName}>
-            {metadata?.isOwner ? labels.owner : labels.visitor}
-          </span>
-          {metadata?.mentioned ? (
-            <span className={pillClassName}>
-              {labels.mentioned}
-            </span>
-          ) : null}
-          {metadata?.batchedCount ? (
-            <span className={pillClassName}>
-              {labels.batchedReply} × {metadata.batchedCount}
-            </span>
-          ) : null}
-        </div>
+        <div className={headerClassName}>{headerParts.join(" · ")}</div>
         <MarkdownMessage content={content} projectId={projectId} user={isInbound} />
       </div>
     );
