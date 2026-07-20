@@ -2,6 +2,7 @@ import {
   CaretDownFilled,
   CheckCircleOutlined,
   CopyOutlined,
+  EditOutlined,
   FileOutlined,
   FolderOpenOutlined,
   LoadingOutlined,
@@ -127,6 +128,7 @@ interface SendPayload {
   files: LocalChatFile[];
   pendingMessage: ChatMessageDTO;
   localDisposition: "process_now" | "queue";
+  editTargetMessageId?: string;
 }
 
 interface QueuedSendPayload extends SendPayload {
@@ -432,6 +434,45 @@ const buildExtendedMarkdown = (
 
 const buildMentionFileMarkdown = (localPath: string, label: string): string =>
   buildExtendedMarkdown("mention-file", localPath, label);
+
+const EDITABLE_ATTACHMENT_LINE_PATTERN =
+  /^@\[(image|video|audio|file|attachment)(?:\|[^\]]*)?\]\(([^)\n]+)\)$/;
+
+// Split a persisted user message back into editable text + attachment files,
+// so re-sending an edited message keeps attachments on the structured
+// attachments channel instead of as literal markdown text.
+const splitEditableMessageContent = (
+  content: string,
+): { text: string; files: LocalChatFile[] } => {
+  const files: LocalChatFile[] = [];
+  const textLines: string[] = [];
+  for (const line of content.split("\n")) {
+    const match = line.trim().match(EDITABLE_ATTACHMENT_LINE_PATTERN);
+    if (!match) {
+      textLines.push(line);
+      continue;
+    }
+    const sourcePath = stripWrappedPath(match[2]);
+    const name = sourcePath.replace(/\\/g, "/").split("/").pop() || sourcePath;
+    const extension = getFileExtension(name);
+    const isImage = match[1] === "image";
+    files.push({
+      key: `edit-${files.length}-${sourcePath}`,
+      name,
+      sourcePath,
+      size: 0,
+      extension,
+      previewUrl: isImage
+        ? `${LOCAL_MEDIA_SCHEME_PREFIX}${encodeURIComponent(sourcePath)}`
+        : undefined,
+    });
+  }
+  let text = textLines.join("\n").trim();
+  if (files.length > 0 && text === "（仅上传了附件）") {
+    text = "";
+  }
+  return { text, files };
+};
 
 const formatDraftMessage = (text: string, files: LocalChatFile[]): string => {
   const base = text.trim();
@@ -2043,6 +2084,8 @@ interface ChatTimelineProps {
   copyMarkdownLabel: string;
   copyMarkdownSuccessLabel: string;
   copyMarkdownFailedLabel: string;
+  editMessageLabel: string;
+  onEditUserMessage?: (message: ChatMessageDTO) => void;
 }
 
 const ThinkingIndicator = memo(({ label }: { label: string }) => (
@@ -2087,6 +2130,8 @@ const ChatTimeline = memo(
     copyMarkdownLabel,
     copyMarkdownSuccessLabel,
     copyMarkdownFailedLabel,
+    editMessageLabel,
+    onEditUserMessage,
   }: ChatTimelineProps) => {
     if (timelineBlocks.length === 0 && !showStreamingPanel) {
       return null;
@@ -2178,11 +2223,27 @@ const ChatTimeline = memo(
           const isReportCard = messageMetadata?.kind === "sub_agent_report";
           const isThinkingCard = messageMetadata?.kind === "thinking";
           const isChannelEventCard = messageMetadata?.kind === "channel_event";
+          const canEditUserMessage =
+            isUser &&
+            !isChannelEventCard &&
+            Boolean(onEditUserMessage) &&
+            !item.id.startsWith("pending-user-");
           return (
             <div
               key={item.id}
-              className={`flex ${isUser ? "justify-end" : "w-full"}`}
+              className={`group flex ${isUser ? "items-center justify-end gap-2" : "w-full"}`}
             >
+              {canEditUserMessage ? (
+                <button
+                  type="button"
+                  onClick={() => onEditUserMessage?.(item)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] text-slate-400 opacity-0 transition-opacity hover:cursor-pointer hover:bg-[var(--surface-3)] hover:text-slate-600 group-hover:opacity-100"
+                  aria-label={editMessageLabel}
+                  title={editMessageLabel}
+                >
+                  <EditOutlined />
+                </button>
+              ) : null}
               <div
                 className={
                   isUser
@@ -2358,6 +2419,9 @@ export const ModuleChatPane = ({
     StreamingBlock[]
   >([]);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<ChatMessageDTO | null>(
+    null,
+  );
   const thinkingLevelOptions = useMemo(
     () =>
       CHAT_THINKING_LEVEL_VALUES.map((value) => ({
@@ -2379,6 +2443,9 @@ export const ModuleChatPane = ({
   const pendingFilesRef = useRef<LocalChatFile[]>([]);
   const queuedSendPayloadsRef = useRef<QueuedSendPayload[]>([]);
   const queuedMessagesSnapshotRef = useRef<ChatQueuedMessageDTO[]>([]);
+  const editSnapshotsByRequestIdRef = useRef(
+    new Map<string, { sessionId: string; messages: ChatMessageDTO[] }>(),
+  );
   const hasHydratedThinkingLevelRef = useRef(false);
   const initializedScopeKeyRef = useRef<string | null>(null);
   const previousStreamSnapshotRef = useRef<{
@@ -2598,6 +2665,7 @@ export const ModuleChatPane = ({
     queuedSendPayloadsRef.current = [];
     queuedMessagesSnapshotRef.current = [];
     setQueuedSendPayloads([]);
+    setEditingMessage(null);
     hasInitialBottomPositionedRef.current = false;
     isBottomAnchorVisibleRef.current = true;
   }, [currentSessionId]);
@@ -2799,6 +2867,7 @@ export const ModuleChatPane = ({
       text,
       requestId,
       files,
+      editTargetMessageId,
     }: QueuedSendPayload) => {
       let attachments: ChatAttachmentDTO[] | undefined;
       if (files.length > 0) {
@@ -2810,6 +2879,21 @@ export const ModuleChatPane = ({
             mimeType: file.mimeType,
             size: file.size,
           })),
+        });
+      }
+
+      if (editTargetMessageId) {
+        return api.chat.editMessage({
+          scope: effectiveScope,
+          module,
+          sessionId,
+          requestId,
+          editTargetMessageId,
+          message: text,
+          model: selectedModel,
+          thinkingLevel: selectedThinkingLevel,
+          attachments,
+          contextSnapshot,
         });
       }
 
@@ -2826,6 +2910,7 @@ export const ModuleChatPane = ({
       });
     },
     onSuccess: (data, variables) => {
+      editSnapshotsByRequestIdRef.current.delete(variables.requestId);
       if (variables.localDisposition === "process_now" && data.queued) {
         setPendingUserMessages((prev) =>
           prev.filter((item) => item.id !== variables.pendingMessage.id),
@@ -2876,6 +2961,20 @@ export const ModuleChatPane = ({
       }
     },
     onError: (error, variables) => {
+      const editSnapshot = editSnapshotsByRequestIdRef.current.get(
+        variables.requestId,
+      );
+      if (editSnapshot) {
+        editSnapshotsByRequestIdRef.current.delete(variables.requestId);
+        queryClient.setQueryData<ChatMessageDTO[]>(
+          ["chat-messages", scopeKey, editSnapshot.sessionId],
+          editSnapshot.messages,
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ["chat-messages", scopeKey, editSnapshot.sessionId],
+          exact: true,
+        });
+      }
       setPendingUserMessages((prev) =>
         prev.filter((item) => item.id !== variables.pendingMessage.id),
       );
@@ -2891,7 +2990,7 @@ export const ModuleChatPane = ({
         requestRef.current = undefined;
       }
       clearSessionStream(variables.sessionId);
-      message.error(error instanceof Error ? error.message : t("发送失败"));
+      message.error(error instanceof Error ? t(error.message) : t("发送失败"));
     },
   });
 
@@ -3508,6 +3607,10 @@ export const ModuleChatPane = ({
       const requestId =
         globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}`;
       const queuedAt = new Date().toISOString();
+      const editTarget =
+        editingMessage && editingMessage.sessionId === sessionId
+          ? editingMessage
+          : null;
       setInput("");
       setPendingFiles((prev) => {
         revokePreviewUrls(prev);
@@ -3528,7 +3631,37 @@ export const ModuleChatPane = ({
           createdAt: queuedAt,
         },
         localDisposition: "queue",
+        editTargetMessageId: editTarget?.id,
       };
+
+      if (editTarget) {
+        setEditingMessage(null);
+        // Optimistically drop the edited message and everything after it,
+        // keeping a snapshot so a failed edit can restore the timeline.
+        queryClient.setQueryData<ChatMessageDTO[]>(
+          ["chat-messages", scopeKey, sessionId],
+          (prev) => {
+            if (!prev) return prev;
+            const targetIndex = prev.findIndex(
+              (item) => item.id === editTarget.id,
+            );
+            if (targetIndex < 0) return prev;
+            editSnapshotsByRequestIdRef.current.set(requestId, {
+              sessionId,
+              messages: prev,
+            });
+            return prev.slice(0, targetIndex);
+          },
+        );
+        setPendingUserMessages([nextPayload.pendingMessage]);
+        setRetainedStreamingBlocks([]);
+        clearSessionStream(sessionId);
+        startSend({
+          ...nextPayload,
+          localDisposition: "process_now",
+        });
+        return;
+      }
 
       const hasActiveProcessing =
         sendMutation.isPending || streamingInProgress || Boolean(activeRequestId);
@@ -3617,6 +3750,50 @@ export const ModuleChatPane = ({
       window.removeEventListener(CHAT_INPUT_FOCUS_EVENT, handleFocusRequest);
     };
   }, [focusChatInput]);
+
+  const handleEditUserMessage = useCallback(
+    (target: ChatMessageDTO): void => {
+      if (readOnly) return;
+      const sessionId = currentSessionId;
+      if (!sessionId || target.sessionId !== sessionId) return;
+      if (
+        (streamingInProgress || activeRequestId) &&
+        !interruptMutation.isPending
+      ) {
+        interruptMutation.mutate({
+          sessionId,
+          requestId: requestRef.current ?? activeRequestId,
+        });
+      }
+      const { text, files } = splitEditableMessageContent(target.content);
+      setEditingMessage(target);
+      setInput(text);
+      setPendingFiles((prev) => {
+        revokePreviewUrls(prev);
+        return files;
+      });
+      window.requestAnimationFrame(() => {
+        focusChatInput();
+      });
+    },
+    [
+      activeRequestId,
+      currentSessionId,
+      focusChatInput,
+      interruptMutation,
+      readOnly,
+      streamingInProgress,
+    ],
+  );
+
+  const handleCancelEditMessage = useCallback((): void => {
+    setEditingMessage(null);
+    setInput("");
+    setPendingFiles((prev) => {
+      revokePreviewUrls(prev);
+      return [];
+    });
+  }, []);
 
   useEffect(() => {
     if (chatVariant !== "main" || !acceptMainInputFocusEvents) {
@@ -3739,7 +3916,25 @@ export const ModuleChatPane = ({
     : `no-drag min-h-0 flex-1 rounded-lg bg-[var(--surface-2)] p-3 pb-0 ${FULL_HEIGHT_SCROLL_CONTENT_CLASS}`;
 
   const composer = (
-    <ChatComposer
+    <>
+      {editingMessage ? (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-[#f5d9a8] bg-[#fff8ec] px-3 py-2 text-[12px] text-[#8a6116]">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <EditOutlined className="shrink-0" />
+            <span className="truncate">
+              {t("正在编辑历史消息，发送后其后的对话将被移除")}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={handleCancelEditMessage}
+            className="shrink-0 font-medium text-[#b4831b] hover:cursor-pointer hover:text-[#8a6116]"
+          >
+            {t("取消")}
+          </button>
+        </div>
+      ) : null}
+      <ChatComposer
       variant={composerVariant}
       mode={readOnly ? "controls-only" : "default"}
       readOnlyNotice={
@@ -3872,7 +4067,8 @@ export const ModuleChatPane = ({
       sendLoading={sendMutation.isPending || isCreatingSession}
       onSend={handleSend}
       canSend={canSend}
-    />
+      />
+    </>
   );
 
   // ---------------------------------------------------------------------------
@@ -4004,6 +4200,8 @@ export const ModuleChatPane = ({
               copyMarkdownLabel={t("复制 Markdown")}
               copyMarkdownSuccessLabel={t("Markdown 已复制")}
               copyMarkdownFailedLabel={t("复制 Markdown 失败")}
+              editMessageLabel={t("编辑消息")}
+              onEditUserMessage={readOnly ? undefined : handleEditUserMessage}
             />
           </ScrollArea>
         ) : null}

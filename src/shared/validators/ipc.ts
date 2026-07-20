@@ -124,6 +124,7 @@ export const chatSendSchema = z.object({
   contextSnapshot: z.any().optional(),
   capabilityMode: z.enum(['full', 'chat_only']).optional(),
   skipUserMessagePersistence: z.boolean().optional(),
+  editTargetMessageId: z.string().min(1).optional(),
   delegationContext: z
     .object({
       delegationId: z.string().min(1),
@@ -153,6 +154,26 @@ export const chatQueueSchema = z.object({
   contextSnapshot: z.any().optional(),
   capabilityMode: z.enum(['full', 'chat_only']).optional(),
   deliveryMode: z.enum(['steer', 'followUp'])
+}).refine(
+  (input) => input.message.trim().length > 0 || (input.attachments?.length ?? 0) > 0,
+  {
+    message: '消息内容或附件至少填写一项',
+    path: ['message']
+  }
+);
+
+export const chatEditMessageSchema = z.object({
+  scope: chatScopeSchema,
+  module: chatModuleSchema,
+  sessionId: z.string().min(1),
+  requestId: z.string().min(1).optional(),
+  editTargetMessageId: z.string().min(1),
+  message: z.string().default(''),
+  model: z.string().min(1).optional(),
+  thinkingLevel: z.enum(['low', 'medium', 'high']).optional(),
+  attachments: z.array(chatAttachmentSchema).max(20).optional(),
+  contextSnapshot: z.any().optional(),
+  capabilityMode: z.enum(['full', 'chat_only']).optional()
 }).refine(
   (input) => input.message.trim().length > 0 || (input.attachments?.length ?? 0) > 0,
   {

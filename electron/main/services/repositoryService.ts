@@ -4058,6 +4058,50 @@ export const repositoryService = {
     });
   },
 
+  async truncateChatMessagesFrom(input: {
+    scope: ChatScope;
+    sessionId: string;
+    messageId: string;
+  }): Promise<boolean> {
+    await ensureChatScopeStructure(input.scope);
+    const sessions = await loadCachedChatSessions(input.scope);
+    const matchedSession = sessions.find((item) => item.id === input.sessionId);
+    if (!matchedSession) {
+      throw new Error("会话不存在");
+    }
+    const messagesPath = getChatMessagesPathByScope(input.scope, input.sessionId);
+
+    return enqueueMessageAppend(messagesPath, async () => {
+      const rows = await loadCachedChatMessages(input.scope, input.sessionId);
+      const targetIndex = rows.findIndex((item) => item.id === input.messageId);
+      if (targetIndex < 0) {
+        return false;
+      }
+      const next = rows.slice(0, targetIndex);
+      updateCachedChatMessages(input.scope, input.sessionId, next);
+      await writeJson(messagesPath, next);
+
+      const sessionUpdatedAt = nowISO();
+      await updateChatSessionTimestamp(input.scope, input.sessionId, sessionUpdatedAt);
+      if (input.scope.type === "project") {
+        await touchProject(input.scope.projectId);
+      }
+      chatEvents.emitHistoryUpdated({
+        scope: input.scope,
+        sessionId: input.sessionId,
+        messageId: input.messageId,
+        role: "user",
+        createdAt: sessionUpdatedAt,
+        sessionUpdatedAt,
+        sessionKind: matchedSession.kind,
+        sessionHidden: matchedSession.hidden,
+        sessionMetadataJson: matchedSession.metadataJson,
+      });
+
+      return true;
+    });
+  },
+
   async logAgentAction(input: {
     projectId: string;
     module: ModuleType;

@@ -15,6 +15,7 @@ import {
   chatListSessionsSchema,
   chatSendSchema,
   chatScopeSchema,
+  chatEditMessageSchema,
   chatInterruptSchema,
   chatUploadFilesSchema,
   creationReplaceSchema,
@@ -410,6 +411,9 @@ export const registerHandlers = (): void => {
   );
   handle('chat:interrupt', chatInterruptSchema, async (input) =>
     chatService.interrupt(input)
+  );
+  handle('chat:editMessage', chatEditMessageSchema, async (input) =>
+    chatService.editMessage(input)
   );
   handle('chat:uploadFiles', chatUploadFilesSchema, async (input) =>
     repositoryService.uploadChatFiles(input)
