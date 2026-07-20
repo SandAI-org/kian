@@ -818,6 +818,80 @@ const createMessageImageDataUrl = async (
   }
 };
 
+const CHAT_CONTEXT_MENU_OPEN_EVENT = "kian-chat-context-menu-open";
+let nextChatContextMenuInstanceId = 0;
+
+/**
+ * Shared state for the portaled right-click menus in the chat timeline.
+ * Opening any instance broadcasts an event that closes every other one, so
+ * only a single menu is visible at a time. A right-click outside the owning
+ * element (ownerRef) also closes the menu; without ownerRef, callers must
+ * stop propagation in their own contextmenu handler to allow repositioning.
+ */
+const useChatContextMenu = (ownerRef?: RefObject<HTMLElement | null>) => {
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const instanceIdRef = useRef(0);
+  if (instanceIdRef.current === 0) {
+    nextChatContextMenuInstanceId += 1;
+    instanceIdRef.current = nextChatContextMenuInstanceId;
+  }
+
+  useEffect(() => {
+    if (!menuPosition) return;
+    const closeMenu = (): void => setMenuPosition(null);
+    const closeOnOutsideContextMenu = (event: Event): void => {
+      const owner = ownerRef?.current;
+      if (
+        owner &&
+        event.target instanceof Node &&
+        owner.contains(event.target)
+      ) {
+        return;
+      }
+      setMenuPosition(null);
+    };
+    const closeOnOtherMenuOpen = (event: Event): void => {
+      if ((event as CustomEvent<number>).detail !== instanceIdRef.current) {
+        setMenuPosition(null);
+      }
+    };
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("keydown", closeMenu);
+    window.addEventListener("contextmenu", closeOnOutsideContextMenu);
+    window.addEventListener(CHAT_CONTEXT_MENU_OPEN_EVENT, closeOnOtherMenuOpen);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("blur", closeMenu);
+      window.removeEventListener("keydown", closeMenu);
+      window.removeEventListener("contextmenu", closeOnOutsideContextMenu);
+      window.removeEventListener(
+        CHAT_CONTEXT_MENU_OPEN_EVENT,
+        closeOnOtherMenuOpen,
+      );
+    };
+  }, [menuPosition, ownerRef]);
+
+  const openMenu = useCallback((event: MouseEvent<HTMLElement>): void => {
+    event.preventDefault();
+    window.dispatchEvent(
+      new CustomEvent(CHAT_CONTEXT_MENU_OPEN_EVENT, {
+        detail: instanceIdRef.current,
+      }),
+    );
+    setMenuPosition({ x: event.clientX, y: event.clientY });
+  }, []);
+
+  const closeMenu = useCallback((): void => {
+    setMenuPosition(null);
+  }, []);
+
+  return { menuPosition, openMenu, closeMenu };
+};
+
 const FileReferenceCard = ({
   sourcePath,
   projectId,
@@ -844,23 +918,7 @@ const FileReferenceCard = ({
   const [previewText, setPreviewText] = useState<string>("");
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [menuPosition, setMenuPosition] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!menuPosition) return;
-    const closeMenu = (): void => setMenuPosition(null);
-    window.addEventListener("click", closeMenu);
-    window.addEventListener("blur", closeMenu);
-    window.addEventListener("keydown", closeMenu);
-    return () => {
-      window.removeEventListener("click", closeMenu);
-      window.removeEventListener("blur", closeMenu);
-      window.removeEventListener("keydown", closeMenu);
-    };
-  }, [menuPosition]);
+  const { menuPosition, openMenu, closeMenu } = useChatContextMenu();
 
   useEffect(() => {
     if (!isTextPreview || !resolvedSource) {
@@ -892,7 +950,7 @@ const FileReferenceCard = ({
   }, [isTextPreview, resolvedSource, t]);
 
   const handleShowInFinder = (): void => {
-    setMenuPosition(null);
+    closeMenu();
     void api.file.showInFinder(sourcePath, projectId).catch((error) => {
       message.error(
         error instanceof Error ? error.message : t("无法在 Finder 中打开文件"),
@@ -901,7 +959,7 @@ const FileReferenceCard = ({
   };
 
   const handleOpenFile = (): void => {
-    setMenuPosition(null);
+    closeMenu();
     void api.file.open(sourcePath, projectId).catch((error) => {
       message.error(
         error instanceof Error ? error.message : t("打开系统预览失败"),
@@ -910,7 +968,7 @@ const FileReferenceCard = ({
   };
 
   const handleSaveAs = (): void => {
-    setMenuPosition(null);
+    closeMenu();
     void api.file
       .saveAs({ filePath: sourcePath, projectId, defaultFileName: fileName })
       .then((savedPath) => {
@@ -926,9 +984,8 @@ const FileReferenceCard = ({
   const handleFileNameContextMenu = (
     event: MouseEvent<HTMLElement>,
   ): void => {
-    event.preventDefault();
     event.stopPropagation();
-    setMenuPosition({ x: event.clientX, y: event.clientY });
+    openMenu(event);
   };
 
   const fileActionMenu = menuPosition
@@ -1032,32 +1089,15 @@ const InlineFileReferenceToken = ({
 }) => {
   const { t } = useAppI18n();
   const fileName = useMemo(() => getPathFileName(sourcePath), [sourcePath]);
-  const [menuPosition, setMenuPosition] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!menuPosition) return;
-    const closeMenu = (): void => setMenuPosition(null);
-    window.addEventListener("click", closeMenu);
-    window.addEventListener("blur", closeMenu);
-    window.addEventListener("keydown", closeMenu);
-    return () => {
-      window.removeEventListener("click", closeMenu);
-      window.removeEventListener("blur", closeMenu);
-      window.removeEventListener("keydown", closeMenu);
-    };
-  }, [menuPosition]);
+  const { menuPosition, openMenu, closeMenu } = useChatContextMenu();
 
   const handleContextMenu = (event: MouseEvent<HTMLSpanElement>): void => {
-    event.preventDefault();
     event.stopPropagation();
-    setMenuPosition({ x: event.clientX, y: event.clientY });
+    openMenu(event);
   };
 
   const handleOpenFile = (): void => {
-    setMenuPosition(null);
+    closeMenu();
     void api.file.open(sourcePath, projectId).catch((error) => {
       message.error(
         error instanceof Error ? error.message : t("打开系统预览失败"),
@@ -1066,7 +1106,7 @@ const InlineFileReferenceToken = ({
   };
 
   const handleShowInFinder = (): void => {
-    setMenuPosition(null);
+    closeMenu();
     void api.file.showInFinder(sourcePath, projectId).catch((error) => {
       message.error(
         error instanceof Error ? error.message : t("无法在 Finder 中打开文件"),
@@ -1075,7 +1115,7 @@ const InlineFileReferenceToken = ({
   };
 
   const handleSaveAs = (): void => {
-    setMenuPosition(null);
+    closeMenu();
     void api.file
       .saveAs({ filePath: sourcePath, projectId, defaultFileName: fileName })
       .then((savedPath) => {
@@ -1449,6 +1489,7 @@ export const AssistantMessageContextMenu = memo(
     copyMarkdownFailedLabel,
     continueInNewChatLabel,
     onContinueInNewChat,
+    children,
   }: {
     content: string;
     projectId?: string;
@@ -1466,33 +1507,17 @@ export const AssistantMessageContextMenu = memo(
     copyMarkdownFailedLabel: string;
     continueInNewChatLabel?: string;
     onContinueInNewChat?: () => void;
+    children?: ReactNode;
   }) => {
     const messageContentRef = useRef<HTMLDivElement | null>(null);
-    const [menuPosition, setMenuPosition] = useState<{
-      x: number;
-      y: number;
-    } | null>(null);
-
-    useEffect(() => {
-      if (!menuPosition) return;
-      const closeMenu = (): void => setMenuPosition(null);
-      window.addEventListener("click", closeMenu);
-      window.addEventListener("blur", closeMenu);
-      window.addEventListener("keydown", closeMenu);
-      return () => {
-        window.removeEventListener("click", closeMenu);
-        window.removeEventListener("blur", closeMenu);
-        window.removeEventListener("keydown", closeMenu);
-      };
-    }, [menuPosition]);
-
-    const handleContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
-      event.preventDefault();
-      setMenuPosition({ x: event.clientX, y: event.clientY });
-    };
+    const {
+      menuPosition,
+      openMenu: handleContextMenu,
+      closeMenu,
+    } = useChatContextMenu(messageContentRef);
 
     const handleSaveAsImage = async (): Promise<void> => {
-      setMenuPosition(null);
+      closeMenu();
       const sourceElement = messageContentRef.current;
       if (!sourceElement) {
         message.error(saveFailedLabel);
@@ -1520,7 +1545,7 @@ export const AssistantMessageContextMenu = memo(
     };
 
     const handleCopyMarkdown = async (): Promise<void> => {
-      setMenuPosition(null);
+      closeMenu();
       try {
         await api.clipboard.writeText(content);
         message.success(copyMarkdownSuccessLabel);
@@ -1530,7 +1555,7 @@ export const AssistantMessageContextMenu = memo(
     };
 
     const handleSaveImageToClipboard = async (): Promise<void> => {
-      setMenuPosition(null);
+      closeMenu();
       const sourceElement = messageContentRef.current;
       if (!sourceElement) {
         message.error(saveImageToClipboardFailedLabel);
@@ -1554,18 +1579,24 @@ export const AssistantMessageContextMenu = memo(
         className={className}
         onContextMenu={handleContextMenu}
       >
-        <MarkdownMessage
-          content={content}
-          projectId={projectId}
-          mentionNames={mentionNames}
-          user={false}
-        />
+        {children ?? (
+          <MarkdownMessage
+            content={content}
+            projectId={projectId}
+            mentionNames={mentionNames}
+            user={false}
+          />
+        )}
         {menuPosition
           ? createPortal(
               <div
                 className="chat-message-context-menu"
                 style={{ left: menuPosition.x, top: menuPosition.y }}
                 onClick={(event) => event.stopPropagation()}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
               >
                 <button type="button" onClick={() => void handleCopyMarkdown()}>
                   <CopyOutlined />
@@ -1586,7 +1617,7 @@ export const AssistantMessageContextMenu = memo(
                   <button
                     type="button"
                     onClick={() => {
-                      setMenuPosition(null);
+                      closeMenu();
                       onContinueInNewChat();
                     }}
                   >
@@ -2299,6 +2330,24 @@ const ChatTimeline = memo(
             Boolean(onEditUserMessage) &&
             !item.id.startsWith("pending-user-");
           const canCopyUserMessage = isUser && !isChannelEventCard;
+          const channelEventCard = isChannelEventCard ? (
+            <ChannelEventCard
+              content={displayContent}
+              role={item.role}
+              metadata={messageMetadata}
+              projectId={projectId}
+              labels={{
+                inbound: channelInboundLabel,
+                reply: channelReplyLabel,
+                direct: channelDirectLabel,
+                group: channelGroupLabel,
+                owner: channelOwnerLabel,
+                visitor: channelVisitorLabel,
+                mentioned: channelMentionedLabel,
+                batchedReply: channelBatchedReplyLabel,
+              }}
+            />
+          ) : null;
           const isCopiedUserMessage = copiedMessageId === item.id;
           const handleCopyUserMessage = async (): Promise<void> => {
             try {
@@ -2389,22 +2438,32 @@ const ChatTimeline = memo(
                     title={thinkingMessageTitle}
                   />
                 ) : isChannelEventCard ? (
-                  <ChannelEventCard
-                    content={displayContent}
-                    role={item.role}
-                    metadata={messageMetadata}
-                    projectId={projectId}
-                    labels={{
-                      inbound: channelInboundLabel,
-                      reply: channelReplyLabel,
-                      direct: channelDirectLabel,
-                      group: channelGroupLabel,
-                      owner: channelOwnerLabel,
-                      visitor: channelVisitorLabel,
-                      mentioned: channelMentionedLabel,
-                      batchedReply: channelBatchedReplyLabel,
-                    }}
-                  />
+                  item.role === "assistant" ? (
+                    <AssistantMessageContextMenu
+                      content={displayContent}
+                      projectId={projectId}
+                      resolvedTheme={resolvedTheme}
+                      saveAsImageLabel={saveAsImageLabel}
+                      saveSuccessLabel={saveImageSuccessLabel}
+                      saveFailedLabel={saveImageFailedLabel}
+                      saveImageToClipboardLabel={saveImageToClipboardLabel}
+                      saveImageToClipboardSuccessLabel={saveImageToClipboardSuccessLabel}
+                      saveImageToClipboardFailedLabel={saveImageToClipboardFailedLabel}
+                      copyMarkdownLabel={copyMarkdownLabel}
+                      copyMarkdownSuccessLabel={copyMarkdownSuccessLabel}
+                      copyMarkdownFailedLabel={copyMarkdownFailedLabel}
+                      continueInNewChatLabel={continueInNewChatLabel}
+                      onContinueInNewChat={
+                        onContinueInNewChat
+                          ? () => onContinueInNewChat(item)
+                          : undefined
+                      }
+                    >
+                      {channelEventCard}
+                    </AssistantMessageContextMenu>
+                  ) : (
+                    channelEventCard
+                  )
                 ) : (
                   isUser ? (
                     <MarkdownMessage
