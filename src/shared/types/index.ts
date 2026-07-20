@@ -647,6 +647,7 @@ export interface GeneralConfigDTO {
   mainSubModeEnabled: boolean;
   quickGuideDismissed: boolean;
   chatInputShortcutTipDismissed: boolean;
+  chatEditMessageTipDismissed: boolean;
   showHiddenSessions: boolean;
 }
 

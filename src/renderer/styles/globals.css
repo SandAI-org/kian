@@ -4039,6 +4039,50 @@ a:focus-visible,
   color: #dce7f5;
 }
 
+.chat-edit-banner {
+  border-color: #f5d9a8;
+  background: #fff8ec;
+  color: #8a6116;
+}
+
+.chat-edit-banner button {
+  color: #b4831b;
+}
+
+.chat-edit-banner button:hover {
+  color: #8a6116;
+}
+
+.chat-edit-banner .chat-edit-banner__dismiss {
+  color: #c39b4c;
+}
+
+.chat-edit-banner .chat-edit-banner__dismiss:hover {
+  color: #8a6116;
+}
+
+:root.theme-dark .chat-edit-banner {
+  border-color: #4d3d1c;
+  background: #241d10;
+  color: #e3c27c;
+}
+
+:root.theme-dark .chat-edit-banner button {
+  color: #d9ae55;
+}
+
+:root.theme-dark .chat-edit-banner button:hover {
+  color: #f2d488;
+}
+
+:root.theme-dark .chat-edit-banner .chat-edit-banner__dismiss {
+  color: #b0904f;
+}
+
+:root.theme-dark .chat-edit-banner .chat-edit-banner__dismiss:hover {
+  color: #f2d488;
+}
+
 .chat-message-context-menu {
   position: fixed;
   z-index: 5000;

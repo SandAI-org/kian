@@ -358,6 +358,7 @@ export const saveGeneralConfigSchema = z.object({
   mainSubModeEnabled: z.boolean().default(true),
   quickGuideDismissed: z.boolean().optional(),
   chatInputShortcutTipDismissed: z.boolean().optional(),
+  chatEditMessageTipDismissed: z.boolean().optional(),
   showHiddenSessions: z.boolean().optional()
 });
 

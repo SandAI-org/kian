@@ -235,6 +235,7 @@ const DEFAULT_GENERAL_CONFIG_FLAGS = {
   linkOpenMode: "builtin" as LinkOpenMode,
   quickGuideDismissed: false,
   chatInputShortcutTipDismissed: false,
+  chatEditMessageTipDismissed: false,
   showHiddenSessions: false,
 } as const;
 
@@ -450,6 +451,10 @@ const normalizeGeneralConfig = (
     chatInputShortcutTipDismissed: normalizeBoolean(
       raw.chatInputShortcutTipDismissed,
       DEFAULT_GENERAL_CONFIG_FLAGS.chatInputShortcutTipDismissed,
+    ),
+    chatEditMessageTipDismissed: normalizeBoolean(
+      raw.chatEditMessageTipDismissed,
+      DEFAULT_GENERAL_CONFIG_FLAGS.chatEditMessageTipDismissed,
     ),
     showHiddenSessions: normalizeBoolean(
       raw.showHiddenSessions,
@@ -2132,6 +2137,7 @@ export const settingsService = {
     mainSubModeEnabled?: boolean;
     quickGuideDismissed?: boolean;
     chatInputShortcutTipDismissed?: boolean;
+    chatEditMessageTipDismissed?: boolean;
     showHiddenSessions?: boolean;
   }): Promise<void> {
     const currentConfig = await this.getGeneralConfig();
@@ -2156,6 +2162,10 @@ export const settingsService = {
         typeof input.chatInputShortcutTipDismissed === "boolean"
           ? input.chatInputShortcutTipDismissed
           : currentConfig.chatInputShortcutTipDismissed,
+      chatEditMessageTipDismissed:
+        typeof input.chatEditMessageTipDismissed === "boolean"
+          ? input.chatEditMessageTipDismissed
+          : currentConfig.chatEditMessageTipDismissed,
       showHiddenSessions:
         typeof input.showHiddenSessions === "boolean"
           ? input.showHiddenSessions
@@ -2174,6 +2184,7 @@ export const settingsService = {
           quickGuideDismissed: nextConfig.quickGuideDismissed,
           chatInputShortcutTipDismissed:
             nextConfig.chatInputShortcutTipDismissed,
+          chatEditMessageTipDismissed: nextConfig.chatEditMessageTipDismissed,
           showHiddenSessions: nextConfig.showHiddenSessions,
         },
         null,

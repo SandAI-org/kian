@@ -126,6 +126,9 @@ const EN_US_EXACT: Record<string, string> = {
   "加载中...": "Loading...",
   "复制": "Copy",
   "已复制": "Copied",
+  "复制消息": "Copy message",
+  "复制失败": "Failed to copy",
+  "（仅上传了附件）": "(Attachments only)",
   "保存为图片": "Save as Image",
   "图片已保存": "Image saved",
   "保存图片失败": "Failed to save image",
@@ -565,6 +568,9 @@ const KO_KR_EXACT: Record<string, string> = {
   "加载中...": "불러오는 중...",
   "复制": "복사",
   "已复制": "복사됨",
+  "复制消息": "메시지 복사",
+  "复制失败": "복사하지 못했습니다",
+  "（仅上传了附件）": "(첨부 파일만 업로드됨)",
   "保存为图片": "이미지로 저장",
   "图片已保存": "이미지가 저장됨",
   "保存图片失败": "이미지 저장 실패",
@@ -837,6 +843,9 @@ const JA_JP_EXACT: Record<string, string> = {
   "加载中...": "読み込み中...",
   "复制": "コピー",
   "已复制": "コピーしました",
+  "复制消息": "メッセージをコピー",
+  "复制失败": "コピーできませんでした",
+  "（仅上传了附件）": "（添付ファイルのみ）",
   "保存为图片": "画像として保存",
   "图片已保存": "画像を保存しました",
   "保存图片失败": "画像の保存に失敗しました",
@@ -1092,6 +1101,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
       "SKILL.md was not found, so the skill cannot be installed",
     "快捷键提示关闭状态保存失败":
       "Failed to save shortcut tip dismissal state",
+    "编辑提示关闭状态保存失败":
+      "Failed to save edit tip dismissal state",
     "思考等级": "Reasoning Level",
     "低": "Low",
     "中": "Medium",
@@ -1822,6 +1833,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "已安装技能": "설치된 스킬",
     "快捷键提示关闭状态保存失败":
       "단축키 안내 닫힘 상태를 저장하지 못했습니다",
+    "编辑提示关闭状态保存失败":
+      "편집 안내 닫힘 상태를 저장하지 못했습니다",
     "思考等级": "사고 수준",
     "低": "낮음",
     "中": "중간",
@@ -2592,6 +2605,8 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "已安装技能": "インストール済みスキル",
     "快捷键提示关闭状态保存失败":
       "ショートカット案内の閉じた状態を保存できませんでした",
+    "编辑提示关闭状态保存失败":
+      "編集案内の閉じた状態を保存できませんでした",
     "思考等级": "思考レベル",
     "低": "低め",
     "中": "中程度",

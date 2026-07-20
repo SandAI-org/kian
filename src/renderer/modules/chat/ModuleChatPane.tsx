@@ -2085,8 +2085,44 @@ interface ChatTimelineProps {
   copyMarkdownSuccessLabel: string;
   copyMarkdownFailedLabel: string;
   editMessageLabel: string;
+  copyMessageLabel: string;
+  copyMessageSuccessLabel: string;
+  copyMessageFailedLabel: string;
   onEditUserMessage?: (message: ChatMessageDTO) => void;
 }
+
+const CopySquareIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>
+);
+
+const CopyCheckIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
 
 const ThinkingIndicator = memo(({ label }: { label: string }) => (
   <div className="flex justify-start">
@@ -2131,8 +2167,21 @@ const ChatTimeline = memo(
     copyMarkdownSuccessLabel,
     copyMarkdownFailedLabel,
     editMessageLabel,
+    copyMessageLabel,
+    copyMessageSuccessLabel,
+    copyMessageFailedLabel,
     onEditUserMessage,
   }: ChatTimelineProps) => {
+    const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+    const copiedResetTimerRef = useRef<number | null>(null);
+    useEffect(() => {
+      return () => {
+        if (copiedResetTimerRef.current !== null) {
+          window.clearTimeout(copiedResetTimerRef.current);
+        }
+      };
+    }, []);
+
     if (timelineBlocks.length === 0 && !showStreamingPanel) {
       return null;
     }
@@ -2228,16 +2277,56 @@ const ChatTimeline = memo(
             !isChannelEventCard &&
             Boolean(onEditUserMessage) &&
             !item.id.startsWith("pending-user-");
+          const canCopyUserMessage = isUser && !isChannelEventCard;
+          const isCopiedUserMessage = copiedMessageId === item.id;
+          const handleCopyUserMessage = async (): Promise<void> => {
+            try {
+              await api.clipboard.writeText(item.content);
+              if (copiedResetTimerRef.current !== null) {
+                window.clearTimeout(copiedResetTimerRef.current);
+              }
+              setCopiedMessageId(item.id);
+              copiedResetTimerRef.current = window.setTimeout(() => {
+                setCopiedMessageId(null);
+                copiedResetTimerRef.current = null;
+              }, 1500);
+            } catch {
+              message.error(copyMessageFailedLabel);
+            }
+          };
           return (
             <div
               key={item.id}
-              className={`group flex ${isUser ? "items-center justify-end gap-2" : "w-full"}`}
+              className={`group flex ${isUser ? "items-end justify-end gap-2" : "w-full"}`}
             >
+              {canCopyUserMessage ? (
+                <button
+                  type="button"
+                  onClick={() => void handleCopyUserMessage()}
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[13px] transition-opacity hover:cursor-pointer group-hover:opacity-100 ${
+                    isCopiedUserMessage
+                      ? "text-emerald-600 opacity-100"
+                      : "text-slate-400 opacity-0 hover:bg-[var(--surface-3)] hover:text-slate-600"
+                  }`}
+                  aria-label={
+                    isCopiedUserMessage
+                      ? copyMessageSuccessLabel
+                      : copyMessageLabel
+                  }
+                  title={
+                    isCopiedUserMessage
+                      ? copyMessageSuccessLabel
+                      : copyMessageLabel
+                  }
+                >
+                  {isCopiedUserMessage ? <CopyCheckIcon /> : <CopySquareIcon />}
+                </button>
+              ) : null}
               {canEditUserMessage ? (
                 <button
                   type="button"
                   onClick={() => onEditUserMessage?.(item)}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] text-slate-400 opacity-0 transition-opacity hover:cursor-pointer hover:bg-[var(--surface-3)] hover:text-slate-600 group-hover:opacity-100"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[13px] text-slate-400 opacity-0 transition-opacity hover:cursor-pointer hover:bg-[var(--surface-3)] hover:text-slate-600 group-hover:opacity-100"
                   aria-label={editMessageLabel}
                   title={editMessageLabel}
                 >
@@ -3720,6 +3809,38 @@ export const ModuleChatPane = ({
     });
   };
 
+  const editMessageTipDismissed = Boolean(
+    generalConfigQuery.data?.chatEditMessageTipDismissed,
+  );
+  const handleDismissEditMessageTip = (): void => {
+    if (generalConfigQuery.data?.chatEditMessageTipDismissed) {
+      return;
+    }
+
+    const previousConfig = generalConfigQuery.data;
+    if (previousConfig) {
+      queryClient.setQueryData(["settings", "general"], {
+        ...previousConfig,
+        chatEditMessageTipDismissed: true,
+      });
+    }
+
+    void persistGeneralConfig({
+      chatEditMessageTipDismissed: true,
+    }).catch((error) => {
+      if (previousConfig) {
+        queryClient.setQueryData(["settings", "general"], previousConfig);
+      }
+      message.error(
+        error instanceof Error
+          ? error.message
+          : t("编辑提示关闭状态保存失败"),
+      );
+    });
+  };
+
+  const [editFocusRequestId, setEditFocusRequestId] = useState(0);
+
   const focusChatInput = useCallback((): boolean => {
     const editorElement = chatInputContainerRef.current?.querySelector(
       '[data-chat-composer-editor="true"]',
@@ -3772,14 +3893,14 @@ export const ModuleChatPane = ({
         revokePreviewUrls(prev);
         return files;
       });
-      window.requestAnimationFrame(() => {
-        focusChatInput();
-      });
+      // Backfilling the input remounts the composer editor, so a one-shot
+      // focus lands on a DOM node that is about to be replaced — go through
+      // the retrying focus effect instead.
+      setEditFocusRequestId((id) => id + 1);
     },
     [
       activeRequestId,
       currentSessionId,
-      focusChatInput,
       interruptMutation,
       readOnly,
       streamingInProgress,
@@ -3816,7 +3937,7 @@ export const ModuleChatPane = ({
   }, [acceptMainInputFocusEvents, chatVariant, focusChatInput]);
 
   useEffect(() => {
-    if (!inputFocusRequestId) {
+    if (!inputFocusRequestId && !editFocusRequestId) {
       return;
     }
 
@@ -3854,7 +3975,7 @@ export const ModuleChatPane = ({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [focusChatInput, inputFocusRequestId]);
+  }, [editFocusRequestId, focusChatInput, inputFocusRequestId]);
 
   const canSend =
     !readOnly &&
@@ -3917,21 +4038,30 @@ export const ModuleChatPane = ({
 
   const composer = (
     <>
-      {editingMessage ? (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-[#f5d9a8] bg-[#fff8ec] px-3 py-2 text-[12px] text-[#8a6116]">
+      {editingMessage && !editMessageTipDismissed ? (
+        <div className="chat-edit-banner mb-2 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-[12px]">
           <span className="flex min-w-0 items-center gap-1.5">
             <EditOutlined className="shrink-0" />
             <span className="truncate">
               {t("正在编辑历史消息，发送后其后的对话将被移除")}
             </span>
           </span>
-          <button
-            type="button"
-            onClick={handleCancelEditMessage}
-            className="shrink-0 font-medium text-[#b4831b] hover:cursor-pointer hover:text-[#8a6116]"
-          >
-            {t("取消")}
-          </button>
+          <span className="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDismissEditMessageTip}
+              className="chat-edit-banner__dismiss shrink-0 font-medium hover:cursor-pointer"
+            >
+              {t("不再提示")}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelEditMessage}
+              className="shrink-0 font-medium hover:cursor-pointer"
+            >
+              {t("取消")}
+            </button>
+          </span>
         </div>
       ) : null}
       <ChatComposer
@@ -3968,6 +4098,13 @@ export const ModuleChatPane = ({
       }}
       onEditorKeyDown={(event, helpers) => {
         if (event.nativeEvent.isComposing || isComposing) {
+          return;
+        }
+
+        if (event.nativeEvent.key === "Escape" && editingMessage) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleCancelEditMessage();
           return;
         }
 
@@ -4201,6 +4338,9 @@ export const ModuleChatPane = ({
               copyMarkdownSuccessLabel={t("Markdown 已复制")}
               copyMarkdownFailedLabel={t("复制 Markdown 失败")}
               editMessageLabel={t("编辑消息")}
+              copyMessageLabel={t("复制消息")}
+              copyMessageSuccessLabel={t("已复制")}
+              copyMessageFailedLabel={t("复制失败")}
               onEditUserMessage={readOnly ? undefined : handleEditUserMessage}
             />
           </ScrollArea>

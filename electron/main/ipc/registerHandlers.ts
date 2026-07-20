@@ -762,6 +762,7 @@ export const registerHandlers = (): void => {
         mainSubModeEnabled: true,
         quickGuideDismissed: input.quickGuideDismissed,
         chatInputShortcutTipDismissed: input.chatInputShortcutTipDismissed,
+        chatEditMessageTipDismissed: input.chatEditMessageTipDismissed,
         showHiddenSessions: input.showHiddenSessions
       });
       await settingsRuntimeService.reload({

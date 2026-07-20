@@ -1106,6 +1106,8 @@ export const SettingsPage = () => {
           generalConfigQuery.data?.quickGuideDismissed ?? false,
         chatInputShortcutTipDismissed:
           generalConfigQuery.data?.chatInputShortcutTipDismissed ?? false,
+        chatEditMessageTipDismissed:
+          generalConfigQuery.data?.chatEditMessageTipDismissed ?? false,
         showHiddenSessions:
           generalConfigQuery.data?.showHiddenSessions ?? false,
       }),
