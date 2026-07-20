@@ -496,8 +496,11 @@ const waitForSessionQueueIdle = async (
   payload: Pick<ChatSendPayload, "scope" | "sessionId">,
 ): Promise<void> => {
   const storeKey = getQueueStoreKey(payload);
-  const deadline = Date.now() + 10_000;
-  while (sessionQueueStore.get(storeKey)?.processing && Date.now() < deadline) {
+  const deadline = Date.now() + 30_000;
+  while (sessionQueueStore.get(storeKey)?.processing) {
+    if (Date.now() >= deadline) {
+      throw new Error("当前回答还未完全停止，请稍后重试");
+    }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 };

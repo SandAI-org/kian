@@ -2990,7 +2990,7 @@ export const ModuleChatPane = ({
         requestRef.current = undefined;
       }
       clearSessionStream(variables.sessionId);
-      message.error(error instanceof Error ? error.message : t("发送失败"));
+      message.error(error instanceof Error ? t(error.message) : t("发送失败"));
     },
   });
 

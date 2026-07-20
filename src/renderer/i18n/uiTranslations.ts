@@ -141,6 +141,12 @@ const EN_US_EXACT: Record<string, string> = {
   "保存图片到剪贴板失败": "Failed to save image to clipboard",
   "复制 Markdown": "Copy Markdown",
   "编辑消息": "Edit message",
+  "找不到要编辑的消息": "Could not find the message to edit",
+  "没有可编辑的历史对话": "There are no previous messages to edit",
+  "无法定位要编辑的消息": "Could not locate the message to edit",
+  "重置会话上下文失败": "Failed to reset the conversation context",
+  "当前回答还未完全停止，请稍后重试":
+    "The current reply has not fully stopped yet. Please try again shortly.",
   "正在编辑历史消息，发送后其后的对话将被移除":
     "Editing an earlier message. Sending will remove the conversation after it.",
   "Markdown 已复制": "Markdown copied",
@@ -564,6 +570,12 @@ const KO_KR_EXACT: Record<string, string> = {
   "保存图片失败": "이미지 저장 실패",
   "复制 Markdown": "Markdown 복사",
   "编辑消息": "메시지 편집",
+  "找不到要编辑的消息": "편집할 메시지를 찾을 수 없습니다",
+  "没有可编辑的历史对话": "편집할 수 있는 이전 메시지가 없습니다",
+  "无法定位要编辑的消息": "편집할 메시지의 위치를 찾을 수 없습니다",
+  "重置会话上下文失败": "대화 컨텍스트를 재설정하지 못했습니다",
+  "当前回答还未完全停止，请稍后重试":
+    "현재 답변이 아직 완전히 중지되지 않았습니다. 잠시 후 다시 시도해 주세요.",
   "正在编辑历史消息，发送后其后的对话将被移除":
     "이전 메시지를 편집 중입니다. 전송하면 이후 대화가 삭제됩니다.",
   "Markdown 已复制": "Markdown 복사됨",
@@ -830,6 +842,12 @@ const JA_JP_EXACT: Record<string, string> = {
   "保存图片失败": "画像の保存に失敗しました",
   "复制 Markdown": "Markdown をコピー",
   "编辑消息": "メッセージを編集",
+  "找不到要编辑的消息": "編集するメッセージが見つかりません",
+  "没有可编辑的历史对话": "編集できる過去のメッセージがありません",
+  "无法定位要编辑的消息": "編集するメッセージの位置を特定できません",
+  "重置会话上下文失败": "会話コンテキストのリセットに失敗しました",
+  "当前回答还未完全停止，请稍后重试":
+    "現在の回答はまだ完全に停止していません。しばらくしてからもう一度お試しください。",
   "正在编辑历史消息，发送后其后的对话将被移除":
     "以前のメッセージを編集中です。送信すると、それ以降の会話は削除されます。",
   "Markdown 已复制": "Markdown をコピーしました",
