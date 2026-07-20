@@ -2404,6 +2404,9 @@ export const ModuleChatPane = ({
   const pendingFilesRef = useRef<LocalChatFile[]>([]);
   const queuedSendPayloadsRef = useRef<QueuedSendPayload[]>([]);
   const queuedMessagesSnapshotRef = useRef<ChatQueuedMessageDTO[]>([]);
+  const editSnapshotsByRequestIdRef = useRef(
+    new Map<string, { sessionId: string; messages: ChatMessageDTO[] }>(),
+  );
   const hasHydratedThinkingLevelRef = useRef(false);
   const initializedScopeKeyRef = useRef<string | null>(null);
   const previousStreamSnapshotRef = useRef<{
@@ -2868,6 +2871,7 @@ export const ModuleChatPane = ({
       });
     },
     onSuccess: (data, variables) => {
+      editSnapshotsByRequestIdRef.current.delete(variables.requestId);
       if (variables.localDisposition === "process_now" && data.queued) {
         setPendingUserMessages((prev) =>
           prev.filter((item) => item.id !== variables.pendingMessage.id),
@@ -2918,6 +2922,20 @@ export const ModuleChatPane = ({
       }
     },
     onError: (error, variables) => {
+      const editSnapshot = editSnapshotsByRequestIdRef.current.get(
+        variables.requestId,
+      );
+      if (editSnapshot) {
+        editSnapshotsByRequestIdRef.current.delete(variables.requestId);
+        queryClient.setQueryData<ChatMessageDTO[]>(
+          ["chat-messages", scopeKey, editSnapshot.sessionId],
+          editSnapshot.messages,
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ["chat-messages", scopeKey, editSnapshot.sessionId],
+          exact: true,
+        });
+      }
       setPendingUserMessages((prev) =>
         prev.filter((item) => item.id !== variables.pendingMessage.id),
       );
@@ -3579,7 +3597,8 @@ export const ModuleChatPane = ({
 
       if (editTarget) {
         setEditingMessage(null);
-        // Optimistically drop the edited message and everything after it.
+        // Optimistically drop the edited message and everything after it,
+        // keeping a snapshot so a failed edit can restore the timeline.
         queryClient.setQueryData<ChatMessageDTO[]>(
           ["chat-messages", scopeKey, sessionId],
           (prev) => {
@@ -3587,7 +3606,12 @@ export const ModuleChatPane = ({
             const targetIndex = prev.findIndex(
               (item) => item.id === editTarget.id,
             );
-            return targetIndex < 0 ? prev : prev.slice(0, targetIndex);
+            if (targetIndex < 0) return prev;
+            editSnapshotsByRequestIdRef.current.set(requestId, {
+              sessionId,
+              messages: prev,
+            });
+            return prev.slice(0, targetIndex);
           },
         );
         setPendingUserMessages([nextPayload.pendingMessage]);
