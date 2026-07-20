@@ -435,6 +435,45 @@ const buildExtendedMarkdown = (
 const buildMentionFileMarkdown = (localPath: string, label: string): string =>
   buildExtendedMarkdown("mention-file", localPath, label);
 
+const EDITABLE_ATTACHMENT_LINE_PATTERN =
+  /^@\[(image|video|audio|file|attachment)(?:\|[^\]]*)?\]\(([^)\n]+)\)$/;
+
+// Split a persisted user message back into editable text + attachment files,
+// so re-sending an edited message keeps attachments on the structured
+// attachments channel instead of as literal markdown text.
+const splitEditableMessageContent = (
+  content: string,
+): { text: string; files: LocalChatFile[] } => {
+  const files: LocalChatFile[] = [];
+  const textLines: string[] = [];
+  for (const line of content.split("\n")) {
+    const match = line.trim().match(EDITABLE_ATTACHMENT_LINE_PATTERN);
+    if (!match) {
+      textLines.push(line);
+      continue;
+    }
+    const sourcePath = stripWrappedPath(match[2]);
+    const name = sourcePath.replace(/\\/g, "/").split("/").pop() || sourcePath;
+    const extension = getFileExtension(name);
+    const isImage = match[1] === "image";
+    files.push({
+      key: `edit-${files.length}-${sourcePath}`,
+      name,
+      sourcePath,
+      size: 0,
+      extension,
+      previewUrl: isImage
+        ? `${LOCAL_MEDIA_SCHEME_PREFIX}${encodeURIComponent(sourcePath)}`
+        : undefined,
+    });
+  }
+  let text = textLines.join("\n").trim();
+  if (files.length > 0 && text === "（仅上传了附件）") {
+    text = "";
+  }
+  return { text, files };
+};
+
 const formatDraftMessage = (text: string, files: LocalChatFile[]): string => {
   const base = text.trim();
   if (files.length === 0) {
@@ -3726,11 +3765,12 @@ export const ModuleChatPane = ({
           requestId: requestRef.current ?? activeRequestId,
         });
       }
+      const { text, files } = splitEditableMessageContent(target.content);
       setEditingMessage(target);
-      setInput(target.content);
+      setInput(text);
       setPendingFiles((prev) => {
         revokePreviewUrls(prev);
-        return [];
+        return files;
       });
       window.requestAnimationFrame(() => {
         focusChatInput();
@@ -3749,6 +3789,10 @@ export const ModuleChatPane = ({
   const handleCancelEditMessage = useCallback((): void => {
     setEditingMessage(null);
     setInput("");
+    setPendingFiles((prev) => {
+      revokePreviewUrls(prev);
+      return [];
+    });
   }, []);
 
   useEffect(() => {
