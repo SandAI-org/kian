@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerHandlers } from './ipc/registerHandlers';
+import { registerBedrockStreamApi } from './services/bedrockStreamApi';
 import { chatChannelService } from './services/chatChannelService';
 import { chatEvents } from './services/chatEvents';
 import { initializeAnalytics, trackAnalyticsEvent } from './services/analyticsService';
@@ -70,6 +71,8 @@ const resolvedFixPath =
 
 // Align PATH with the user's shell environment for GUI launches on Unix-like systems.
 resolvedFixPath?.();
+
+registerBedrockStreamApi();
 
 app.setName(APP_DISPLAY_NAME);
 initializeAnalytics('A-US-5497948815');
