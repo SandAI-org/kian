@@ -19,6 +19,7 @@ import {
   trackAnalyticsEvent,
 } from "./analyticsService";
 import { appOperationEvents } from "./appOperationEvents";
+import { getSharedAuthStorage } from "./authStorageService";
 import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
 import {
@@ -279,11 +280,15 @@ const generateSessionTitle = async (
       return;
     }
 
-    // Get API key for the provider
+    // Get API key for the provider; falls back to OAuth subscription
+    // credentials in auth storage (auto-refreshed by pi).
     const providerState = status.providers[provider];
     const apiKey =
       providerState?.apiKey ||
-      (await settingsService.getClaudeSecret(provider));
+      (await settingsService.getClaudeSecret(provider)) ||
+      (await getSharedAuthStorage()
+        .getApiKey(provider)
+        .catch(() => undefined));
     if (!apiKey) {
       logger.debug("Auto title skipped: missing provider api key", {
         sessionId: payload.sessionId,

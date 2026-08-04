@@ -143,6 +143,30 @@ const KNOWN_PROVIDER_META: Record<
   xai: { keyLabel: "API Key", keyPlaceholder: "xai-..." },
 };
 
+const OAUTH_PROVIDER_META: Record<
+  string,
+  { subscriptionHint: string; hideApiKey: boolean }
+> = {
+  anthropic: {
+    subscriptionHint: "使用 Claude Pro/Max 订阅额度调用模型，无需 API Key。",
+    hideApiKey: false,
+  },
+  "openai-codex": {
+    subscriptionHint:
+      "使用 ChatGPT Plus/Pro 订阅额度调用 Codex 模型，无需 API Key。",
+    hideApiKey: true,
+  },
+};
+
+interface OAuthLoginState {
+  provider: string;
+  loginId?: string;
+  authUrl?: string;
+  status: "starting" | "waiting" | "error";
+  error?: string;
+  submittingCode?: boolean;
+}
+
 const getProviderMeta = (provider: string) =>
   KNOWN_PROVIDER_META[
     isCustomApiProviderId(provider) ? CUSTOM_API_PROVIDER : provider
@@ -974,6 +998,8 @@ export const SettingsPage = () => {
     string | null
   >(null);
   const [customModelModalOpen, setCustomModelModalOpen] = useState(false);
+  const [oauthLogin, setOauthLogin] = useState<OAuthLoginState | null>(null);
+  const [oauthManualCode, setOauthManualCode] = useState("");
   const [editingCustomModelIndex, setEditingCustomModelIndex] = useState<
     number | null
   >(null);
@@ -1442,6 +1468,101 @@ export const SettingsPage = () => {
     t,
   ]);
 
+  const refreshClaudeStatusAfterOAuthChange = useCallback(
+    async (providerId: string) => {
+      const statusResult = await claudeStatusQuery.refetch();
+      if (statusResult.data) {
+        syncClaudeProviderDraftFromStatus(providerId, statusResult.data, {
+          applyToForm:
+            String(claudeForm.getFieldValue("provider") ?? "").trim() ===
+            providerId,
+        });
+      }
+    },
+    [claudeForm, claudeStatusQuery, syncClaudeProviderDraftFromStatus],
+  );
+
+  const handleOAuthLoginStart = useCallback(
+    async (providerId: string) => {
+      setOauthManualCode("");
+      setOauthLogin({ provider: providerId, status: "starting" });
+      try {
+        const started = await api.settings.oauthLoginStart(providerId);
+        setOauthLogin((current) =>
+          current && current.provider === providerId
+            ? {
+                ...current,
+                loginId: started.loginId,
+                authUrl: started.authUrl,
+                status: "waiting",
+              }
+            : current,
+        );
+        await api.settings.oauthLoginWait(started.loginId);
+        setOauthLogin(null);
+        message.success(t("订阅登录成功"));
+        await refreshClaudeStatusAfterOAuthChange(providerId);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : t("登录失败");
+        setOauthLogin((current) =>
+          current && current.provider === providerId
+            ? { ...current, status: "error", error: errorMessage }
+            : current,
+        );
+      }
+    },
+    [refreshClaudeStatusAfterOAuthChange, t],
+  );
+
+  const handleOAuthLoginCancel = useCallback(() => {
+    const loginId = oauthLogin?.loginId;
+    setOauthLogin(null);
+    if (loginId) {
+      void api.settings.oauthLoginCancel(loginId).catch(() => {});
+    }
+  }, [oauthLogin]);
+
+  const handleOAuthSubmitCode = useCallback(async () => {
+    const loginId = oauthLogin?.loginId;
+    const code = oauthManualCode.trim();
+    if (!loginId || !code) return;
+    setOauthLogin((current) =>
+      current ? { ...current, submittingCode: true } : current,
+    );
+    try {
+      await api.settings.oauthLoginSubmitCode(loginId, code);
+    } catch (error) {
+      message.error(
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : t("授权码提交失败"),
+      );
+      setOauthLogin((current) =>
+        current ? { ...current, submittingCode: false } : current,
+      );
+    }
+  }, [oauthLogin, oauthManualCode, t]);
+
+  const handleOAuthLogout = useCallback(
+    async (providerId: string) => {
+      try {
+        await api.settings.oauthLogout(providerId);
+        message.success(t("已退出订阅登录"));
+        await refreshClaudeStatusAfterOAuthChange(providerId);
+      } catch (error) {
+        message.error(
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : t("退出登录失败"),
+        );
+      }
+    },
+    [refreshClaudeStatusAfterOAuthChange, t],
+  );
+
   useEffect(() => {
     if (!generalConfigQuery.data) return;
     generalForm.setFieldsValue({
@@ -1571,6 +1692,16 @@ export const SettingsPage = () => {
   const tokenFilled = Boolean(secretText);
   const baseUrlText = String(baseUrlValue ?? "").trim();
   const apiText = String(apiValue ?? "").trim();
+  const selectedProviderOAuthMeta = OAUTH_PROVIDER_META[provider];
+  const providerOAuthSupported = Boolean(
+    claudeProviderStatusMap?.[provider]?.oauthSupported &&
+      selectedProviderOAuthMeta,
+  );
+  const providerOAuthLoggedIn = Boolean(
+    claudeProviderStatusMap?.[provider]?.oauthLoggedIn,
+  );
+  const providerHidesApiKey =
+    providerOAuthSupported && Boolean(selectedProviderOAuthMeta?.hideApiKey);
   const normalizedCustomModels = normalizeCustomModelFormValues(customModelsValue);
   const customModelIds = normalizedCustomModels.map((model) => model.id);
   const customModelIdsSignature = customModelIds.join("|");
@@ -2941,7 +3072,51 @@ export const SettingsPage = () => {
                                 </div>
                               ) : null}
 
-                              {isCustomApiProvider ? (
+                              {providerOAuthSupported ? (
+                                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <Typography.Text strong>
+                                        {t("订阅登录")}
+                                      </Typography.Text>
+                                      <div className="text-[12px] text-slate-500">
+                                        {t(
+                                          selectedProviderOAuthMeta?.subscriptionHint ??
+                                            "",
+                                        )}
+                                      </div>
+                                    </div>
+                                    {providerOAuthLoggedIn ? (
+                                      <div className="flex shrink-0 items-center gap-2">
+                                        <span className="text-[12px] font-medium text-emerald-600">
+                                          {t("已登录")}
+                                        </span>
+                                        <Button
+                                          size="small"
+                                          onClick={() =>
+                                            void handleOAuthLogout(provider)
+                                          }
+                                        >
+                                          {t("退出登录")}
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Button
+                                        size="small"
+                                        type="primary"
+                                        className="shrink-0"
+                                        onClick={() =>
+                                          void handleOAuthLoginStart(provider)
+                                        }
+                                      >
+                                        {t("登录订阅账号")}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {isCustomApiProvider || providerHidesApiKey ? (
                                 <Form.Item name="secret" hidden>
                                   <Input />
                                 </Form.Item>
@@ -2960,6 +3135,7 @@ export const SettingsPage = () => {
                                         if (
                                           enabled &&
                                           !isCustomApiProvider &&
+                                          !providerOAuthLoggedIn &&
                                           !String(value ?? "").trim()
                                         ) {
                                           return Promise.reject(
@@ -4451,6 +4627,80 @@ export const SettingsPage = () => {
               <Input.Password placeholder="sk-..." />
             </Form.Item>
           </Form>
+        </Modal>
+        <Modal
+          open={Boolean(oauthLogin)}
+          title={t("订阅登录")}
+          onCancel={handleOAuthLoginCancel}
+          footer={null}
+          destroyOnHidden
+        >
+          {oauthLogin ? (
+            <div className="flex flex-col gap-3 pt-2">
+              {oauthLogin.status === "error" ? (
+                <>
+                  <Typography.Text type="danger">
+                    {oauthLogin.error ?? t("登录失败")}
+                  </Typography.Text>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="primary"
+                      onClick={() =>
+                        void handleOAuthLoginStart(oauthLogin.provider)
+                      }
+                    >
+                      {t("重试")}
+                    </Button>
+                    <Button onClick={handleOAuthLoginCancel}>
+                      {t("关闭")}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Typography.Text>
+                    {oauthLogin.status === "starting"
+                      ? t("正在准备授权页面...")
+                      : t("已在浏览器打开授权页面，请完成登录并授权。")}
+                  </Typography.Text>
+                  {oauthLogin.authUrl ? (
+                    <div className="rounded-md bg-slate-50 px-3 py-2">
+                      <Typography.Text
+                        copyable={{ text: oauthLogin.authUrl }}
+                        className="!text-[12px] break-all"
+                      >
+                        {oauthLogin.authUrl}
+                      </Typography.Text>
+                    </div>
+                  ) : null}
+                  <div className="text-[12px] text-slate-500">
+                    {t(
+                      "浏览器没有自动打开时，可复制上方链接手动访问。授权完成后此窗口会自动关闭；如果授权页面提供了授权码，也可以粘贴到下方提交。",
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={oauthManualCode}
+                      onChange={(event) =>
+                        setOauthManualCode(event.target.value)
+                      }
+                      placeholder={t("粘贴授权码（可选）")}
+                      onPressEnter={() => void handleOAuthSubmitCode()}
+                    />
+                    <Button
+                      onClick={() => void handleOAuthSubmitCode()}
+                      loading={Boolean(oauthLogin.submittingCode)}
+                      disabled={
+                        !oauthManualCode.trim() || !oauthLogin.loginId
+                      }
+                    >
+                      {t("提交")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
         </Modal>
         <Modal
           open={customModelModalOpen}

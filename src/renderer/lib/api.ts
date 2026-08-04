@@ -297,6 +297,18 @@ export const api = {
       enabledModels: string[];
     }) =>
       unwrap(await window.api.settings.saveClaudeApiKey(payload)),
+    oauthLoginStart: async (
+      provider: string,
+    ): Promise<{ loginId: string; authUrl?: string }> =>
+      unwrap(await window.api.settings.oauthLoginStart(provider)),
+    oauthLoginWait: async (loginId: string) =>
+      unwrap(await window.api.settings.oauthLoginWait(loginId)),
+    oauthLoginSubmitCode: async (loginId: string, code: string) =>
+      unwrap(await window.api.settings.oauthLoginSubmitCode(loginId, code)),
+    oauthLoginCancel: async (loginId: string) =>
+      unwrap(await window.api.settings.oauthLoginCancel(loginId)),
+    oauthLogout: async (provider: string) =>
+      unwrap(await window.api.settings.oauthLogout(provider)),
     getAvailableProviders: async (): Promise<AgentProviderDTO[]> =>
       unwrap(await window.api.settings.getAvailableProviders()),
     getAvailableModels: async (provider: string): Promise<AgentModelDTO[]> =>

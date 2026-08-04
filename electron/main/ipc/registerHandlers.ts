@@ -35,6 +35,10 @@ import {
   fileSavePngSchema,
   fileShowInFinderSchema,
   getAvailableModelsSchema,
+  oauthLoginIdSchema,
+  oauthLoginStartSchema,
+  oauthLoginSubmitCodeSchema,
+  oauthLogoutSchema,
   projectCreateSchema,
   projectUpdateSchema,
   skillContentSchema,
@@ -89,6 +93,13 @@ import { agentGroupService } from '../services/agentGroupService';
 import { linkOpenService } from '../services/linkOpenService';
 import { resolveLocalMediaPath } from '../services/localMediaPath';
 import { settingsRuntimeService } from '../services/settingsRuntimeService';
+import {
+  cancelOAuthLogin,
+  oauthLogout,
+  startOAuthLogin,
+  submitOAuthLoginCode,
+  waitOAuthLogin,
+} from '../services/authStorageService';
 import { weixinChannelService } from '../services/chatChannel/weixinChannelService';
 import { INTERNAL_ROOT } from '../services/workspacePaths';
 
@@ -584,6 +595,32 @@ export const registerHandlers = (): void => {
       customModels: input.customModels,
       enabledModels: input.enabledModels
     });
+    await settingsRuntimeService.reload({
+      targets: [...settingsReloadTargets.agentRuntime]
+    });
+    return true;
+  });
+  handle('settings:oauthLoginStart', oauthLoginStartSchema, async (input) =>
+    startOAuthLogin(input.provider)
+  );
+  handle('settings:oauthLoginWait', oauthLoginIdSchema, async (input) => {
+    const provider = await waitOAuthLogin(input.loginId);
+    await settingsService.ensureProviderEnabledForOAuth(provider);
+    await settingsRuntimeService.reload({
+      targets: [...settingsReloadTargets.agentRuntime]
+    });
+    return true;
+  });
+  handle('settings:oauthLoginSubmitCode', oauthLoginSubmitCodeSchema, async (input) => {
+    submitOAuthLoginCode(input.loginId, input.code);
+    return true;
+  });
+  handle('settings:oauthLoginCancel', oauthLoginIdSchema, async (input) => {
+    cancelOAuthLogin(input.loginId);
+    return true;
+  });
+  handle('settings:oauthLogout', oauthLogoutSchema, async (input) => {
+    oauthLogout(input.provider);
     await settingsRuntimeService.reload({
       targets: [...settingsReloadTargets.agentRuntime]
     });

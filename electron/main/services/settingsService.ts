@@ -42,6 +42,11 @@ import { app } from "electron";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  OAUTH_SUBSCRIPTION_PROVIDERS,
+  hasOAuthCredential,
+  isOAuthSubscriptionProvider,
+} from "./authStorageService";
 import { chatChannelOwnerDiscoveryService } from "./chatChannelOwnerDiscoveryService";
 import { FAL_SUPPORTED_MODELS } from "./modelProviders/falProvider";
 import { logger } from "./logger";
@@ -783,6 +788,12 @@ const isProviderEntryConfigured = (
   if (isCustomAgentProviderId(providerEntry.provider)) {
     return isCustomApiProviderEntryConfigured(providerEntry);
   }
+  if (
+    isOAuthSubscriptionProvider(providerEntry.provider) &&
+    hasOAuthCredential(providerEntry.provider)
+  ) {
+    return true;
+  }
   return Boolean(providerEntry.apiKey);
 };
 
@@ -1325,6 +1336,7 @@ export const settingsService = {
     for (const entry of settings.providers) {
       const configured = isProviderEntryConfigured(entry);
       const enabledModels = getConfiguredEnabledModels(entry);
+      const oauthSupported = isOAuthSubscriptionProvider(entry.provider);
       providers[entry.provider] = {
         configured,
         enabled: entry.enabled,
@@ -1333,6 +1345,10 @@ export const settingsService = {
         api: entry.api,
         customModels: entry.customModels,
         enabledModels,
+        oauthSupported: oauthSupported || undefined,
+        oauthLoggedIn: oauthSupported
+          ? hasOAuthCredential(entry.provider)
+          : undefined,
       };
 
       if (entry.enabled && configured && enabledModels.length > 0) {
@@ -1351,6 +1367,23 @@ export const settingsService = {
           });
         }
       }
+    }
+
+    // Subscription providers are configurable before any settings entry
+    // exists (login happens first), so surface them to the renderer even
+    // when settings.json has no record yet.
+    for (const providerId of OAUTH_SUBSCRIPTION_PROVIDERS) {
+      if (providers[providerId]) continue;
+      const loggedIn = hasOAuthCredential(providerId);
+      providers[providerId] = {
+        configured: loggedIn,
+        enabled: false,
+        apiKey: "",
+        customModels: [],
+        enabledModels: [],
+        oauthSupported: true,
+        oauthLoggedIn: loggedIn,
+      };
     }
 
     return {
@@ -1372,6 +1405,41 @@ export const settingsService = {
           ? "default-main-system-prompt.md"
           : "default-system-prompt.md",
     );
+  },
+
+  /**
+   * After a successful OAuth login, make sure the provider has a settings
+   * entry and is enabled so its models show up immediately. Existing entry
+   * fields (api key, enabled models) are preserved.
+   */
+  async ensureProviderEnabledForOAuth(provider: string): Promise<void> {
+    const providerId = normalizeAgentProviderId(provider);
+    if (!isOAuthSubscriptionProvider(providerId)) return;
+    await withSettingsWriteLock(async () => {
+      const settings = await readSettingsFile();
+      const existing = settings.providers.find(
+        (entry) => entry.provider === providerId,
+      );
+      if (existing?.enabled) return;
+      const nextEntry: ProviderEntry = existing
+        ? { ...existing, enabled: true }
+        : {
+            provider: providerId,
+            enabled: true,
+            apiKey: "",
+            customModels: [],
+            enabledModels: [],
+          };
+      const nextProviders = existing
+        ? settings.providers.map((entry) =>
+            entry.provider === providerId ? nextEntry : entry,
+          )
+        : [...settings.providers, nextEntry];
+      await writeSettingsFile({
+        ...settings,
+        providers: nextProviders,
+      });
+    });
   },
 
   async getClaudeSecret(provider: string): Promise<string | null> {
@@ -2050,17 +2118,18 @@ export const settingsService = {
   async getAvailableProviders(): Promise<AgentProviderDTO[]> {
     const settings = await readSettingsFile();
     const hidden = new Set([
-      'anthropic',
-      'openai-codex',
       'github-copilot',
       'google-antigravity',
       'google-gemini-cli',
     ]);
+    const displayNameOverrides: Record<string, string> = {
+      "openai-codex": "OpenAI Codex",
+    };
     const providers: AgentProviderDTO[] = getProviders()
       .filter((id) => !hidden.has(id))
       .map((id) => ({
         id,
-        name: toProviderDisplayName(id),
+        name: displayNameOverrides[id] ?? toProviderDisplayName(id),
       }));
     const customProviders = settings.providers
       .filter((entry) => isCustomAgentProviderId(entry.provider))

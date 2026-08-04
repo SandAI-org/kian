@@ -523,6 +523,8 @@ export interface ProviderConfigEntry {
   api?: string;
   customModels: CustomAgentModelConfigDTO[];
   enabledModels: string[];
+  oauthSupported?: boolean;
+  oauthLoggedIn?: boolean;
 }
 
 export interface EnabledModelEntry {

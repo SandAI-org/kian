@@ -1,6 +1,5 @@
 import { Type, type AssistantMessageEvent } from "@earendil-works/pi-ai";
 import {
-  AuthStorage,
   createAgentSession,
   createCodingTools,
   DefaultResourceLoader,
@@ -35,6 +34,7 @@ import {
   buildSessionSystemPrompt,
   type SessionContextFile,
 } from "./agentPrompt";
+import { getAuthGeneration, getSharedAuthStorage } from "./authStorageService";
 import { appOperationEvents } from "./appOperationEvents";
 import { createAppOperationTools } from "./appOperationMcpServer";
 import { createAgentGroupTools } from "./agentGroupService";
@@ -164,6 +164,7 @@ const nowISO = (): string => new Date().toISOString();
 const buildAgentModelConfigSignature = (input: {
   provider: string;
   apiKey?: string;
+  authGeneration?: number;
   model: {
     id: string;
     api: string;
@@ -181,6 +182,7 @@ const buildAgentModelConfigSignature = (input: {
       JSON.stringify({
         provider: input.provider,
         apiKey: input.apiKey ?? null,
+        authGeneration: input.authGeneration ?? 0,
         modelId: input.model.id,
         api: input.model.api,
         baseUrl: input.model.baseUrl ?? null,
@@ -1462,6 +1464,7 @@ const createOrResumeSession = async (
   const currentModelConfigSignature = buildAgentModelConfigSignature({
     provider: effectiveProvider,
     apiKey: providerApiKey,
+    authGeneration: getAuthGeneration(),
     model,
   });
   const sessionDir = getPersistentSessionDir(projectCwd, chatSessionId);
@@ -1561,14 +1564,17 @@ const createOrResumeSession = async (
     }
   }
 
-  // Configure auth storage with the user's API key
-  const authStorage = AuthStorage.inMemory();
+  // Sync the user's API keys into the shared persistent auth storage as
+  // runtime overrides. Providers without a key fall through to OAuth
+  // subscription credentials in ~/.kian/auth.json (auto-refreshed by pi).
+  const authStorage = getSharedAuthStorage();
   for (const [provider, providerState] of Object.entries(status.providers)) {
-    if (!providerState.apiKey) continue;
-    authStorage.setRuntimeApiKey(
-      toAuthProviderKey(provider),
-      providerState.apiKey,
-    );
+    const authKey = toAuthProviderKey(provider);
+    if (providerState.apiKey) {
+      authStorage.setRuntimeApiKey(authKey, providerState.apiKey);
+    } else {
+      authStorage.removeRuntimeApiKey(authKey);
+    }
   }
   if (!status.providers[effectiveProvider]?.apiKey) {
     if (providerApiKey) {

@@ -409,6 +409,19 @@ const api = {
       }>;
       enabledModels: string[];
     }) => invoke<boolean>("settings:saveClaudeApiKey", payload),
+    oauthLoginStart: (provider: string) =>
+      invoke<{ loginId: string; authUrl?: string }>(
+        "settings:oauthLoginStart",
+        { provider },
+      ),
+    oauthLoginWait: (loginId: string) =>
+      invoke<boolean>("settings:oauthLoginWait", { loginId }),
+    oauthLoginSubmitCode: (loginId: string, code: string) =>
+      invoke<boolean>("settings:oauthLoginSubmitCode", { loginId, code }),
+    oauthLoginCancel: (loginId: string) =>
+      invoke<boolean>("settings:oauthLoginCancel", { loginId }),
+    oauthLogout: (provider: string) =>
+      invoke<boolean>("settings:oauthLogout", { provider }),
     getAvailableProviders: () =>
       invoke<AgentProviderDTO[]>("settings:getAvailableProviders"),
     getAvailableModels: (provider: string) =>

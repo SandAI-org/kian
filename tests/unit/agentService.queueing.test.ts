@@ -55,6 +55,14 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     inMemory: () => ({
       setRuntimeApiKey: vi.fn(),
     }),
+    create: () => ({
+      setRuntimeApiKey: vi.fn(),
+      removeRuntimeApiKey: vi.fn(),
+      get: vi.fn(() => undefined),
+      getApiKey: vi.fn(async () => undefined),
+      login: vi.fn(async () => {}),
+      logout: vi.fn(),
+    }),
   },
   createAgentSession: (...args: unknown[]) => state.createAgentSession(...args),
   createCodingTools: () => [],

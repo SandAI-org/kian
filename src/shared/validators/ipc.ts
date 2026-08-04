@@ -657,6 +657,23 @@ export const getAvailableModelsSchema = z.object({
   provider: z.string().min(1)
 });
 
+export const oauthLoginStartSchema = z.object({
+  provider: z.string().min(1)
+});
+
+export const oauthLoginIdSchema = z.object({
+  loginId: z.string().min(1)
+});
+
+export const oauthLoginSubmitCodeSchema = z.object({
+  loginId: z.string().min(1),
+  code: z.string().trim().min(1)
+});
+
+export const oauthLogoutSchema = z.object({
+  provider: z.string().min(1)
+});
+
 export const updateCheckSchema = z
   .object({
     force: z.boolean().optional()
