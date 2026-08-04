@@ -4439,7 +4439,9 @@ export const ModuleChatPane = ({
           </ScrollArea>
         ) : null}
 
-        <div className="z-10 mt-2 shrink-0">
+        <div
+          className={`z-10 shrink-0 ${showEmptyState || !isEmpty ? "mt-2" : ""}`}
+        >
           {composer}
         </div>
       </div>

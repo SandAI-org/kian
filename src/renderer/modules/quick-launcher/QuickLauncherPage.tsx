@@ -108,14 +108,23 @@ export const QuickLauncherPage = () => {
   }, []);
 
   const focusInput = useCallback(() => {
-    const textarea = panelRef.current?.querySelector("textarea");
-    if (!(textarea instanceof HTMLTextAreaElement)) {
+    const editorElement = panelRef.current?.querySelector(
+      '[data-chat-composer-editor="true"]',
+    );
+    if (!(editorElement instanceof HTMLElement)) {
       return false;
     }
-    textarea.focus();
-    const cursor = textarea.value.length;
-    textarea.setSelectionRange(cursor, cursor);
-    return true;
+    editorElement.focus();
+    const selection = window.getSelection();
+    if (!selection) {
+      return document.activeElement === editorElement;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(editorElement);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return document.activeElement === editorElement;
   }, []);
 
   const scheduleFocusInput = useCallback(
@@ -321,7 +330,7 @@ export const QuickLauncherPage = () => {
       className={`drag-region w-full ${hasConversationContent ? "h-full" : ""}`}
     >
       <div
-        className={`relative flex flex-col overflow-hidden rounded-[32px] backdrop-blur ${
+        className={`relative flex flex-col overflow-hidden rounded-xl backdrop-blur ${
           hasConversationContent ? "h-full" : ""
         }`}
         style={{
@@ -360,10 +369,19 @@ export const QuickLauncherPage = () => {
               />
             </Tooltip>
           </div>
-        ) : null}
+        ) : (
+          <div
+            className="drag-region flex cursor-grab items-center justify-center border-b px-4 py-2 active:cursor-grabbing"
+            style={{ borderBottomColor: "var(--stroke)" }}
+          >
+            <span className="select-none text-[12px] font-medium tracking-[0.02em] text-[var(--muted)]">
+              {t("快速对话")}
+            </span>
+          </div>
+        )}
 
         <div
-          className={`p-4 ${
+          className={`p-[2px] ${
             hasConversationContent ? "flex min-h-0 flex-1 flex-col" : ""
           }`}
         >

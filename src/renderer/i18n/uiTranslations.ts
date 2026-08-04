@@ -1052,6 +1052,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "任务 ID 格式不正确": "Invalid task ID format",
     "任务 ID 过长": "Task ID is too long",
     "打开快速启动器": "Open Quick Launcher",
+    "快速对话": "Quick Chat",
     "任意页面下打开快速启动器。":
       "Open the quick launcher from any page.",
     "会话：": "Session:",
@@ -1652,6 +1653,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "任务 ID 格式不正确": "작업 ID 형식이 올바르지 않습니다",
     "任务 ID 过长": "작업 ID가 너무 깁니다",
     "打开快速启动器": "퀵 런처 열기",
+    "快速对话": "빠른 대화",
     "任意页面下打开快速启动器。":
       "어느 페이지에서나 퀵 런처를 엽니다.",
     "任意页面下跳转到设置页面。":
@@ -2424,6 +2426,7 @@ const EXTRA_EXACT_TRANSLATIONS: Record<AppLanguage, Record<string, string>> = {
     "任务 ID 格式不正确": "タスク ID の形式が正しくありません",
     "任务 ID 过长": "タスク ID が長すぎます",
     "打开快速启动器": "クイックランチャーを開く",
+    "快速对话": "クイックチャット",
     "任意页面下打开快速启动器。":
       "どのページからでもクイックランチャーを開きます。",
     "任意页面下跳转到设置页面。":
