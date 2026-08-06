@@ -42,6 +42,8 @@ import type {
   FeishuChatChannelStatus,
   ModuleType,
   OnboardingEnvironmentStatus,
+  OpenaiCompatServerConfigDTO,
+  OpenaiCompatServerStatusDTO,
   ModelProviderConfigStatus,
   ProjectCreationSource,
   SkillConfigDTO,
@@ -402,8 +404,19 @@ export const api = {
       unwrap(await window.api.settings.setMcpServerEnabled(payload)),
     getGeneralConfig: async (): Promise<GeneralConfigDTO> =>
       unwrap(await window.api.settings.getGeneralConfig()),
-    saveGeneralConfig: async (payload: GeneralConfigDTO) =>
-      unwrap(await window.api.settings.saveGeneralConfig(payload))
+    saveGeneralConfig: async (payload: Omit<GeneralConfigDTO, "openaiCompatServer">) =>
+      unwrap(await window.api.settings.saveGeneralConfig(payload)),
+    saveOpenaiCompatServerConfig: async (payload: {
+      enabled: boolean;
+      port: number;
+      requireToken: boolean;
+      regenerateToken?: boolean;
+    }): Promise<{
+      config: OpenaiCompatServerConfigDTO;
+      status: OpenaiCompatServerStatusDTO;
+    }> => unwrap(await window.api.settings.saveOpenaiCompatServerConfig(payload)),
+    getOpenaiCompatServerStatus: async (): Promise<OpenaiCompatServerStatusDTO> =>
+      unwrap(await window.api.settings.getOpenaiCompatServerStatus())
   },
   skills: {
     getConfig: async (): Promise<SkillConfigDTO> => unwrap(await window.api.skills.getConfig()),

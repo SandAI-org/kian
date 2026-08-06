@@ -185,6 +185,28 @@ const EN_US_EXACT: Record<string, string> = {
   "已暂停": "Paused",
   "运行中": "Running",
   "已启用": "Enabled",
+  "API 服务": "API Service",
+  "鉴权": "Auth",
+  "需要鉴权": "Require authentication",
+  "需要 API Key": "Require API Key",
+  "已关闭鉴权，任何本机进程都可以直接调用该接口。":
+    "Auth is off; any local process can call this API directly.",
+  "修改端口后服务会自动重启。":
+    "The service restarts automatically after changing the port.",
+  "在第三方工具中把 API 地址设置为该 Base URL。":
+    "Set this Base URL as the API endpoint in third-party tools.",
+  "调用时需在 Authorization 请求头中携带 Bearer Key。":
+    "Requests must carry the Bearer key in the Authorization header.",
+  "本地 API 服务（OpenAI 兼容）": "Local API Service (OpenAI-compatible)",
+  "将已启用的模型（含订阅账号）代理为本地 OpenAI 兼容 API，仅监听本机 127.0.0.1。":
+    "Proxy enabled models (including subscription accounts) as a local OpenAI-compatible API. Listens on 127.0.0.1 only.",
+  "启动失败": "Failed to start",
+  "已关闭": "Off",
+  "端口": "Port",
+  "重新生成": "Regenerate",
+  "保存本地 API 服务配置失败": "Failed to save local API service settings",
+  "端口需为 1024-65535 之间的整数":
+    "Port must be an integer between 1024 and 65535",
   "未启用": "Disabled",
   "已停用": "Disabled",
   "还没有任务": "No tasks yet",
@@ -640,6 +662,28 @@ const KO_KR_EXACT: Record<string, string> = {
   "已暂停": "일시 중지됨",
   "运行中": "실행 중",
   "已启用": "활성화됨",
+  "API 服务": "API 서비스",
+  "鉴权": "인증",
+  "需要鉴权": "인증 필요",
+  "需要 API Key": "API Key 필요",
+  "已关闭鉴权，任何本机进程都可以直接调用该接口。":
+    "인증이 꺼져 있어 로컬의 모든 프로세스가 이 API를 직접 호출할 수 있습니다.",
+  "修改端口后服务会自动重启。":
+    "포트를 변경하면 서비스가 자동으로 재시작됩니다.",
+  "在第三方工具中把 API 地址设置为该 Base URL。":
+    "서드파티 도구에서 API 주소를 이 Base URL로 설정하세요.",
+  "调用时需在 Authorization 请求头中携带 Bearer Key。":
+    "요청 시 Authorization 헤더에 Bearer Key를 포함해야 합니다.",
+  "本地 API 服务（OpenAI 兼容）": "로컬 API 서비스 (OpenAI 호환)",
+  "将已启用的模型（含订阅账号）代理为本地 OpenAI 兼容 API，仅监听本机 127.0.0.1。":
+    "활성화된 모델(구독 계정 포함)을 로컬 OpenAI 호환 API로 프록시합니다. 127.0.0.1에서만 수신합니다.",
+  "启动失败": "시작 실패",
+  "已关闭": "꺼짐",
+  "端口": "포트",
+  "重新生成": "재생성",
+  "保存本地 API 服务配置失败": "로컬 API 서비스 설정 저장 실패",
+  "端口需为 1024-65535 之间的整数":
+    "포트는 1024-65535 사이의 정수여야 합니다",
   "未启用": "비활성화됨",
   "已停用": "비활성화됨",
   "还没有任务": "아직 작업이 없습니다",
@@ -938,6 +982,28 @@ const JA_JP_EXACT: Record<string, string> = {
   "已暂停": "一時停止中",
   "运行中": "実行中",
   "已启用": "有効",
+  "API 服务": "API サービス",
+  "鉴权": "認証",
+  "需要鉴权": "認証を要求",
+  "需要 API Key": "API Key を要求",
+  "已关闭鉴权，任何本机进程都可以直接调用该接口。":
+    "認証が無効のため、ローカルの任意のプロセスがこの API を直接呼び出せます。",
+  "修改端口后服务会自动重启。":
+    "ポートを変更するとサービスは自動的に再起動します。",
+  "在第三方工具中把 API 地址设置为该 Base URL。":
+    "サードパーティツールで API アドレスとしてこの Base URL を設定してください。",
+  "调用时需在 Authorization 请求头中携带 Bearer Key。":
+    "リクエスト時に Authorization ヘッダーへ Bearer Key を含める必要があります。",
+  "本地 API 服务（OpenAI 兼容）": "ローカル API サービス（OpenAI 互換）",
+  "将已启用的模型（含订阅账号）代理为本地 OpenAI 兼容 API，仅监听本机 127.0.0.1。":
+    "有効化されたモデル（サブスクリプションアカウントを含む）をローカルの OpenAI 互換 API としてプロキシします。127.0.0.1 のみで待ち受けます。",
+  "启动失败": "起動に失敗しました",
+  "已关闭": "オフ",
+  "端口": "ポート",
+  "重新生成": "再生成",
+  "保存本地 API 服务配置失败": "ローカル API サービス設定の保存に失敗しました",
+  "端口需为 1024-65535 之间的整数":
+    "ポートは 1024-65535 の整数で指定してください",
   "未启用": "無効",
   "已停用": "無効",
   "还没有任务": "まだタスクはありません",

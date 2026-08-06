@@ -646,6 +646,19 @@ export interface WeixinChatChannelStatus {
 
 export type LinkOpenMode = 'builtin' | 'system';
 
+export interface OpenaiCompatServerConfigDTO {
+  enabled: boolean;
+  port: number;
+  requireToken: boolean;
+  token: string;
+}
+
+export interface OpenaiCompatServerStatusDTO {
+  running: boolean;
+  port: number | null;
+  lastError: string | null;
+}
+
 export interface GeneralConfigDTO {
   workspaceRoot: string;
   workspaceRootRestartRequired?: boolean;
@@ -657,6 +670,7 @@ export interface GeneralConfigDTO {
   chatInputShortcutTipDismissed: boolean;
   chatEditMessageTipDismissed: boolean;
   showHiddenSessions: boolean;
+  openaiCompatServer: OpenaiCompatServerConfigDTO;
 }
 
 export interface BroadcastChannelDTO {

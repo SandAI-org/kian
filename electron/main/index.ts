@@ -50,6 +50,7 @@ import { registerAppPreviewPermissionService } from './services/appPreviewPermis
 import { linkOpenService } from './services/linkOpenService';
 import { settingsService } from './services/settingsService';
 import { settingsRuntimeService } from './services/settingsRuntimeService';
+import { openaiCompatServer } from './services/openaiCompat/server';
 
 const APP_DISPLAY_NAME = 'Kian';
 const LOCAL_MEDIA_SCHEME = 'kian-local';
@@ -1191,6 +1192,9 @@ app
       refreshQuickLauncherShortcutRegistration
     });
     registerHandlers();
+    void openaiCompatServer.start().catch((error) => {
+      logger.error('Failed to start OpenAI compat server', error);
+    });
     await skillService.syncBuiltinSkillsOnStartup().catch((error) => {
       logger.error('Failed to sync builtin skills on startup', error);
     });

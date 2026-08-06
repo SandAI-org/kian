@@ -267,11 +267,26 @@ describe("settingsService.getAgentSystemPrompt", () => {
       showHiddenSessions: true,
     });
 
-    await expect(
-      fs.readFile(path.join(tempRoot, ".global", "config.json"), "utf8"),
-    ).resolves.toBe(
-      '{\n  "workspaceRoot": "/tmp/next-workspace",\n  "language": "en-US",\n  "themeMode": "dark",\n  "linkOpenMode": "system",\n  "quickGuideDismissed": true,\n  "chatInputShortcutTipDismissed": true,\n  "chatEditMessageTipDismissed": true,\n  "showHiddenSessions": true\n}\n',
+    const rawConfig = await fs.readFile(
+      path.join(tempRoot, ".global", "config.json"),
+      "utf8",
     );
+    expect(JSON.parse(rawConfig)).toEqual({
+      workspaceRoot: "/tmp/next-workspace",
+      language: "en-US",
+      themeMode: "dark",
+      linkOpenMode: "system",
+      quickGuideDismissed: true,
+      chatInputShortcutTipDismissed: true,
+      chatEditMessageTipDismissed: true,
+      showHiddenSessions: true,
+      openaiCompatServer: {
+        enabled: false,
+        port: 23333,
+        requireToken: true,
+        token: "",
+      },
+    });
   });
 
   it("hydrates missing global dismiss flags from legacy config", async () => {
@@ -303,6 +318,12 @@ describe("settingsService.getAgentSystemPrompt", () => {
       chatInputShortcutTipDismissed: false,
       chatEditMessageTipDismissed: false,
       showHiddenSessions: false,
+      openaiCompatServer: {
+        enabled: false,
+        port: 23333,
+        requireToken: true,
+        token: "",
+      },
     });
   });
 

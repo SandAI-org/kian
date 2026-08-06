@@ -1,6 +1,10 @@
 import {
+  ApiOutlined,
   DeleteOutlined,
+  LinkOutlined,
+  LockOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   ReloadOutlined,
   SearchOutlined,
   WechatOutlined,
@@ -59,6 +63,7 @@ const SETTINGS_TABS = [
   "shortcuts",
   "agent",
   "model",
+  "apiServer",
   "channels",
   "broadcast",
   "about",
@@ -1082,6 +1087,10 @@ export const SettingsPage = () => {
     queryKey: ["update", "status"],
     queryFn: api.update.getStatus,
   });
+  const openaiServerStatusQuery = useQuery({
+    queryKey: ["settings", "openai-compat-server"],
+    queryFn: api.settings.getOpenaiCompatServerStatus,
+  });
 
   const handleAddTelegramOwnerUserId = useCallback(
     (userId: string) => {
@@ -1166,6 +1175,71 @@ export const SettingsPage = () => {
           values.enabledModels ?? providerStatusQuery.data?.enabledModels,
       }),
   });
+
+  const [openaiServerPortDraft, setOpenaiServerPortDraft] = useState<
+    string | null
+  >(null);
+  const saveOpenaiServerMutation = useMutation({
+    mutationFn: (payload: {
+      enabled: boolean;
+      port: number;
+      requireToken: boolean;
+      regenerateToken?: boolean;
+    }) => api.settings.saveOpenaiCompatServerConfig(payload),
+    onSuccess: ({ status }) => {
+      queryClient.setQueryData(
+        ["settings", "openai-compat-server"],
+        status,
+      );
+      setOpenaiServerPortDraft(null);
+      void generalConfigQuery.refetch();
+    },
+    onError: (error) => {
+      message.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t("保存本地 API 服务配置失败"),
+      );
+    },
+  });
+  const handleSaveOpenaiServer = useCallback(
+    (overrides: {
+      enabled?: boolean;
+      port?: number;
+      requireToken?: boolean;
+      regenerateToken?: boolean;
+    }) => {
+      const current = generalConfigQuery.data?.openaiCompatServer;
+      if (!current) return;
+      saveOpenaiServerMutation.mutate({
+        enabled: overrides.enabled ?? current.enabled,
+        port: overrides.port ?? current.port,
+        requireToken: overrides.requireToken ?? current.requireToken,
+        regenerateToken: overrides.regenerateToken,
+      });
+    },
+    [generalConfigQuery.data?.openaiCompatServer, saveOpenaiServerMutation],
+  );
+  const handleOpenaiServerPortCommit = useCallback(() => {
+    const current = generalConfigQuery.data?.openaiCompatServer;
+    if (!current || openaiServerPortDraft === null) return;
+    const parsed = Number(openaiServerPortDraft);
+    if (!Number.isInteger(parsed) || parsed < 1024 || parsed > 65535) {
+      message.error(t("端口需为 1024-65535 之间的整数"));
+      setOpenaiServerPortDraft(null);
+      return;
+    }
+    if (parsed === current.port) {
+      setOpenaiServerPortDraft(null);
+      return;
+    }
+    handleSaveOpenaiServer({ port: parsed });
+  }, [
+    generalConfigQuery.data?.openaiCompatServer,
+    handleSaveOpenaiServer,
+    openaiServerPortDraft,
+    t,
+  ]);
 
   const saveTelegramMutation = useMutation({
     mutationFn: (values: ChannelFormValues) =>
@@ -3251,7 +3325,10 @@ export const SettingsPage = () => {
                     <Typography.Title level={4} className="!text-slate-900">
                       {t("音视频模型")}
                     </Typography.Title>
-                    <Typography.Paragraph className="!text-slate-600">
+                    <Typography.Paragraph
+                      type="secondary"
+                      className="!mb-5 max-w-xl text-[13px]"
+                    >
                       {t("当前支持 fal Provider。你可以配置 fal API Key，并启用可用于生图/生视频的模型。")}
                     </Typography.Paragraph>
 
@@ -3344,6 +3421,213 @@ export const SettingsPage = () => {
               ),
             },
             {
+              key: "apiServer",
+              label: t("API 服务"),
+              children: (
+                <ScrollArea className="h-full">
+                  <div className="api-server-page">
+                    {(() => {
+                      const openaiServerConfig =
+                        generalConfigQuery.data?.openaiCompatServer;
+                      if (!openaiServerConfig) return null;
+                      const openaiServerStatus = openaiServerStatusQuery.data;
+                      const openaiServerBaseUrl = `http://127.0.0.1:${openaiServerConfig.port}/v1`;
+                      const statusTone = !openaiServerConfig.enabled
+                        ? "is-off"
+                        : openaiServerStatus?.running
+                          ? "is-running"
+                          : openaiServerStatus?.lastError
+                            ? "is-error"
+                            : "is-pending";
+                      const statusLabel = !openaiServerConfig.enabled
+                        ? t("已关闭")
+                        : openaiServerStatus?.running
+                          ? t("运行中")
+                          : openaiServerStatus?.lastError
+                            ? t("启动失败")
+                            : t("已启用");
+                      return (
+                        <>
+                          <section
+                            className={`api-server-hero ${statusTone}`}
+                          >
+                            <div className="api-server-hero__content">
+                              <div className="api-server-hero__icon">
+                                <ApiOutlined />
+                              </div>
+                              <div className="api-server-hero__copy">
+                                <div className="api-server-hero__eyebrow">
+                                  <span className="api-server-status__dot" />
+                                  <span>{statusLabel}</span>
+                                  <span className="api-server-hero__address">
+                                    127.0.0.1
+                                  </span>
+                                </div>
+                                <Typography.Title
+                                  level={3}
+                                  className="api-server-hero__title"
+                                >
+                                  {t("本地 API 服务（OpenAI 兼容）")}
+                                </Typography.Title>
+                                <Typography.Paragraph className="api-server-hero__description">
+                                  {t(
+                                    "将已启用的模型（含订阅账号）代理为本地 OpenAI 兼容 API，仅监听本机 127.0.0.1。",
+                                  )}
+                                </Typography.Paragraph>
+                                {openaiServerConfig.enabled &&
+                                openaiServerStatus?.lastError ? (
+                                  <div className="api-server-hero__error">
+                                    {openaiServerStatus.lastError}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                            <Button
+                              className={`api-server-power ${openaiServerConfig.enabled ? "is-active" : ""}`}
+                              shape="circle"
+                              icon={<PoweroffOutlined />}
+                              aria-label={t(
+                                openaiServerConfig.enabled ? "关闭" : "开启",
+                              )}
+                              aria-pressed={openaiServerConfig.enabled}
+                              loading={saveOpenaiServerMutation.isPending}
+                              onClick={() =>
+                                handleSaveOpenaiServer({
+                                  enabled: !openaiServerConfig.enabled,
+                                })
+                              }
+                            />
+                          </section>
+
+                          <Form layout="vertical" className="api-server-grid">
+                            <section className="api-server-card">
+                              <div className="api-server-card__header">
+                                <div className="api-server-card__icon">
+                                  <LinkOutlined />
+                                </div>
+                                <Typography.Title
+                                  level={5}
+                                  className="api-server-card__title"
+                                >
+                                  Base URL
+                                </Typography.Title>
+                              </div>
+                              <div className="api-server-card__body">
+                                <div className="api-server-endpoint">
+                                  <Typography.Text
+                                    code
+                                    copyable={{ text: openaiServerBaseUrl }}
+                                  >
+                                    {openaiServerBaseUrl}
+                                  </Typography.Text>
+                                </div>
+                                <Typography.Paragraph className="api-server-card__hint">
+                                  {t(
+                                    "在第三方工具中把 API 地址设置为该 Base URL。",
+                                  )}
+                                </Typography.Paragraph>
+                                <div className="api-server-card__divider" />
+                                <Form.Item
+                                  label={t("端口")}
+                                  extra={t("修改端口后服务会自动重启。")}
+                                  className="api-server-port-field"
+                                >
+                                  <Input
+                                    className="api-server-port-input"
+                                    value={
+                                      openaiServerPortDraft ??
+                                      String(openaiServerConfig.port)
+                                    }
+                                    onChange={(event) =>
+                                      setOpenaiServerPortDraft(
+                                        event.target.value,
+                                      )
+                                    }
+                                    onBlur={handleOpenaiServerPortCommit}
+                                    onPressEnter={handleOpenaiServerPortCommit}
+                                  />
+                                </Form.Item>
+                              </div>
+                            </section>
+
+                            <section
+                              className={`api-server-card api-server-card--security ${openaiServerConfig.requireToken ? "is-secured" : "is-open"}`}
+                            >
+                              <div className="api-server-card__header">
+                                <div className="api-server-card__icon">
+                                  <LockOutlined />
+                                </div>
+                                <Typography.Title
+                                  level={5}
+                                  className="api-server-card__title"
+                                >
+                                  {t("需要鉴权")}
+                                </Typography.Title>
+                              </div>
+                              <div className="api-server-card__body">
+                                <div className="api-server-security-toggle">
+                                  <div className="api-server-security-toggle__copy">
+                                    <Typography.Text strong>
+                                      {t("需要 API Key")}
+                                    </Typography.Text>
+                                    <Typography.Paragraph>
+                                      {openaiServerConfig.requireToken
+                                        ? t(
+                                            "调用时需在 Authorization 请求头中携带 Bearer Key。",
+                                          )
+                                        : t(
+                                            "已关闭鉴权，任何本机进程都可以直接调用该接口。",
+                                          )}
+                                    </Typography.Paragraph>
+                                  </div>
+                                  <Switch
+                                    checked={openaiServerConfig.requireToken}
+                                    loading={saveOpenaiServerMutation.isPending}
+                                    aria-label={t("需要 API Key")}
+                                    onChange={(checked) =>
+                                      handleSaveOpenaiServer({
+                                        requireToken: checked,
+                                      })
+                                    }
+                                  />
+                                </div>
+                                {openaiServerConfig.requireToken &&
+                                openaiServerConfig.token ? (
+                                  <div className="api-server-token">
+                                    <Typography.Text
+                                      code
+                                      copyable={{
+                                        text: openaiServerConfig.token,
+                                      }}
+                                    >
+                                      {openaiServerConfig.token}
+                                    </Typography.Text>
+                                    <Button
+                                      size="small"
+                                      loading={
+                                        saveOpenaiServerMutation.isPending
+                                      }
+                                      onClick={() =>
+                                        handleSaveOpenaiServer({
+                                          regenerateToken: true,
+                                        })
+                                      }
+                                    >
+                                      {t("重新生成")}
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </section>
+                          </Form>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </ScrollArea>
+              ),
+            },
+            {
               key: "channels",
               label: t("渠道"),
               children: (
@@ -3352,7 +3636,10 @@ export const SettingsPage = () => {
                     <Typography.Title level={4} className="!text-slate-900">
                       {t("渠道")}
                     </Typography.Title>
-                    <Typography.Paragraph className="!text-slate-600">
+                    <Typography.Paragraph
+                      type="secondary"
+                      className="!mb-5 max-w-xl text-[13px]"
+                    >
                       {t("所有渠道消息统一发送到主 Agent，子智能体 聊天仍可在桌面端查看。")}
                     </Typography.Paragraph>
 
@@ -4110,7 +4397,10 @@ export const SettingsPage = () => {
                       </div>
                     </div>
 
-                    <Typography.Paragraph className="!text-slate-600">
+                    <Typography.Paragraph
+                      type="secondary"
+                      className="!mb-5 max-w-xl text-[13px]"
+                    >
                       {t("使用哪个渠道广播消息，Kian 说了算。")}
                     </Typography.Paragraph>
 

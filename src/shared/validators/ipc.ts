@@ -368,6 +368,13 @@ export const saveGeneralConfigSchema = z.object({
   showHiddenSessions: z.boolean().optional()
 });
 
+export const saveOpenaiCompatServerConfigSchema = z.object({
+  enabled: z.boolean(),
+  port: z.number().int().min(1024).max(65535),
+  requireToken: z.boolean(),
+  regenerateToken: z.boolean().optional()
+});
+
 export const saveModelProviderConfigSchema = z.object({
   provider: z.enum(['fal']).default('fal'),
   secret: z

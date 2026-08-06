@@ -22,6 +22,7 @@ import type {
   McpTransportType,
   MediaProvider,
   ModelProviderConfigStatus,
+  OpenaiCompatServerConfigDTO,
   ProviderConfigEntry,
   TelegramChatChannelStatus,
   CustomAgentModelConfigDTO,
@@ -39,6 +40,7 @@ import {
 import { normalizeUtcTimestamp } from "@shared/utils/dateTime";
 import { normalizeShortcutConfig } from "@shared/utils/shortcuts";
 import { app } from "electron";
+import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -243,6 +245,7 @@ const DEFAULT_GENERAL_CONFIG_FLAGS = {
   chatEditMessageTipDismissed: false,
   showHiddenSessions: false,
 } as const;
+const DEFAULT_OPENAI_COMPAT_SERVER_PORT = 23333;
 
 const defaultSystemPromptCache = new Map<string, string>();
 const MAIN_SCOPE_SETTINGS_KEY = "main";
@@ -465,7 +468,54 @@ const normalizeGeneralConfig = (
       raw.showHiddenSessions,
       DEFAULT_GENERAL_CONFIG_FLAGS.showHiddenSessions,
     ),
+    openaiCompatServer: normalizeOpenaiCompatServerConfig(raw.openaiCompatServer),
   };
+};
+
+const normalizeOpenaiCompatServerConfig = (
+  value: unknown,
+): OpenaiCompatServerConfigDTO => {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  return {
+    enabled: normalizeBoolean(raw.enabled, false),
+    port:
+      typeof raw.port === "number" &&
+      Number.isInteger(raw.port) &&
+      raw.port >= 1024 &&
+      raw.port <= 65535
+        ? raw.port
+        : DEFAULT_OPENAI_COMPAT_SERVER_PORT,
+    requireToken: normalizeBoolean(raw.requireToken, true),
+    token: typeof raw.token === "string" ? raw.token : "",
+  };
+};
+
+const writeGeneralConfigFile = async (
+  config: GeneralConfigDTO,
+): Promise<void> => {
+  await fs.mkdir(GLOBAL_CONFIG_DIR, { recursive: true });
+  await fs.writeFile(
+    GLOBAL_CONFIG_PATH,
+    `${JSON.stringify(
+      {
+        workspaceRoot: config.workspaceRoot,
+        language: config.language,
+        themeMode: config.themeMode,
+        linkOpenMode: config.linkOpenMode,
+        quickGuideDismissed: config.quickGuideDismissed,
+        chatInputShortcutTipDismissed: config.chatInputShortcutTipDismissed,
+        chatEditMessageTipDismissed: config.chatEditMessageTipDismissed,
+        showHiddenSessions: config.showHiddenSessions,
+        openaiCompatServer: config.openaiCompatServer,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
 };
 
 const normalizeMcpServerName = (value: unknown): string => {
@@ -2239,28 +2289,34 @@ export const settingsService = {
         typeof input.showHiddenSessions === "boolean"
           ? input.showHiddenSessions
           : currentConfig.showHiddenSessions,
+      openaiCompatServer: currentConfig.openaiCompatServer,
     };
 
-    await fs.mkdir(GLOBAL_CONFIG_DIR, { recursive: true });
-    await fs.writeFile(
-      GLOBAL_CONFIG_PATH,
-      `${JSON.stringify(
-        {
-          workspaceRoot: nextConfig.workspaceRoot,
-          language: nextConfig.language,
-          themeMode: nextConfig.themeMode,
-          linkOpenMode: nextConfig.linkOpenMode,
-          quickGuideDismissed: nextConfig.quickGuideDismissed,
-          chatInputShortcutTipDismissed:
-            nextConfig.chatInputShortcutTipDismissed,
-          chatEditMessageTipDismissed: nextConfig.chatEditMessageTipDismissed,
-          showHiddenSessions: nextConfig.showHiddenSessions,
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
+    await writeGeneralConfigFile(nextConfig);
+  },
+
+  async saveOpenaiCompatServerConfig(input: {
+    enabled: boolean;
+    port: number;
+    requireToken: boolean;
+    regenerateToken?: boolean;
+  }): Promise<OpenaiCompatServerConfigDTO> {
+    const currentConfig = await this.getGeneralConfig();
+    const currentToken = currentConfig.openaiCompatServer.token;
+    const nextServerConfig: OpenaiCompatServerConfigDTO = {
+      enabled: input.enabled,
+      port: input.port,
+      requireToken: input.requireToken,
+      token:
+        input.regenerateToken || !currentToken
+          ? `kian-${randomBytes(24).toString("hex")}`
+          : currentToken,
+    };
+    await writeGeneralConfigFile({
+      ...currentConfig,
+      openaiCompatServer: nextServerConfig,
+    });
+    return nextServerConfig;
   },
 
   async getMainSubModeEnabled(): Promise<boolean> {

@@ -52,6 +52,7 @@ import {
   skillVisibilityUpdateSchema,
   saveApiKeySchema,
   saveGeneralConfigSchema,
+  saveOpenaiCompatServerConfigSchema,
   saveShortcutConfigSchema,
   addMcpServerSchema,
   saveBroadcastChannelConfigSchema,
@@ -93,6 +94,7 @@ import { agentGroupService } from '../services/agentGroupService';
 import { linkOpenService } from '../services/linkOpenService';
 import { resolveLocalMediaPath } from '../services/localMediaPath';
 import { settingsRuntimeService } from '../services/settingsRuntimeService';
+import { openaiCompatServer } from '../services/openaiCompat/server';
 import {
   cancelOAuthLogin,
   oauthLogout,
@@ -811,6 +813,18 @@ export const registerHandlers = (): void => {
       });
       return true;
     }
+  );
+  handle(
+    'settings:saveOpenaiCompatServerConfig',
+    saveOpenaiCompatServerConfigSchema,
+    async (input) => {
+      const config = await settingsService.saveOpenaiCompatServerConfig(input);
+      await openaiCompatServer.restart();
+      return { config, status: openaiCompatServer.getStatus() };
+    }
+  );
+  handle('settings:getOpenaiCompatServerStatus', z.object({}).optional(), async () =>
+    openaiCompatServer.getStatus()
   );
 
   handle('skills:getConfig', z.object({}).optional(), async () => skillService.getConfig());

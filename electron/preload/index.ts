@@ -43,6 +43,8 @@ import type {
   ModelProviderConfigStatus,
   ModuleType,
   OpenAppPreviewWindowPayload,
+  OpenaiCompatServerConfigDTO,
+  OpenaiCompatServerStatusDTO,
   OnboardingEnvironmentStatus,
   ProjectCreationSource,
   ProjectDTO,
@@ -516,8 +518,22 @@ const api = {
       invoke<McpServerDTO>("settings:setMcpServerEnabled", payload),
     getGeneralConfig: () =>
       invoke<GeneralConfigDTO>("settings:getGeneralConfig"),
-    saveGeneralConfig: (payload: GeneralConfigDTO) =>
+    saveGeneralConfig: (payload: Omit<GeneralConfigDTO, "openaiCompatServer">) =>
       invoke<boolean>("settings:saveGeneralConfig", payload),
+    saveOpenaiCompatServerConfig: (payload: {
+      enabled: boolean;
+      port: number;
+      requireToken: boolean;
+      regenerateToken?: boolean;
+    }) =>
+      invoke<{
+        config: OpenaiCompatServerConfigDTO;
+        status: OpenaiCompatServerStatusDTO;
+      }>("settings:saveOpenaiCompatServerConfig", payload),
+    getOpenaiCompatServerStatus: () =>
+      invoke<OpenaiCompatServerStatusDTO>(
+        "settings:getOpenaiCompatServerStatus",
+      ),
   },
   skills: {
     getConfig: () => invoke<SkillConfigDTO>("skills:getConfig"),
