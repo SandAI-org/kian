@@ -8,7 +8,7 @@
 - Kian 内置 cron 每 15 秒轮询 `cronjob.json`，命中后创建隐藏 Agent 会话执行自然语言任务；它依赖 Electron 主进程，应用宕机后不会调度。
 - 关键服务已迁移为仓库内独立 Python 脚本 + macOS LaunchAgent，因此无需恢复 Kian UI 即可继续运行。
 - 飞书 PR 描述按钮和 `desc/up` 文字命令入站能力已迁移到独立 Node.js WebSocket 桥接器，Kian 桌面应用可以关闭。
-- 完整的新机安装、秘密边界和迁移说明见 [automation/README.zh-CN.md](../../../../automation/README.zh-CN.md)。
+- 完整的新机安装、秘密边界和迁移流程以 [Kian Automation Skill](../SKILL.md) 为准；[automation/README.zh-CN.md](../../../../automation/README.zh-CN.md) 是补充实现说明。
 
 ## 当前系统服务
 

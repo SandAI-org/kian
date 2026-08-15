@@ -1,15 +1,18 @@
 ---
 name: kian-automation
-description: '接管和维护可迁移 Kian 自动化。Use when: 用户要求发送飞书消息、管理自动化 launchd 服务、检查 GitHub 更新推送、处理 PR desc/up、传输文件或发布二维码。'
+description: '安装、迁移、恢复、接管和维护可迁移 Kian 自动化。Use when: 用户换电脑或公司后需要重建自动化，或要求发送飞书消息、管理 launchd 服务、检查 GitHub 更新推送、处理 PR desc/up、传输文件或发布二维码。'
 ---
 
 # Kian 自动化接管
 
 使用仓库内独立脚本与 macOS `launchd`，不依赖 Kian Electron 界面常驻。
 
+**本文件是新电脑恢复整套自动化的首要迁移文档和 Agent 执行入口。** Agent 应先完整阅读本文件，再收集本机私有信息并执行安装；不要要求用户自行拼装配置。`automation/README.zh-CN.md` 和英文 README 仅作为面向人的补充说明。
+
 ## 资产位置
 
-- 安装、配置、迁移与卸载：[automation/README.zh-CN.md](../../../automation/README.zh-CN.md)
+- 本迁移文档：`.github/skills/kian-automation/SKILL.md`
+- 补充实现说明：[automation/README.zh-CN.md](../../../automation/README.zh-CN.md)
 - 自动化脚本：`automation/scripts`
 - 默认私有目录：`~/.config/kian-automation`
 - 私有配置：`~/.config/kian-automation/config/config.json`
@@ -17,6 +20,120 @@ description: '接管和维护可迁移 Kian 自动化。Use when: 用户要求�
 - LaunchAgent：`~/Library/LaunchAgents/com.kian.*.plist`
 - 飞书 PR 指令桥接器：`packages/kian-copilot-bridge`
 - 服务清单与故障说明：[service-inventory.md](./references/service-inventory.md)
+
+## 新电脑迁移流程
+
+当用户让 Agent 在新电脑恢复服务时，按以下顺序自主完成。
+
+### 1. 获取代码
+
+1. 克隆 Kian 仓库或进入已有 clone。
+2. 获取并切换远端 `dev_kato` 分支。
+3. 确认工作树状态，避免覆盖用户未提交改动。
+4. 阅读本文件、补充 README 和服务清单。
+
+### 2. 检查运行环境
+
+仅支持 macOS `launchd`。确认以下命令可用：
+
+- Node.js
+- Python 3
+- Git
+- rsync
+- pnpm（可选；没有时安装器使用 npm）
+
+不要沿用旧电脑的绝对路径。仓库可以位于任意稳定目录，安装器会根据当前 clone 自动渲染路径。
+
+### 3. 收集本机私有信息
+
+向用户逐项询问尚无法从本机安全推断的信息：
+
+1. 飞书 app ID、app secret、通知接收人的 open ID、允许操作机器人的用户 open ID。
+2. 需要监控的 GitHub `owner/repo` 列表，以及每个 owner 对应的 token。
+3. 要启用的服务：`bridge`、`realtime`、`daily`、`qr`，以及运行间隔或触发时间。
+4. 可选摘要模型的 API key 和模型名；不配置时使用本地确定性摘要。
+5. 文件传输的默认下载目录、机器简称、`~/.ssh/config` 别名和路径前缀映射。
+6. 若启用二维码服务：本地网站仓库目录、仓库内图片相对路径、分支、提交信息和提醒文案。
+7. 是否迁移旧电脑的监控检查点、受管理 PR、二维码轮次和连接状态。
+
+不得在聊天中索要 SSH 密码、私钥或恢复码。让用户直接在本机安全位置配置这些信息。不得把真实仓库列表、机器地址或个人路径写回 Git 模板。
+
+### 4. 配置飞书和 GitHub
+
+在飞书开放平台启用长连接事件投递并订阅：
+
+- `im.message.receive_v1`
+- `card.action.trigger`
+
+确认应用具有对应的消息接收/发送权限、已发布可用版本，并在需要时加入目标群聊。
+
+GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓库元数据、Issues、Pull requests、评论和 Contents 只读权限；更新 PR 描述还需要 Pull requests 写权限。私有仓库使用 classic token 时通常需要 `repo`。
+
+### 5. 创建私有配置
+
+1. 运行 `automation/bin/install.sh` 创建默认私有目录和配置模板。
+2. 将收集到的信息写入 `~/.config/kian-automation/config/config.json`。
+3. 配置文件权限必须为 `600`；私有目录权限应为 `700`。
+4. 已禁用或未使用的可选功能可以保留占位符；已启用服务的必填项必须全部配置。
+5. 不要把私有配置放进仓库，也不要修改 `automation/config/config.example.json` 来保存真实值。
+
+如需使用其他私有目录，设置 `KIAN_AUTOMATION_HOME`；后续安装、诊断和手动脚本执行必须使用同一值。
+
+### 6. 安装并加载服务
+
+配置完成后再次运行：
+
+- `automation/bin/install.sh`
+- `automation/bin/doctor.sh`
+
+安装器会：
+
+- 保留已有私有配置，不会覆盖；
+- 安装飞书桥接器 Node 依赖；
+- 忽略失效的桌面代理设置；
+- 渲染 `~/Library/LaunchAgents/com.kian.{bridge,realtime,daily,qr}.plist`；
+- 校验 plist；
+- 只加载配置完整且已启用的服务。
+
+### 7. 验证恢复结果
+
+1. `doctor.sh` 必须通过已启用服务的配置、权限、plist 和注册检查。
+2. 使用 `launchctl print gui/$(id -u)/<label>` 检查服务。
+3. 查看私有 `logs/` 中各服务日志，不得回显凭据。
+4. 先做不产生外部副作用的语法检查；只有用户明确同意时才发送测试飞书消息或修改测试 PR。
+5. 验证 bridge 能收到 `descN/upN` 文本事件和卡片事件，并立即返回 Toast。
+6. 验证实时监控失败时不推进检查点，恢复后不会遗漏事件。
+
+### 8. 可选状态迁移
+
+先停止旧服务，只复制确实需要的 JSON 状态到新电脑私有 `state/`：
+
+- GitHub 监控检查点；
+- 每日汇总发送标记；
+- 受管理 PR 状态；
+- 二维码提醒轮次；
+- bridge 连接告警状态。
+
+不要迁移旧日志或旧配置。状态不是恢复服务的必要条件；不迁移时系统从空状态启动。
+
+### 9. 升级和卸载
+
+- 升级：拉取 `dev_kato` 最新代码，检查配置结构变化，重新运行 installer 和 doctor。仓库移动后也必须重新安装以渲染新路径。
+- 卸载：运行 `automation/bin/uninstall.sh`。它只卸载受管理 plist，保留私有配置、状态和日志。
+
+## Git 与秘密边界
+
+允许提交：代码、无秘密模板、launchd 模板、安装/诊断脚本、文档。
+
+禁止提交：
+
+- 飞书、GitHub、模型 API 凭据；
+- open ID、真实仓库清单和内部 URL；
+- SSH host/IP、用户名、密码、私钥和恢复码；
+- 本机绝对路径和公司环境路径映射；
+- `config.json`、状态 JSON、日志和渲染后的 plist。
+
+提交前执行敏感模式扫描和 `git diff --cached` 审计，但不得在报告中输出匹配到的秘密内容。若发现秘密曾进入 Git 历史，立即停止推送、报告文件位置并安排凭据轮换。
 
 ## 操作规则
 
