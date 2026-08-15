@@ -10,3 +10,9 @@ coverage
 release
 .env.local
 .tmp
+automation/config/config.json
+automation/state/
+automation/logs/
+automation/**/*.local.*
+automation/**/*state*.json
+automation/**/managed-prs.json

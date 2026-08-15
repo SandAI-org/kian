@@ -1,0 +1,50 @@
+{
+  "services": {
+    "bridge": { "enabled": true },
+    "realtime": { "enabled": true, "interval_seconds": 300 },
+    "daily": { "enabled": true, "hour": 10, "minute": 0 },
+    "qr": { "enabled": false, "hour": 12, "minute": 0 }
+  },
+  "feishu": {
+    "app_id": "REPLACE_WITH_FEISHU_APP_ID",
+    "app_secret": "REPLACE_WITH_FEISHU_APP_SECRET",
+    "open_id": "REPLACE_WITH_FEISHU_OPEN_ID",
+    "allowed_users": ["REPLACE_WITH_ALLOWED_OPEN_ID"]
+  },
+  "github": {
+    "tokens": {
+      "example-owner": "REPLACE_WITH_GITHUB_TOKEN"
+    },
+    "repos": ["example-owner/example-repo"]
+  },
+  "pr_manager": {
+    "special_layout_repo": "example-owner/example-repo",
+    "legacy_replacements": {}
+  },
+  "summarization": {
+    "api_key": "REPLACE_WITH_SUMMARIZATION_API_KEY",
+    "model": "REPLACE_WITH_MODEL_NAME"
+  },
+  "file_transfer": {
+    "downloads": "REPLACE_WITH_DOWNLOADS_DIRECTORY",
+    "machines": {
+      "example-machine": {
+        "ssh_host": "REPLACE_WITH_SSH_CONFIG_ALIAS",
+        "path_mappings": [
+          {
+            "from": "REPLACE_WITH_SOURCE_PREFIX",
+            "to": "REPLACE_WITH_DESTINATION_PREFIX"
+          }
+        ]
+      }
+    }
+  },
+  "qr_publish": {
+    "repo_dir": "REPLACE_WITH_ABSOLUTE_REPO_DIRECTORY",
+    "target_file": "REPLACE_WITH_REPOSITORY_RELATIVE_IMAGE_FILE",
+    "branch": "REPLACE_WITH_BRANCH",
+    "commit_message": "chore: update QR code ({date})",
+    "reminder_title": "REPLACE_WITH_REMINDER_TITLE",
+    "reminder_body": "REPLACE_WITH_REMINDER_BODY"
+  }
+}

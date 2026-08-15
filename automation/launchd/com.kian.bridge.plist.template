@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.kian.bridge</string>
+  <key>ProgramArguments</key><array><string>__NODE__</string><string>__REPO_ROOT__/packages/kian-copilot-bridge/src/index.mjs</string></array>
+  <key>EnvironmentVariables</key><dict><key>KIAN_AUTOMATION_HOME</key><string>__AUTOMATION_HOME__</string><key>KIAN_REPO_ROOT</key><string>__REPO_ROOT__</string><key>KIAN_PYTHON</key><string>__PYTHON__</string></dict>
+  <key>WorkingDirectory</key><string>__REPO_ROOT__/packages/kian-copilot-bridge</string>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>__AUTOMATION_HOME__/logs/bridge.log</string>
+  <key>StandardErrorPath</key><string>__AUTOMATION_HOME__/logs/bridge.err.log</string>
+</dict></plist>
