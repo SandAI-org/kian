@@ -51,7 +51,11 @@
           "example-source-machine",
           "example-destination-machine"
         ],
-        "target_dir": "REPLACE_WITH_IMAGE_SPECIFIC_WHEEL_DIRECTORY"
+        "target_dir": "REPLACE_WITH_IMAGE_SPECIFIC_WHEEL_DIRECTORY",
+        "stable_versions": {
+          "example_distribution_one": "REPLACE_WITH_STABLE_VERSION",
+          "example_distribution_two": "REPLACE_WITH_STABLE_VERSION"
+        }
       }
     }
   },
