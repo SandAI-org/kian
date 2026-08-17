@@ -53,6 +53,31 @@ def validate_profile(profile: dict) -> tuple[str, list[str], list[str], str]:
     return source, [str(item) for item in directories], [str(item) for item in destinations], target_dir
 
 
+def wheel_distribution(filename: str) -> str:
+    distribution, separator, remainder = filename.partition("-")
+    if not separator or not distribution or not remainder.endswith(".whl"):
+        raise RuntimeError(f"Invalid wheel filename: {filename}")
+    return distribution
+
+
+def clean_old_wheels(machine: str, target_dir: str, wheels: list[Endpoint]) -> None:
+    destination = translate_remote(machine, target_dir)
+    host = destination.host or ""
+    ssh(host, f"mkdir -p {shlex.quote(destination.path)}")
+    for wheel in wheels:
+        filename = PurePosixPath(wheel.path).name
+        distribution = wheel_distribution(filename)
+        command = (
+            f"find {shlex.quote(destination.path)} -maxdepth 1 -type f "
+            f"-name {shlex.quote(distribution + '-*.whl')} "
+            f"! -name {shlex.quote(filename)} -print -delete"
+        )
+        removed = ssh(host, command)
+        for old_path in removed.splitlines():
+            if old_path:
+                print(f"REMOVED_OLD_WHEEL {machine}:{old_path}")
+
+
 def sync_profile(name: str, discover_only: bool = False) -> None:
     source_machine, directories, destination_machines, target_dir = validate_profile(load_profile(name))
     wheels = discover_latest(source_machine, directories)
@@ -75,6 +100,7 @@ def sync_profile(name: str, discover_only: bool = False) -> None:
         total = len(staged) * len(destination_machines)
         completed = 0
         for destination_machine in destination_machines:
+            clean_old_wheels(destination_machine, target_dir, wheels)
             destination = translate_remote(destination_machine, target_dir)
             for local in staged:
                 completed += 1
