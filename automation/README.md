@@ -58,6 +58,8 @@ Manual non-sending checks can use Python compilation and Node syntax validation.
 
 Remote endpoints use private SSH config aliases. Remote-to-remote copies stage through a local temporary directory and verify files by size and SHA-256.
 
+For a recurring wheel mirror, configure `wheel_sync.profiles` privately and run `python3 automation/scripts/sync_wheels.py <profile>`. The command discovers the newest wheel in every configured dist directory before transferring anything, stages each wheel locally once, then uploads and verifies it on every destination. Use a separate profile and target directory for each base image.
+
 QR publication is explicit: `python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`. It copies the image, commits if changed, clears proxy variables, pushes the configured branch, marks the reminder complete only after a successful push, and sends a receipt.
 
 ## Upgrade

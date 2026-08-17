@@ -39,6 +39,22 @@
       }
     }
   },
+  "wheel_sync": {
+    "profiles": {
+      "example-image": {
+        "source_machine": "example-source-machine",
+        "dist_dirs": [
+          "REPLACE_WITH_FIRST_DIST_DIRECTORY",
+          "REPLACE_WITH_SECOND_DIST_DIRECTORY"
+        ],
+        "destination_machines": [
+          "example-source-machine",
+          "example-destination-machine"
+        ],
+        "target_dir": "REPLACE_WITH_IMAGE_SPECIFIC_WHEEL_DIRECTORY"
+      }
+    }
+  },
   "qr_publish": {
     "repo_dir": "REPLACE_WITH_ABSOLUTE_REPO_DIRECTORY",
     "target_file": "REPLACE_WITH_REPOSITORY_RELATIVE_IMAGE_FILE",
