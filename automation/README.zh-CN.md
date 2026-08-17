@@ -58,7 +58,7 @@
 
 远端地址使用私有 SSH config 别名。远端到远端会经本机临时目录中转，并对文件执行大小和 SHA-256 校验。
 
-常规 wheel 镜像同步需在私有 `wheel_sync.profiles` 中用 `stable_versions` 明确锁定每个 distribution 的稳定版本，然后运行 `python3 automation/scripts/sync_wheels.py <profile>`。脚本只选择固定版本，不会因测试包版本更高或修改时间更新而自动发布。固定版本缺失或匹配多个文件时，会在任何删除或传输前整体失败。所有稳定 wheel 下载校验成功后，脚本会删除目标目录中同 distribution 的其他版本，再上传并校验固定版本。只有用户明确确认某个包升级到新稳定版本时才修改对应锁定；未提及的包保持原版本。每种基础镜像应使用独立 profile 和目标目录。
+常规 wheel 镜像同步需在私有 `wheel_sync.profiles` 中定义 profile，然后运行 `python3 automation/scripts/sync_wheels.py <profile>`。稳定 profile 使用 `selection_mode: stable` 和 `stable_versions`，只同步明确锁定版本；测试包不会自动发布。个人开发 profile 使用 `selection_mode: latest` 和按 dist 顺序配置的 `expected_distributions`，且必须写入独立的 `dev/<image>` 目录，按修改时间同步每个 distribution 的最新 wheel，绝不修改稳定目录。两种模式都只暂存一次、校验每段传输，并仅在各自目标目录清理同包其他版本。
 
 二维码发布需显式执行：`python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`。脚本复制图片、有变化时提交、清除代理变量、推送配置分支，仅在 push 成功后标记提醒完成并发送回执。
 

@@ -191,7 +191,9 @@ GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓
 - `dist_dirs`：需要分别发现 wheel 的 dist 目录；
 - `destination_machines`：需要同时写入的机器列表，可包含源机器；
 - `target_dir`：该基础镜像专属的 wheel 汇总目录。
-- `stable_versions`：distribution 到稳定版本号的显式映射，条目数必须与 dist 目录数相同。
+- `selection_mode`：`stable` 或 `latest`；不得在同一目标目录混用。
+- `stable_versions`：稳定 profile 使用的 distribution 到稳定版本号映射。
+- `expected_distributions`：开发 profile 使用的 distribution 列表，与 dist 目录按顺序对应。
 
 执行规则：
 
@@ -201,6 +203,7 @@ GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓
 4. 下载和每次上传均执行文件大小与 SHA-256 校验，完成后清理本机临时目录。
 5. 只有用户明确说明某个包升级到某版本时，才更新相应 profile 的 `stable_versions`；未提及的包继续使用原稳定版本。通用仓库脚本不得硬编码真实版本、机器别名、内部目录或旧目标。
 6. 切换基础镜像时必须选择对应 profile，禁止混用不同镜像的汇总目录。
+7. 个人开发 profile 使用 `latest`，目标必须位于独立的 `dev/<image>` 目录；它按对应 distribution 的修改时间选择最新 wheel。稳定 profile 继续写 `<image>` 目录，绝不受开发同步影响。
 
 ### 私有状态
 
