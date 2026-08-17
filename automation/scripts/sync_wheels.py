@@ -148,7 +148,32 @@ def wheel_distribution(filename: str) -> str:
     return distribution
 
 
-def clean_old_wheels(machine: str, target_dir: str, wheels: list[Endpoint]) -> None:
+def remote_sha256(endpoint: Endpoint) -> str:
+    if not endpoint.remote:
+        raise RuntimeError("remote_sha256 requires a remote endpoint")
+    command = f"sha256sum {shlex.quote(endpoint.path)} | awk '{{print $1}}'"
+    digest = ssh(endpoint.host or "", command).strip()
+    if not digest:
+        raise RuntimeError(f"Could not read SHA-256 for {endpoint.host}:{endpoint.path}")
+    return digest
+
+
+def destination_needs_update(
+    machine: str, target_dir: str, wheel: Endpoint, source_digest: str
+) -> bool:
+    destination_dir = translate_remote(machine, target_dir)
+    filename = PurePosixPath(wheel.path).name
+    target = Endpoint(destination_dir.host, str(PurePosixPath(destination_dir.path) / filename))
+    command = (
+        f"if test -f {shlex.quote(target.path)}; then "
+        f"sha256sum {shlex.quote(target.path)} | awk '{{print $1}}'; fi"
+    )
+    return ssh(target.host or "", command).strip() != source_digest
+
+
+def clean_old_wheels(
+    machine: str, target_dir: str, wheels: list[Endpoint], *, remove_current: bool = False
+) -> None:
     destination = translate_remote(machine, target_dir)
     host = destination.host or ""
     ssh(host, f"mkdir -p {shlex.quote(destination.path)}")
@@ -158,8 +183,10 @@ def clean_old_wheels(machine: str, target_dir: str, wheels: list[Endpoint]) -> N
         command = (
             f"find {shlex.quote(destination.path)} -maxdepth 1 -type f "
             f"-name {shlex.quote(distribution + '-*.whl')} "
-            f"! -name {shlex.quote(filename)} -print -delete"
         )
+        if not remove_current:
+            command += f"! -name {shlex.quote(filename)} "
+        command += "-print -delete"
         removed = ssh(host, command)
         for old_path in removed.splitlines():
             if old_path:
@@ -193,20 +220,49 @@ def sync_profile(name: str, discover_only: bool = False) -> None:
         print(f"DISCOVERY_COMPLETE profile={name} wheels={len(wheels)}")
         return
 
-    with tempfile.TemporaryDirectory(prefix=f"kian-wheels-{name}-") as temporary_dir:
-        staged = []
-        for index, wheel in enumerate(wheels, start=1):
-            local = Endpoint(None, str(Path(temporary_dir) / PurePosixPath(wheel.path).name))
-            print(f"\nDOWNLOAD {index}/{len(wheels)}: {wheel.path}", flush=True)
-            direct_transfer(wheel, local, False)
-            staged.append(local)
+    source_digests = {wheel: remote_sha256(wheel) for wheel in wheels}
+    pending_by_destination = {}
+    for destination_machine in destination_machines:
+        pending = [
+            wheel
+            for wheel in wheels
+            if destination_needs_update(
+                destination_machine, target_dir, wheel, source_digests[wheel]
+            )
+        ]
+        pending_by_destination[destination_machine] = pending
+        pending_names = {PurePosixPath(wheel.path).name for wheel in pending}
+        for wheel in wheels:
+            filename = PurePosixPath(wheel.path).name
+            if filename not in pending_names:
+                print(f"UNCHANGED {destination_machine}:{filename}")
 
-        total = len(staged) * len(destination_machines)
+    wheels_to_stage = [
+        wheel
+        for wheel in wheels
+        if any(wheel in pending for pending in pending_by_destination.values())
+    ]
+    if not wheels_to_stage:
+        print(f"ALL_WHEELS_CURRENT profile={name} wheels={len(wheels)}")
+        return
+
+    with tempfile.TemporaryDirectory(prefix=f"kian-wheels-{name}-") as temporary_dir:
+        staged = {}
+        for index, wheel in enumerate(wheels_to_stage, start=1):
+            local = Endpoint(None, str(Path(temporary_dir) / PurePosixPath(wheel.path).name))
+            print(f"\nDOWNLOAD {index}/{len(wheels_to_stage)}: {wheel.path}", flush=True)
+            direct_transfer(wheel, local, False)
+            staged[wheel] = local
+
+        total = sum(len(pending) for pending in pending_by_destination.values())
         completed = 0
         for destination_machine in destination_machines:
-            clean_old_wheels(destination_machine, target_dir, wheels)
+            pending = pending_by_destination[destination_machine]
+            if not pending:
+                continue
             destination = translate_remote(destination_machine, target_dir)
-            for local in staged:
+            for wheel in pending:
+                local = staged[wheel]
                 completed += 1
                 print(
                     f"\nUPLOAD {completed}/{total}: {PurePosixPath(local.path).name} -> "
@@ -214,9 +270,10 @@ def sync_profile(name: str, discover_only: bool = False) -> None:
                     flush=True,
                 )
                 direct_transfer(local, destination, True)
+                clean_old_wheels(destination_machine, target_dir, [wheel])
 
     print(
-        f"\nALL_WHEELS_SYNCED profile={name} wheels={len(wheels)} "
+        f"\nUPDATED_WHEELS_SYNCED profile={name} wheels={len(wheels_to_stage)} "
         f"destinations={len(destination_machines)}"
     )
 

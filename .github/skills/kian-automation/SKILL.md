@@ -204,6 +204,7 @@ GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓
 5. 只有用户明确说明某个包升级到某版本时，才更新相应 profile 的 `stable_versions`；未提及的包继续使用原稳定版本。通用仓库脚本不得硬编码真实版本、机器别名、内部目录或旧目标。
 6. 切换基础镜像时必须选择对应 profile，禁止混用不同镜像的汇总目录。
 7. 个人开发 profile 使用 `latest`，目标必须位于独立的 `dev/<image>` 目录；它按对应 distribution 的修改时间选择最新 wheel。稳定 profile 继续写 `<image>` 目录，绝不受开发同步影响。
+8. 正式同步前比较源 wheel 与每个目标同名文件的 SHA-256。未变化的 distribution 不下载、不清理、不上传；只有内容或文件名变化的 wheel 才暂存一次并更新需要更新的目标。同名重新构建也必须通过摘要变化识别。新 wheel 上传并校验成功后才清理同 distribution 的其他版本，禁止先删后传。
 
 ### 私有状态
 
