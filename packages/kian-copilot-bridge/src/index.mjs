@@ -205,55 +205,6 @@ const getTenantToken = async (appId, appSecret) => {
   return payload.tenant_access_token;
 };
 
-const formatAlertTime = (timestamp) => timestamp
-  ? new Date(timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
-  : '无';
-
-const buildConnectionAlertCard = (notification) => {
-  if (notification.kind === 'failure') {
-    const incident = notification.incident;
-    const reason = {
-      pong_timeout: '心跳 Pong 超时',
-      heartbeat_silence: '长连接持续静默',
-      connect_failed: '长连接建立或重连失败',
-    }[incident.reason] || incident.reason;
-    return {
-      config: { wide_screen_mode: true },
-      header: { template: 'red', title: { tag: 'plain_text', content: '⚠️ PR 助手飞书连接异常' } },
-      elements: [
-        { tag: 'markdown', content: `**故障类型：** ${reason}\n**检测时间：** ${formatAlertTime(incident.detectedAt)}\n**最近 Ping：** ${formatAlertTime(incident.lastPingAt)}\n**最近 Pong：** ${formatAlertTime(incident.lastPongAt)}\n**自动处置：** 正在重建飞书长连接；期间按钮事件可能无法送达。` },
-        { tag: 'note', elements: [{ tag: 'plain_text', content: '若飞书 HTTP 同时不可达，本卡片会在网络恢复后自动补发。' }] },
-      ],
-    };
-  }
-  const incident = notification.incident;
-  return {
-    config: { wide_screen_mode: true },
-    header: { template: 'green', title: { tag: 'plain_text', content: '✅ PR 助手飞书连接已恢复' } },
-    elements: [
-      { tag: 'markdown', content: `**恢复时间：** ${formatAlertTime(notification.recoveredAt)}\n**此前故障：** ${incident.reason}\n**故障开始：** ${formatAlertTime(incident.detectedAt)}\n**当前状态：** 已重新收到飞书长连接信号，按钮和文本命令可正常接收。` },
-    ],
-  };
-};
-
-const sendConnectionAlertCard = async ({ appId, appSecret, openId, notification }) => {
-  const token = await getTenantToken(appId, appSecret);
-  const response = await fetch('https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      receive_id: openId,
-      msg_type: 'interactive',
-      content: JSON.stringify(buildConnectionAlertCard(notification)),
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.code) {
-    throw new Error(`Feishu connection alert failed: ${payload.msg || response.status}`);
-  }
-};
-
 const reply = async ({ appId, appSecret, messageId, chatId, text }) => {
   const token = await getTenantToken(appId, appSecret);
   const content = JSON.stringify({ text });
@@ -280,9 +231,7 @@ const main = async () => {
   const appId = feishuSettings.app_id;
   const appSecret = feishuSettings.app_secret;
   const allowedUsers = new Set(feishuSettings.allowed_users || [feishuSettings.open_id].filter(Boolean));
-  const alertOpenId = feishuSettings.open_id || feishuSettings.allowed_users?.[0];
   if (!appId || !appSecret) throw new Error('Feishu credentials are not configured');
-  if (!alertOpenId) throw new Error('Feishu connection alert recipient is not configured');
 
   const connectionAlertState = await readConnectionAlertState();
   let alertOperation = Promise.resolve();
@@ -291,19 +240,9 @@ const main = async () => {
     return alertOperation;
   };
   const flushConnectionAlerts = async () => {
-    while (connectionAlertState.pending.length) {
-      const notification = connectionAlertState.pending[0];
-      try {
-        await sendConnectionAlertCard({ appId, appSecret, openId: alertOpenId, notification });
-        connectionAlertState.pending.shift();
-        await writeConnectionAlertState(connectionAlertState);
-        log('sent Feishu connection alert', notification.kind, notification.id);
-      } catch (cause) {
-        error('queued Feishu connection alert for retry', notification.kind, cause);
-        await writeConnectionAlertState(connectionAlertState);
-        break;
-      }
-    }
+    if (!connectionAlertState.pending.length) return;
+    connectionAlertState.pending = [];
+    await writeConnectionAlertState(connectionAlertState);
   };
   const markConnectionUnhealthy = (reason, detail = '') => serializeAlertOperation(async () => {
     if (connectionAlertState.status === 'unhealthy') {
