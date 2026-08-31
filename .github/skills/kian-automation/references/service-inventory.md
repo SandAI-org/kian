@@ -33,14 +33,14 @@
 - PR 描述命令处理：`pr_desc_manager.py`
 - 飞书入站桥接：源码仓库 `packages/kian-copilot-bridge`
 
-实时推送卡片会保留“回复 `descN/upN`”提示，并为未管理 PR 提供“生成描述/生成简略版”，为已管理 PR 提供“更新描述/更新完整版”。简略版只含 `## DONE` 与 commit 要点；完整版会保留内容并补齐完整章节结构。按钮 value 包含 `action`、PR 号、仓库名和可选模式，能精确处理不同仓库中的同号 PR；按钮与文字命令短时间冲突时按钮优先。
+实时推送卡片会保留“回复 `descN/upN`”提示，并为未管理 PR 提供“生成描述/生成简略版”，为已管理 PR 提供“更新描述/更新完整版”。简略版只含基于当前最终 diff 整体重构的 `## DONE`；完整版还会保留或补齐后续章节结构。按钮 value 包含 `action`、PR 号、仓库名和可选模式，能精确处理不同仓库中的同号 PR；按钮与文字命令短时间冲突时按钮优先。
 
-`upN` 与两个更新按钮都会按 commit 顺序处理尚未写入描述的新 commit：普通 commit 追加标题要点，带 `(#N)` 的 squash commit 优先展开成关联 PR 摘要；已处理 SHA 保存在 `managed-prs.json` 中以保证幂等。
+`descN`、`upN` 与对应按钮始终根据当前 head 的最终 diff 整体重写 DONE，不按 commit 顺序追加，也不照抄 commit message。Commit 元数据只用于识别 merge/squash 引入的关联 PR；对应最终效果的 item 在单个来源时使用 `w.r.t. the PR: <URL>.`，多个来源时合并为 `w.r.t. the PRs: <URL>, <URL>.`，写入前会校验所有预期来源链接及后缀格式。
 
 ## 已知风险
 
 - 凭据集中在默认私有目录的配置 JSON 中，禁止提交版本库或复制进 skill/memory。
 - 历史日志出现过网络 DNS/超时，脚本会重试且失败时不推进检查时间。
-- 外部摘要模型曾持续返回 403；监控已改为失败时本地摘要降级。
+- PR 描述默认使用本机 OAuth 登录的 Copilot CLI，无需独立模型 API key；换机或登录过期后需重新安装并执行 `copilot login`。实时/每日监控在外部摘要不可用时仍使用本地确定性摘要。
 - 多个提醒共用 stdout/stderr 日志，定位单个任务时需结合时间和 LaunchAgent label。
 - 桥接器当前只接管明确的 `descN/upN` 命令；任意自然语言飞书对话仍不等同于当前交互式 Copilot 会话。

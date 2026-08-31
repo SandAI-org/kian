@@ -3,7 +3,10 @@
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +32,7 @@ TOKENS = GITHUB.get("tokens", {})
 REPOS = GITHUB.get("repos", [])
 PR_MANAGER = CONFIG.get("pr_manager", {})
 SPECIAL_LAYOUT_REPO = PR_MANAGER.get("special_layout_repo", "")
+SUMMARIZATION = CONFIG.get("summarization", {})
 
 
 def request(repo, path, method="GET", payload=None):
@@ -412,6 +416,235 @@ def build_diff_body(pr, files):
     return "## DONE\n\n" + "\n".join(bullets) + "\n"
 
 
+def diff_summary_payload(files, limit=120000):
+    """Serialize the current final diff without including commit messages."""
+    chunks = []
+    size = 0
+    for item in files:
+        header = (
+            f"FILE {item.get('filename', '')} status={item.get('status', '')} "
+            f"additions={item.get('additions', 0)} deletions={item.get('deletions', 0)}\n"
+        )
+        patch = item.get("patch") or "(patch unavailable; infer only from path and statistics)"
+        chunk = header + patch + "\n"
+        remaining = limit - size
+        if remaining <= 0:
+            break
+        chunks.append(chunk[:remaining])
+        size += min(len(chunk), remaining)
+    return "".join(chunks)
+
+
+def normalize_and_validate_summary(summary, linked_prs):
+    def ensure_bold(value):
+        if re.search(r"\*\*[^*]+\*\*", value):
+            return value
+        boundary = re.search(r"(?:,|:|\s+(?:by|via|with|through|using|while)\s+)", value)
+        end = boundary.start() if boundary and boundary.start() >= 12 else min(len(value), 72)
+        return f"**{value[:end].rstrip()}**{value[end:]}"
+
+    normalized = {}
+    for bucket in ("algo", "infra", "general"):
+        values = summary.get(bucket, [])
+        normalized[bucket] = [
+            ensure_bold(markdown_inline_format(str(value).strip().lstrip("- ")))
+            for value in values
+            if str(value).strip()
+        ]
+    if not any(normalized.values()):
+        raise RuntimeError("摘要后端返回了空的 diff 摘要")
+    rendered_values = "\n".join(
+        value for values in normalized.values() for value in values
+    )
+    missing_urls = [
+        item.get("html_url", "")
+        for item in linked_prs
+        if item.get("html_url") and item.get("html_url") not in rendered_values
+    ]
+    if missing_urls:
+        raise ValueError(f"摘要后端遗漏了关联 PR 来源: {', '.join(missing_urls)}")
+    for value in rendered_values.splitlines():
+        attributed_urls = re.findall(r"https://github\.com/[^\s,]+/pull/\d+", value)
+        if len(attributed_urls) > 1 and "w.r.t. the PRs:" not in value:
+            raise ValueError("多个关联 PR 必须合并为一个 `w.r.t. the PRs:` 后缀")
+        if len(attributed_urls) == 1 and "w.r.t. the PR:" not in value:
+            raise ValueError("单个关联 PR 必须使用 `w.r.t. the PR:` 后缀")
+    return normalized
+
+
+def summarize_with_copilot_cli(prompt):
+    configured_command = str(SUMMARIZATION.get("command", "copilot"))
+    command = shutil.which(configured_command) or (
+        configured_command if os.path.isfile(configured_command) else ""
+    )
+    if not command:
+        raise RuntimeError("未找到 Copilot CLI；请安装并执行 `copilot login`")
+    env = os.environ.copy()
+    for key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+        env.pop(key, None)
+    result = subprocess.run(
+        [
+            command,
+            "-p",
+            prompt,
+            "--silent",
+            "--no-color",
+            "--no-auto-update",
+            "--disable-builtin-mcps",
+            "--available-tools=",
+            "--no-custom-instructions",
+            "--no-ask-user",
+            "--model",
+            str(SUMMARIZATION.get("model", "auto")),
+        ],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        raise RuntimeError(
+            "Copilot CLI 摘要失败: " + (detail[0] if detail else "unknown error")
+        )
+    content = result.stdout.strip()
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.I)
+    return json.loads(content)
+
+
+def summarize_current_diff(pr, files, existing_body, special_layout=False, linked_prs=None):
+    """Use the final PR diff to rewrite DONE as a coherent current-state summary."""
+    linked_prs = linked_prs or []
+    backend = SUMMARIZATION.get("backend", "openrouter")
+    api_key = SUMMARIZATION.get("api_key")
+    schema = (
+        '{"algo":["..."],"infra":["..."],"general":["..."]}'
+        if special_layout
+        else '{"algo":[],"infra":[],"general":["..."]}'
+    )
+    linked_context = "\n".join(
+        f"- {item.get('html_url', '')} | {item.get('title', '')}"
+        for item in linked_prs
+    ) or "(none)"
+    prompt = f"""Rewrite the DONE section of a GitHub pull request description.
+
+Requirements:
+- Analyze the CURRENT FINAL DIFF below. Do not summarize or quote commit messages; none are provided.
+- Describe the net behavior that exists at the current head. If later work replaced earlier work, describe only the final result.
+- Treat the existing description only as context. Remove stale, duplicated, chronological, or unsupported claims.
+- Preserve provenance for changes merged from another pull request. For EVERY URL in MERGED PR PROVENANCE below, place that exact URL on the bullet describing its final net effect. Use `w.r.t. the PR: <URL>.` when a bullet maps to one PR, and one grouped `w.r.t. the PRs: <URL>, <URL>, <URL>.` suffix when it maps to multiple PRs. Never repeat multiple singular suffixes on one bullet. Do not infer behavior from the titles; titles are attribution metadata only.
+- Produce 3-8 concise but specific English bullets. Explain behavior, important implementation choices, and validation where the diff supports them.
+- Do not mention file/addition/deletion counts or say merely that files were updated.
+- Every bullet must use Markdown bold (`**...**`) for 1-3 important outcomes, mechanisms, or keywords.
+- Use Markdown backticks for identifiers and paths, but do not include a leading dash in strings.
+- Return JSON only with this exact shape: {schema}
+- Algo means application/model behavior under apps/. Infra means reusable implementation under pkgs/. General is for cross-cutting items.
+
+PR title: {pr.get('title', '')}
+
+Existing description:
+{existing_body[:12000]}
+
+MERGED PR PROVENANCE (exact URLs are mandatory):
+{linked_context}
+
+CURRENT FINAL DIFF:
+{diff_summary_payload(files)}
+"""
+    if backend == "copilot_cli":
+        last_error = None
+        for attempt in range(3):
+            try:
+                return normalize_and_validate_summary(
+                    summarize_with_copilot_cli(prompt), linked_prs
+                )
+            except (
+                json.JSONDecodeError,
+                OSError,
+                subprocess.SubprocessError,
+                RuntimeError,
+                ValueError,
+            ) as error:
+                last_error = error
+                if attempt < 2:
+                    time.sleep(attempt + 1)
+        raise RuntimeError(f"无法通过 Copilot CLI 重构 PR 描述: {last_error}")
+    if backend != "openrouter":
+        raise RuntimeError(f"不支持的摘要后端: {backend}")
+    if not api_key or str(api_key).startswith("REPLACE_WITH_"):
+        raise RuntimeError("OpenRouter 摘要模式缺少 API key")
+    payload = json.dumps({
+        "model": SUMMARIZATION.get("model", "anthropic/claude-opus-4.6"),
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+        "max_tokens": 1800,
+    }).encode()
+    last_error = None
+    for attempt in range(3):
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com",
+                "X-Title": "Kian PR Description Manager",
+            },
+        )
+        try:
+            with OPENER.open(req, timeout=120) as response:
+                result = json.load(response)
+            content = result["choices"][0]["message"]["content"].strip()
+            content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.I)
+            summary = json.loads(content)
+            return normalize_and_validate_summary(summary, linked_prs)
+        except urllib.error.HTTPError as error:
+            if error.code in (401, 403):
+                raise RuntimeError(
+                    "摘要服务凭据已失效；为避免低质量本地摘要覆盖现有 desc，已停止更新"
+                ) from error
+            last_error = error
+            if attempt < 2:
+                time.sleep(3 * (attempt + 1))
+        except (KeyError, TypeError, ValueError, urllib.error.URLError, TimeoutError) as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(3 * (attempt + 1))
+    raise RuntimeError(f"无法根据当前 diff 重构 PR 描述: {last_error}")
+
+
+def render_rewritten_done(summary, special_layout=False):
+    def bullets(values):
+        return "\n".join(
+            f"- {value}" if value.endswith((".", "。")) else f"- {value}."
+            for value in values
+        )
+
+    if special_layout:
+        sections = ["## DONE", "", "### Algo CodeBreak", ""]
+        if summary["algo"]:
+            sections.extend([bullets(summary["algo"]), ""])
+        sections.extend(["### Infra CodeBreak", ""])
+        if summary["infra"]:
+            sections.extend([bullets(summary["infra"]), ""])
+        if summary["general"]:
+            sections.extend([bullets(summary["general"]), ""])
+        return "\n".join(sections).rstrip() + "\n"
+    values = summary["general"] + summary["algo"] + summary["infra"]
+    return "## DONE\n\n" + bullets(values) + "\n"
+
+
+def replace_done_section(existing_body, rewritten_done):
+    marker = re.search(
+        r"^##\s+(?:TODO in this PR|TODO in the future|End2End Alignment)\s*$",
+        existing_body,
+        flags=re.M | re.I,
+    )
+    suffix = existing_body[marker.start():].lstrip() if marker else ""
+    return rewritten_done.rstrip() + ("\n\n" + suffix.rstrip() if suffix else "") + "\n"
+
+
 def build_incremental_diff_bullets(commits, files):
     """Summarize only changes introduced since the last managed PR head."""
     searchable = (
@@ -572,9 +805,19 @@ def summarize_commit_from_diff(item):
 
 
 def save_managed(managed):
-    with open(MANAGED_PATH, "w", encoding="utf-8") as f:
-        json.dump(managed, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    directory = os.path.dirname(MANAGED_PATH)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix="managed-prs-", suffix=".json", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(managed, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_path, MANAGED_PATH)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
 
 def append_before_future_sections(body, bullets):
@@ -743,7 +986,7 @@ def expand_to_full_body(repo, body, commits):
     return result.rstrip() + "\n"
 
 
-def update(command, number, requested_repo=None, mode="default"):
+def update_append_only_legacy(command, number, requested_repo=None, mode="default"):
     managed = load_json(MANAGED_PATH, {"managed": {}})
     repo, pr = find_pr(number, managed, requested_repo)
     if pr.get("state") != "open":
@@ -982,6 +1225,71 @@ def update(command, number, requested_repo=None, mode="default"):
     ]
     save_managed(managed)
     return repo, True, "、".join(added)
+
+
+def update(command, number, requested_repo=None, mode="default"):
+    """Rebuild the description from the current final diff for every desc/up."""
+    managed = load_json(MANAGED_PATH, {"managed": {}})
+    repo, pr = find_pr(number, managed, requested_repo)
+    if pr.get("state") != "open":
+        raise RuntimeError(f"{repo}#{number} 当前不是开放 PR")
+
+    key = f"{repo}#{number}"
+    current_body = pr.get("body") or ""
+    current_head_sha = pr.get("head", {}).get("sha", "")
+    files = pull_request_files(repo, number)
+    commits = request(repo, f"/pulls/{number}/commits?per_page=100")
+    linked_prs = []
+    for linked_number in linked_pr_numbers(commits):
+        if linked_number == number:
+            continue
+        try:
+            linked_prs.append(request(repo, f"/pulls/{linked_number}"))
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+    summary = summarize_current_diff(
+        pr,
+        files,
+        current_body,
+        repo == SPECIAL_LAYOUT_REPO,
+        linked_prs,
+    )
+    rewritten_done = render_rewritten_done(summary, repo == SPECIAL_LAYOUT_REPO)
+    body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
+    if mode == "full":
+        body = expand_to_full_body(repo, body, commits)
+
+    expected_links = [item.get("html_url", "") for item in linked_prs if item.get("html_url")]
+    missing_links = [url for url in expected_links if url not in body]
+    if missing_links:
+        raise RuntimeError(
+            f"整体重构遗漏了关联 PR 来源: {', '.join(missing_links)}；未更新 GitHub"
+        )
+
+    entry = managed.setdefault("managed", {}).setdefault(
+        key, {"added": date.today().isoformat(), "note": pr.get("title", "")}
+    )
+    if body.strip() == current_body.strip():
+        entry["last_head_sha"] = current_head_sha
+        entry["last_body_snapshot"] = current_body
+        save_managed(managed)
+        return repo, False, "当前 desc 已与最新最终 diff 一致"
+
+    result = request(repo, f"/pulls/{number}", method="PATCH", payload={"body": body})
+    if result.get("number") != number:
+        raise RuntimeError("GitHub 未返回预期的 PR 更新结果")
+    updated_body = result.get("body") or ""
+    if updated_body.strip() != body.strip():
+        raise RuntimeError("GitHub 返回的 desc 与整体重构结果不一致；未推进处理状态")
+    entry["last_head_sha"] = current_head_sha
+    entry["last_body_snapshot"] = updated_body
+    entry["processed_linked_prs"] = sorted(
+        item.get("number") for item in linked_prs if item.get("number")
+    )
+    entry["processed_commits"] = [item.get("sha", "") for item in commits if item.get("sha")]
+    save_managed(managed)
+    return repo, True, "已基于当前最终 diff 整体重构 desc，未使用 commit message 追加"
 
 
 def main():

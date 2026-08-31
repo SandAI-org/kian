@@ -18,7 +18,7 @@
 
 1. 飞书 app ID、app secret、通知接收人的 open ID，以及所有允许操作用户的 open ID。
 2. `owner/repo` 格式的 GitHub 仓库列表，以及每个 owner 对应的 token。
-3. 可选的摘要 API key 和模型。
+3. 摘要后端。推荐的 `copilot_cli` 后端使用 GitHub Copilot 订阅和 OAuth 登录，不需要单独的模型 API key。
 4. 启用哪些服务：`bridge`、`realtime`、`daily`、`qr`，以及各自调度时间。
 5. 文件传输默认下载目录、机器简称、SSH config 别名及可选路径前缀映射。不要在聊天中索要密码或私钥。
 6. 二维码发布所需的本地仓库目录、仓库内目标图片相对路径、分支、提交信息和提醒文案。
@@ -37,15 +37,17 @@
 
 ## 安装
 
-1. 安装 Node.js、Python 3、Git、rsync，以及可选的 pnpm。
+1. 安装 Node.js、Python 3、Git、rsync，以及可选的 pnpm。若希望不使用独立 API key 仍生成高质量 PR 描述，安装官方 GitHub Copilot CLI（`npm install -g @github/copilot` 或 `brew install --cask copilot-cli`），并执行一次 `copilot login`。
 2. 将本仓库克隆到稳定位置。
 3. 运行 `automation/bin/install.sh`。首次运行会创建私有目录，并且只在私有配置不存在时复制示例。
-4. 编辑 `~/.config/kian-automation/config/config.json`，替换每个已启用服务必需的值。已禁用或未使用的可选功能可以保留占位符。不使用二维码时保持 QR 禁用。示例默认启用 `bridge`、`realtime`、`daily`，禁用 `qr`。摘要服务是可选项；不配置 API key 时监控会使用确定性的本地摘要。
+4. 编辑 `~/.config/kian-automation/config/config.json`，替换每个已启用服务必需的值。已禁用或未使用的可选功能可以保留占位符。不使用二维码时保持 QR 禁用。示例默认启用 `bridge`、`realtime`、`daily`，禁用 `qr`。使用 `summarization.backend: "copilot_cli"` 时，将 `command` 设置为 `command -v copilot` 返回的绝对路径；除非需要指定受支持模型，否则保留 `model: "auto"`。OAuth 凭据只保存在本机凭据存储中，不得复制进仓库。
 5. 再次运行安装脚本。它会安装桥接依赖、渲染 `~/Library/LaunchAgents/com.kian.{bridge,realtime,daily,qr}.plist`、校验并重载启用的服务。若仍有占位符，只渲染而不会加载服务。
 6. 运行 `automation/bin/doctor.sh`。
 
 安装器不会覆盖已有私有配置。服务是否启用及调度参数均来自配置中的 `services`。
 依赖安装会显式忽略继承的桌面代理设置，避免本地代理应用退出后留下的失效地址阻断初始化。
+
+PR manager 以无工具、无仓库访问、无 MCP、无自定义指令的非交互方式调用 Copilot CLI，只传入序列化后的最终 PR diff。由于 `launchd` 不继承交互式 shell 的 `PATH`，私有配置应使用 CLI 绝对路径。换新 Mac 或 OAuth 过期后，交互执行 `copilot login`，再重新运行安装脚本。旧的 `openrouter` 后端仍可用，但必须在私有配置中显式提供 `api_key` 和模型。
 
 ## 验证与使用
 
@@ -58,7 +60,7 @@
 
 远端地址使用私有 SSH config 别名。远端到远端会经本机临时目录中转，并对文件执行大小和 SHA-256 校验。
 
-常规 wheel 镜像同步需在私有 `wheel_sync.profiles` 中定义 profile，然后运行 `python3 automation/scripts/sync_wheels.py <profile>`。稳定 profile 使用 `selection_mode: stable` 和 `stable_versions`，只同步明确锁定版本；测试包不会自动发布。个人开发 profile 使用 `selection_mode: latest` 和按 dist 顺序配置的 `expected_distributions`，且必须写入独立的 `dev/<image>` 目录，按修改时间同步每个 distribution 的最新 wheel，绝不修改稳定目录。正式传输前会比较源 wheel 与每个目标同名文件的 SHA-256，未变化的包不会下载、清理或上传；只有变化的 wheel 才暂存一次并更新需要更新的目标，因此同版本同文件名的重新构建也能正确识别。清理只发生在各自目标目录。
+常规 wheel 镜像同步需在私有 `wheel_sync.profiles` 中定义 profile，然后运行 `python3 automation/scripts/sync_wheels.py <profile>`。每个配置的 dist 目录必须恰好包含一个 wheel，该文件直接视为当前稳定包，并与按 dist 顺序配置的 `expected_distributions` 一一对应。不再维护开发 profile 或版本锁定。正式传输前会比较源 wheel 与每个目标同名文件的 SHA-256，未变化的包不会下载、清理或上传；只有变化的 wheel 才暂存一次并更新需要更新的目标，因此同版本同文件名的重新构建也能正确识别。新 wheel 上传并校验成功后，才会清理该目标中同 distribution 的其他版本。
 
 二维码发布需显式执行：`python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`。脚本复制图片、有变化时提交、清除代理变量、推送配置分支，仅在 push 成功后标记提醒完成并发送回执。
 

@@ -22,8 +22,9 @@
     "legacy_replacements": {}
   },
   "summarization": {
-    "api_key": "REPLACE_WITH_SUMMARIZATION_API_KEY",
-    "model": "REPLACE_WITH_MODEL_NAME"
+    "backend": "copilot_cli",
+    "command": "REPLACE_WITH_COPILOT_CLI_PATH",
+    "model": "auto"
   },
   "file_transfer": {
     "downloads": "REPLACE_WITH_DOWNLOADS_DIRECTORY",
@@ -42,7 +43,6 @@
   "wheel_sync": {
     "profiles": {
       "example-image": {
-        "selection_mode": "stable",
         "source_machine": "example-source-machine",
         "dist_dirs": [
           "REPLACE_WITH_FIRST_DIST_DIRECTORY",
@@ -53,23 +53,6 @@
           "example-destination-machine"
         ],
         "target_dir": "REPLACE_WITH_IMAGE_SPECIFIC_WHEEL_DIRECTORY",
-        "stable_versions": {
-          "example_distribution_one": "REPLACE_WITH_STABLE_VERSION",
-          "example_distribution_two": "REPLACE_WITH_STABLE_VERSION"
-        }
-      },
-      "example-dev-image": {
-        "selection_mode": "latest",
-        "source_machine": "example-source-machine",
-        "dist_dirs": [
-          "REPLACE_WITH_FIRST_DIST_DIRECTORY",
-          "REPLACE_WITH_SECOND_DIST_DIRECTORY"
-        ],
-        "destination_machines": [
-          "example-source-machine",
-          "example-destination-machine"
-        ],
-        "target_dir": "REPLACE_WITH_DEV_IMAGE_SPECIFIC_WHEEL_DIRECTORY",
         "expected_distributions": [
           "example_distribution_one",
           "example_distribution_two"

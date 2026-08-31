@@ -18,7 +18,7 @@ Ask the operator specifically for:
 
 1. Feishu app ID, app secret, notification recipient open ID, and every allowed user's open ID.
 2. GitHub repositories as `owner/repo` and a token per owner.
-3. Optional summarization API key and model.
+3. Summarization backend. The recommended `copilot_cli` backend uses a GitHub Copilot subscription and OAuth login instead of a separate model API key.
 4. Which services to enable: `bridge`, `realtime`, `daily`, and `qr`, plus schedules.
 5. File-transfer download directory, friendly machine names, SSH config aliases, and optional path-prefix mappings. Do not ask for passwords or private keys in chat.
 6. For QR publishing: local clone directory, repository-relative target image, branch, commit message, and reminder text.
@@ -37,15 +37,17 @@ Use a fine-grained GitHub token restricted to the configured repositories when p
 
 ## Install
 
-1. Install Node.js, Python 3, Git, rsync, and optionally pnpm.
+1. Install Node.js, Python 3, Git, rsync, and optionally pnpm. For high-quality PR descriptions without a separate API key, install the official GitHub Copilot CLI (`npm install -g @github/copilot` or `brew install --cask copilot-cli`) and run `copilot login` once.
 2. Clone this repository to a stable location.
 3. Run `automation/bin/install.sh`. The first run creates the private directories and copies the example only when no private config exists.
-4. Edit `~/.config/kian-automation/config/config.json`, replacing the values required by each enabled service. Placeholders may remain in disabled or unused optional features. Keep QR disabled if unused. `bridge`, `realtime`, and `daily` are enabled by default in the example; QR is disabled. Summarization is optional; without an API key the monitor uses a deterministic local summary.
+4. Edit `~/.config/kian-automation/config/config.json`, replacing the values required by each enabled service. Placeholders may remain in disabled or unused optional features. Keep QR disabled if unused. `bridge`, `realtime`, and `daily` are enabled by default in the example; QR is disabled. For `summarization.backend: "copilot_cli"`, set `command` to the absolute path returned by `command -v copilot` and keep `model: "auto"` unless a specific supported model is required. The OAuth credential remains in the local credential store and must not be copied into this repository.
 5. Run the installer again. It installs bridge dependencies, renders `~/Library/LaunchAgents/com.kian.{bridge,realtime,daily,qr}.plist`, validates them, and reloads enabled services. If placeholders remain, it safely renders but does not load services.
 6. Run `automation/bin/doctor.sh`.
 
 The installer preserves an existing private config. Service enablement and schedules come from `services` in that config.
 Dependency installation explicitly ignores inherited desktop proxy settings, which prevents a stopped local proxy application from breaking bootstrap.
+
+The PR manager invokes Copilot CLI non-interactively without tools, repository access, MCP servers, or custom instructions; only the serialized final PR diff is supplied. Because `launchd` does not inherit an interactive shell's `PATH`, the private config should use the CLI's absolute path. On a new Mac or after OAuth expiry, run `copilot login` interactively and rerun the installer. The legacy `openrouter` backend remains available only when its private `api_key` and model are explicitly configured.
 
 ## Verify and operate
 
@@ -58,7 +60,7 @@ Manual non-sending checks can use Python compilation and Node syntax validation.
 
 Remote endpoints use private SSH config aliases. Remote-to-remote copies stage through a local temporary directory and verify files by size and SHA-256.
 
-For a recurring wheel mirror, configure `wheel_sync.profiles` privately and run `python3 automation/scripts/sync_wheels.py <profile>`. Stable profiles use `selection_mode: stable` plus explicit `stable_versions`; newer test builds are never promoted automatically. Personal development profiles use `selection_mode: latest` plus ordered `expected_distributions`, and must write to separate `dev/<image>` directories. Development sync selects the newest matching wheel in each dist directory without touching stable targets. Before transfer, both modes compare source and per-destination SHA-256 values, skipping unchanged distributions entirely, including downloads and cleanup. Changed wheels are staged once, verified on every transfer, and replace other versions only within their own target directory. Digest comparison also detects rebuilt wheels whose filename and version did not change.
+For a recurring wheel mirror, configure `wheel_sync.profiles` privately and run `python3 automation/scripts/sync_wheels.py <profile>`. Each configured dist directory must contain exactly one wheel, which is treated as the current stable build and must match the corresponding ordered `expected_distributions` entry. There are no development profiles or version locks. Before transfer, the synchronizer compares source and per-destination SHA-256 values, skipping unchanged distributions entirely, including downloads and cleanup. Changed wheels are staged once and verified after every transfer. Only after a new wheel is uploaded and verified are other versions of the same distribution removed from that target. Digest comparison also detects same-name rebuilds.
 
 QR publication is explicit: `python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`. It copies the image, commits if changed, clears proxy variables, pushes the configured branch, marks the reminder complete only after a successful push, and sends a receipt.
 

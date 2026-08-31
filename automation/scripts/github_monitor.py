@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
@@ -33,10 +34,38 @@ def load_managed():
     """返回受管理 desc 的 PR 集合，键为 'owner/repo#num'。"""
     if os.path.exists(MANAGED_FILE):
         try:
-            return set(json.load(open(MANAGED_FILE)).get("managed", {}).keys())
-        except Exception:
+            with open(MANAGED_FILE, encoding="utf-8") as f:
+                return set(json.load(f).get("managed", {}).keys())
+        except (OSError, json.JSONDecodeError):
             return set()
     return set()
+
+
+def load_managed_data():
+    if not os.path.exists(MANAGED_FILE):
+        return {"managed": {}}
+    try:
+        with open(MANAGED_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"managed": {}}
+    return data if isinstance(data, dict) else {"managed": {}}
+
+
+def save_managed_data(data):
+    directory = os.path.dirname(MANAGED_FILE)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix="managed-prs-", suffix=".json", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_path, MANAGED_FILE)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
 
 def desc_hint(repo, num):
@@ -51,14 +80,11 @@ def unmanage_pr(repo, num):
     """把已 merge/closed 的 PR 从受管理清单移除。"""
     if not os.path.exists(MANAGED_FILE):
         return
-    try:
-        d = json.load(open(MANAGED_FILE))
-    except Exception:
-        return
+    d = load_managed_data()
     key = f"{repo}#{num}"
     if key in d.get("managed", {}):
         d["managed"].pop(key, None)
-        json.dump(d, open(MANAGED_FILE, "w"), ensure_ascii=False, indent=2)
+        save_managed_data(d)
 
 
 def llm_summarize(text, kind, concise=False):
@@ -303,10 +329,7 @@ def cleanup_managed():
     """兑底：检查受管理清单里所有 PR 的当前状态，已 merge/closed 的直接清掉（不依赖 merge 事件窗口）。"""
     if not os.path.exists(MANAGED_FILE):
         return
-    try:
-        d = json.load(open(MANAGED_FILE))
-    except Exception:
-        return
+    d = load_managed_data()
     changed = False
     for key in list(d.get("managed", {}).keys()):
         try:
@@ -318,7 +341,7 @@ def cleanup_managed():
         except Exception:
             continue
     if changed:
-        json.dump(d, open(MANAGED_FILE, "w"), ensure_ascii=False, indent=2)
+        save_managed_data(d)
 
 
 def realtime():

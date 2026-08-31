@@ -51,7 +51,7 @@ description: '安装、迁移、恢复、接管和维护可迁移 Kian 自动化
 1. 飞书 app ID、app secret、通知接收人的 open ID、允许操作机器人的用户 open ID。
 2. 需要监控的 GitHub `owner/repo` 列表，以及每个 owner 对应的 token。
 3. 要启用的服务：`bridge`、`realtime`、`daily`、`qr`，以及运行间隔或触发时间。
-4. 可选摘要模型的 API key 和模型名；不配置时使用本地确定性摘要。
+4. 摘要后端。优先使用已订阅并通过 OAuth 登录的 GitHub Copilot CLI；只有明确选择旧 `openrouter` 后端时才需要私有 API key 和模型名。
 5. 文件传输的默认下载目录、机器简称、`~/.ssh/config` 别名和路径前缀映射。
 6. Wheel 同步 profile 的构建源机器、dist 目录、目标机器、按镜像区分的汇总目录，以及每个 distribution 经用户确认的稳定版本号。
 7. 若启用二维码服务：本地网站仓库目录、仓库内图片相对路径、分支、提交信息和提醒文案。
@@ -69,6 +69,17 @@ description: '安装、迁移、恢复、接管和维护可迁移 Kian 自动化
 确认应用具有对应的消息接收/发送权限、已发布可用版本，并在需要时加入目标群聊。
 
 GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓库元数据、Issues、Pull requests、评论和 Contents 只读权限；更新 PR 描述还需要 Pull requests 写权限。私有仓库使用 classic token 时通常需要 `repo`。
+
+### 4.1 配置 Copilot CLI 摘要后端
+
+PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API key：
+
+1. 安装官方 CLI：`npm install -g @github/copilot`，或在 macOS 使用 `brew install --cask copilot-cli`。
+2. 在交互式终端执行 `copilot login`，完成浏览器 OAuth 授权。不得复制或提交本机 OAuth 凭据。
+3. 执行 `command -v copilot` 获取绝对路径，并写入私有配置的 `summarization.command`。`launchd` 不继承交互式 shell 的 `PATH`，不能只依赖命令名。
+4. 私有配置使用 `backend: "copilot_cli"`、CLI 绝对路径和 `model: "auto"`。换机或登录过期时重新执行 `copilot login`。
+5. 用无副作用的小提示验证 CLI 非交互模式，再测试 PR manager。PR manager 会禁用 CLI 工具、文件访问、MCP 和自定义指令，只传递最终 PR diff。
+6. 如明确改用 `openrouter`，只在私有配置中保存其 `api_key` 和模型；不得写入模板、文档、日志或聊天。
 
 ### 5. 创建私有配置
 
@@ -175,13 +186,26 @@ GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓
 
 ### 飞书 PR 指令故障
 
-1. 检查 `com.kian.bridge` 的 `launchctl` 状态。
-2. 查看私有 `logs/bridge.log` 与 `logs/bridge.err.log`。
+1. 检查安装器实际注册的 bridge label（当前通常为 `com.kian.copilot-bridge`）及其 `launchctl` 状态；不要假定旧 label 仍有效。
+2. 通过 `launchctl print gui/$(id -u)/<label>` 读取实际 `stdout path` 和 `stderr path`，再查看日志；不要假定日志一定在私有 `logs/` 目录。
 3. 确认 Node 进程存在飞书 WebSocket HTTPS 连接。
-4. `desc<号>` 用于首次生成；`up<号>` 用于已管理 PR 的增量更新，会按 GitHub 顺序把尚未处理的普通 commit 或关联 PR 逐条追加到 `## DONE`，并记录 commit SHA 防止重复。
-5. “生成简略版”只生成 `## DONE` 和 commit 要点；“更新完整版”保留已有内容并补齐仓库对应的完整章节结构，再执行增量更新。
-6. 实时更新卡片保留文字回复提示，并同时生成对应按钮；排查按钮时确认 `card.action.trigger` 已在飞书开放平台订阅。
-7. 处理器只使用监控配置内的仓库与对应 GitHub token，不允许任意仓库写入。
+4. `desc<号>` 与 `up<号>` 都必须分析当前 head 的最终 PR diff，并结合现有描述整体重构 `## DONE`；禁止逐 commit 追加或照抄 commit message。后续 commit 覆盖前序实现时，描述只反映最终净效果。
+5. “简略版”只保留重构后的 `## DONE`；“完整版”在整体重构 `## DONE` 后保留或补齐仓库对应的后续章节结构。
+6. 每条 DONE item 必须对重要结果、实现机制或关键词使用 Markdown `**加粗**`，同时继续用反引号标记代码符号和路径。
+7. 如果 DONE item 描述的是合入其他 PR 的变更，单个来源使用 `w.r.t. the PR: <完整 PR URL>.`；多个来源必须合并为一个 `w.r.t. the PRs: <URL>, <URL>, <URL>.` 后缀。整体重构可以合并重复语义，但不得丢失仍由最终 diff 支持的关联 PR 来源。
+8. 实时更新卡片保留文字回复提示，并同时生成对应按钮；排查按钮时确认 `card.action.trigger` 已在飞书开放平台订阅。
+9. 处理器只使用监控配置内的仓库与对应 GitHub token，不允许任意仓库写入。
+
+#### 卡片按钮无响应速查
+
+1. 若文本 `descN`/`upN` 正常，GitHub、Python 和回复链路无需重复排查，重点检查 `card.action.trigger`。
+2. handler 应保留脱敏的 `received card action`、解析结果布尔值和丢弃原因日志；不得记录 open ID、消息正文或凭据。
+3. 点击原卡片后若没有新日志，先确认发卡 monitor 与 bridge 使用同一 App（只比较配置值或脱敏指纹），并在飞书后台确认“回调配置”使用长连接且已订阅 `card.action.trigger`。
+4. 使用当前 App 新发一张无副作用诊断卡片。若点击后出现 `received card action`，订阅、长连接和回调均正常；原卡片通常是旧卡或转发副本，应改用新生成的 PR 卡片。
+5. 诊断按钮使用非生产命令时，`ignored card action: invalid command` 及“按钮数据无效” Toast 是预期结果，不能误判为回调失败。
+6. 真实按钮必须携带 `value: { action: "desc" | "up", pr, repo, mode? }`；成功日志应依次出现 `received card action`、`received command ... card` 和 `completed command ... card`。
+7. 若进程仍在且出现 `ws client ready`，但此前已有 DNS、timeout 或 `connect failed`，同时点击没有 `received card action`，应判定为 SDK WebSocket 假在线。连接失败后只允许短暂自动重连窗口；必须观察到新的 `ws connect success` 或 `reconnect success`，否则主动退出并交给 launchd 重建整个进程，不能等待常规静默超时。
+8. 若已成功执行 `descN`，后续新 push 卡片却仍显示“生成”，检查发卡 monitor 与 bridge 是否使用同一 `KIAN_AUTOMATION_HOME`。不得同时保留读取脚本目录旧 `managed-prs.json` 的遗留 monitor；monitor 与 bridge 必须共同读取私有 `state/managed-prs.json`。
 
 ### Wheel 常规同步
 
@@ -191,20 +215,17 @@ GitHub 优先使用仅覆盖目标仓库的 fine-grained token。监控需要仓
 - `dist_dirs`：需要分别发现 wheel 的 dist 目录；
 - `destination_machines`：需要同时写入的机器列表，可包含源机器；
 - `target_dir`：该基础镜像专属的 wheel 汇总目录。
-- `selection_mode`：`stable` 或 `latest`；不得在同一目标目录混用。
-- `stable_versions`：稳定 profile 使用的 distribution 到稳定版本号映射。
-- `expected_distributions`：开发 profile 使用的 distribution 列表，与 dist 目录按顺序对应。
+- `expected_distributions`：distribution 列表，与 dist 目录按顺序对应。
 
 执行规则：
 
-1. 每个 dist 目录只选择 `stable_versions` 明确锁定版本的 `.whl`，绝不根据修改时间或更高版本号自动升级。任一固定版本缺失或匹配多个文件时，在删除或传输前整体失败。
+1. 用户会在构建前清理各 dist 目录；每个 dist 必须恰好存在一个 `.whl`，该文件直接视为当前稳定包。缺失或存在多个 wheel 时，在删除或传输前整体失败。
 2. 每个 wheel 只下载到本机临时目录一次，再分别上传所有目标机器。
-3. 所有固定版本 wheel 全部下载并校验成功后，按 wheel distribution 名清除每个目标目录中除当前稳定文件外的其他版本，避免通配安装时重复安装或暴露测试版本。
+3. 变化 wheel 上传并校验成功后，按 distribution 名清除目标目录中除当前文件外的其他版本，确保每个 distribution 只保留一个稳定 wheel。
 4. 下载和每次上传均执行文件大小与 SHA-256 校验，完成后清理本机临时目录。
-5. 只有用户明确说明某个包升级到某版本时，才更新相应 profile 的 `stable_versions`；未提及的包继续使用原稳定版本。通用仓库脚本不得硬编码真实版本、机器别名、内部目录或旧目标。
+5. 不再维护版本锁定或开发 profile；个人测试包从其他位置单独安装，不得写入 `pkg_whls`。
 6. 切换基础镜像时必须选择对应 profile，禁止混用不同镜像的汇总目录。
-7. 个人开发 profile 使用 `latest`，目标必须位于独立的 `dev/<image>` 目录；它按对应 distribution 的修改时间选择最新 wheel。稳定 profile 继续写 `<image>` 目录，绝不受开发同步影响。
-8. 正式同步前比较源 wheel 与每个目标同名文件的 SHA-256。未变化的 distribution 不下载、不清理、不上传；只有内容或文件名变化的 wheel 才暂存一次并更新需要更新的目标。同名重新构建也必须通过摘要变化识别。新 wheel 上传并校验成功后才清理同 distribution 的其他版本，禁止先删后传。
+7. 正式同步前比较源 wheel 与每个目标同名文件的 SHA-256。未变化的 distribution 不下载、不清理、不上传；只有内容或文件名变化的 wheel 才暂存一次并更新需要更新的目标。同名重新构建也必须通过摘要变化识别。新 wheel 上传并校验成功后才清理同 distribution 的其他版本，禁止先删后传。
 
 ### 私有状态
 

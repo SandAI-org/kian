@@ -27,12 +27,16 @@ const connectionRecycleMs = 60 * 60 * 1000;
 const wsHealthCheckIntervalMs = 30 * 1000;
 const wsPongTimeoutMs = 3 * 60 * 1000;
 const wsHeartbeatSilenceTimeoutMs = 6 * 60 * 1000;
+const wsFailureRecoveryGraceMs = 15 * 1000;
 let activeCommands = 0;
 let wsStartedAt = Date.now();
 let wsLastSignalAt = wsStartedAt;
 let wsLastPingAt = 0;
 let wsLastPongAt = 0;
 let wsLastUnackedPingAt = 0;
+let wsLastConnectedAt = 0;
+let wsLastFailureAt = 0;
+let wsFailureRestartTimer = null;
 let handleWsHealthySignal = () => {};
 let handleWsFailureSignal = () => {};
 
@@ -84,6 +88,7 @@ const wsSdkLogger = {
     recordWsSdkFailure(args);
     const text = flattenLogArgs(args).filter((item) => typeof item === 'string').join(' ').toLowerCase();
     if (text.includes('ws connect success') || text.includes('reconnect success')) {
+      wsLastSignalAt = Date.now();
       void Promise.resolve(handleWsHealthySignal('connected')).catch(error);
     }
     if (text.includes('ws client ready') || text.includes('reconnect success')) log(...args);
@@ -93,6 +98,7 @@ const wsSdkLogger = {
     recordWsSdkFailure(args);
     const text = flattenLogArgs(args).filter((item) => typeof item === 'string').join(' ').toLowerCase();
     if (text.includes('ws connect success') || text.includes('reconnect success')) {
+      wsLastSignalAt = Date.now();
       void Promise.resolve(handleWsHealthySignal('connected')).catch(error);
     }
     if (text.includes('ws connect success') || text.includes('reconnect success')) log(...args);
@@ -169,7 +175,7 @@ const markSeen = (id) => {
 };
 
 const parseCardCommand = (data) => {
-  const value = data?.action?.value;
+  const value = data?.action?.value ?? data?.event?.action?.value ?? data?.value;
   if (typeof value === 'string') return { command: value.trim(), repo: '', mode: 'default' };
   if (!value || typeof value !== 'object') return { command: '', repo: '', mode: 'default' };
   const repo = typeof value.repo === 'string' ? value.repo.trim() : '';
@@ -234,6 +240,7 @@ const main = async () => {
   if (!appId || !appSecret) throw new Error('Feishu credentials are not configured');
 
   const connectionAlertState = await readConnectionAlertState();
+  let restartListener = () => process.exit(0);
   let alertOperation = Promise.resolve();
   const serializeAlertOperation = (operation) => {
     alertOperation = alertOperation.then(operation, operation);
@@ -281,8 +288,37 @@ const main = async () => {
     await writeConnectionAlertState(connectionAlertState);
     await flushConnectionAlerts();
   });
-  handleWsHealthySignal = markConnectionHealthy;
-  handleWsFailureSignal = markConnectionUnhealthy;
+  handleWsHealthySignal = (source) => {
+    if (source === 'connected') {
+      wsLastConnectedAt = Date.now();
+      wsLastFailureAt = 0;
+      if (wsFailureRestartTimer) {
+        clearTimeout(wsFailureRestartTimer);
+        wsFailureRestartTimer = null;
+      }
+    }
+    return markConnectionHealthy(source);
+  };
+  handleWsFailureSignal = async (reason, detail = '') => {
+    const failureAt = Date.now();
+    wsLastFailureAt = failureAt;
+    await markConnectionUnhealthy(reason, detail);
+    if (wsFailureRestartTimer) return;
+    wsFailureRestartTimer = setTimeout(() => {
+      wsFailureRestartTimer = null;
+      if (!wsLastFailureAt || wsLastConnectedAt > failureAt) return;
+      if (activeCommands > 0 || pendingTextCommands.size > 0) {
+        void handleWsFailureSignal(reason, detail).catch(error);
+        return;
+      }
+      log('restarting Feishu listener after unrecovered connection failure', {
+        reason,
+        failureAt,
+        lastConnectedAt: wsLastConnectedAt || null,
+      });
+      restartListener('unrecovered_connection_failure');
+    }, wsFailureRecoveryGraceMs);
+  };
   void serializeAlertOperation(flushConnectionAlerts);
 
   const executeCommand = async ({ command, repo = '', mode = 'default', userId, chatId, messageId, source }) => {
@@ -357,12 +393,38 @@ const main = async () => {
       wsLastUnackedPingAt = 0;
       void markConnectionHealthy('event').catch(error);
       const { command, repo, mode } = parseCardCommand(data);
-      if (!/^(?:desc|up)\d+$/i.test(command)) return {};
-      const userId = data.open_id || data.operator?.open_id || '';
-      const chatId = data.open_chat_id || data.context?.open_chat_id || '';
-      const messageId = data.open_message_id || data.context?.open_message_id || '';
+      const event = data?.event || data;
+      const userId = event?.open_id || event?.operator?.open_id || '';
+      const chatId = event?.open_chat_id || event?.context?.open_chat_id || '';
+      const messageId = event?.open_message_id || event?.context?.open_message_id || '';
+      log('received card action', {
+        command: /^(?:desc|up)\d+$/i.test(command) ? command : 'invalid',
+        repo: Boolean(repo),
+        mode,
+        hasUserId: Boolean(userId),
+        hasChatId: Boolean(chatId),
+        hasMessageId: Boolean(messageId),
+        topLevelKeys: Object.keys(data || {}).sort(),
+        actionKeys: Object.keys(event?.action || {}).sort(),
+        contextKeys: Object.keys(event?.context || {}).sort(),
+      });
+      if (!/^(?:desc|up)\d+$/i.test(command)) {
+        log('ignored card action: invalid command');
+        return { toast: { type: 'error', content: '按钮数据无效，请发送文本命令重试' } };
+      }
+      if (!userId) {
+        log('ignored card action: missing user id', command);
+        return { toast: { type: 'error', content: '无法识别操作用户，请发送文本命令重试' } };
+      }
+      if (allowedUsers.size && !allowedUsers.has(userId)) {
+        log('ignored card action: unauthorized user', command);
+        return { toast: { type: 'error', content: '当前用户无权执行此操作' } };
+      }
       const eventKey = `card:${messageId}:${userId}:${repo}:${mode}:${command.toLowerCase()}`;
-      if (!markSeen(eventKey)) return {};
+      if (!markSeen(eventKey)) {
+        log('ignored card action: duplicate', command);
+        return { toast: { type: 'info', content: `${command} 已在处理中` } };
+      }
       void executeCommand({ command, repo, mode, userId, chatId, messageId, source: 'card' });
       return { toast: { type: 'info', content: `已收到 ${command}，正在处理` } };
     },
@@ -372,9 +434,24 @@ const main = async () => {
     appId,
     appSecret,
     autoReconnect: true,
+    wsConfig: { pingTimeout: 30 },
     loggerLevel: Lark.LoggerLevel.trace,
     logger: wsSdkLogger,
   });
+  let shuttingDown = false;
+  restartListener = (reason) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log('closing Feishu listener before restart', reason);
+    try {
+      client.close();
+    } catch (cause) {
+      error('failed to close Feishu listener cleanly', cause);
+    }
+    setTimeout(() => process.exit(0), 1000);
+  };
+  process.once('SIGTERM', () => restartListener('sigterm'));
+  process.once('SIGINT', () => restartListener('sigint'));
   wsStartedAt = Date.now();
   wsLastSignalAt = wsStartedAt;
   wsLastPingAt = 0;
@@ -399,7 +476,7 @@ const main = async () => {
       lastPongAt: wsLastPongAt,
       reconnectInfo: client.getReconnectInfo(),
     });
-    process.exit(0);
+    restartListener(reason);
   };
   setInterval(() => void restartIfWsStale().catch(error), wsHealthCheckIntervalMs);
   // The SDK can occasionally leave a dead WebSocket in a live process after
@@ -412,7 +489,7 @@ const main = async () => {
       return;
     }
     log('recycling Feishu listener to refresh WebSocket');
-    process.exit(0);
+    restartListener('scheduled_recycle');
   };
   setTimeout(recycleWhenIdle, connectionRecycleMs);
   log('starting Feishu listener');
