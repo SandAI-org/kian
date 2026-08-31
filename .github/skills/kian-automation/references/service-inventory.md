@@ -43,4 +43,5 @@
 - 历史日志出现过网络 DNS/超时，脚本会重试且失败时不推进检查时间。
 - PR 描述默认使用本机 OAuth 登录的 Copilot CLI，无需独立模型 API key；换机或登录过期后需重新安装并执行 `copilot login`。实时/每日监控在外部摘要不可用时仍使用本地确定性摘要。
 - 多个提醒共用 stdout/stderr 日志，定位单个任务时需结合时间和 LaunchAgent label。
+- `com.kian.github-monitor` 等旧 label 与标准服务并存时会因状态文件独立而重复推送；重新运行安装器会在标准服务成功加载后清理对应旧任务。
 - 桥接器当前只接管明确的 `descN/upN` 命令；任意自然语言飞书对话仍不等同于当前交互式 Copilot 会话。

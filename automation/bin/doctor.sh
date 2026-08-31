@@ -46,6 +46,13 @@ for service in bridge realtime daily qr; do
   fi
 done
 
+for label in com.kian.copilot-bridge com.kian.github-monitor com.kian.github-monitor-daily com.kian.reminder-qr; do
+  plist="$LAUNCH_AGENTS/$label.plist"
+  if [[ -f "$plist" ]] || launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+    fail "legacy $label is still installed; rerun automation/bin/install.sh to prevent duplicate service execution"
+  fi
+done
+
 log_count="$(find "$AUTOMATION_HOME/logs" -type f 2>/dev/null | wc -l | tr -d ' ')"
 echo "INFO: log files present: $log_count (contents hidden)"
 

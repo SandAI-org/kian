@@ -120,6 +120,24 @@ render() {
 }
 
 DOMAIN="gui/$(id -u)"
+legacy_label() {
+  case "$1" in
+    bridge) echo "com.kian.copilot-bridge" ;;
+    realtime) echo "com.kian.github-monitor" ;;
+    daily) echo "com.kian.github-monitor-daily" ;;
+    qr) echo "com.kian.reminder-qr" ;;
+  esac
+}
+
+remove_legacy_service() {
+  local label plist
+  label="$(legacy_label "$1")"
+  plist="$LAUNCH_AGENTS/$label.plist"
+  launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
+  rm -f "$plist"
+  echo "Removed legacy $label"
+}
+
 for service in bridge realtime daily qr; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
@@ -128,6 +146,7 @@ for service in bridge realtime daily qr; do
     if missing="$(service_ready "$service")"; then
       launchctl bootstrap "$DOMAIN" "$plist"
       echo "Enabled com.kian.$service"
+      remove_legacy_service "$service"
     else
       echo "Rendered com.kian.$service (not loaded; configure: $missing)"
     fi

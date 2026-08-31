@@ -46,6 +46,7 @@
 
 安装器不会覆盖已有私有配置。服务是否启用及调度参数均来自配置中的 `services`。
 依赖安装会显式忽略继承的桌面代理设置，避免本地代理应用退出后留下的失效地址阻断初始化。
+标准服务成功加载后，安装器会删除其旧版前身（`com.kian.copilot-bridge`、`com.kian.github-monitor`、`com.kian.github-monitor-daily` 或 `com.kian.reminder-qr`）。这可以防止新旧监控使用各自的状态文件，对同一 GitHub 更新重复推送。
 
 PR manager 以无工具、无仓库访问、无 MCP、无自定义指令的非交互方式调用 Copilot CLI，只传入序列化后的最终 PR diff。由于 `launchd` 不继承交互式 shell 的 `PATH`，私有配置应使用 CLI 绝对路径。换新 Mac 或 OAuth 过期后，交互执行 `copilot login`，再重新运行安装脚本。旧的 `openrouter` 后端仍可用，但必须在私有配置中显式提供 `api_key` 和模型。
 

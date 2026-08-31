@@ -46,6 +46,7 @@ Use a fine-grained GitHub token restricted to the configured repositories when p
 
 The installer preserves an existing private config. Service enablement and schedules come from `services` in that config.
 Dependency installation explicitly ignores inherited desktop proxy settings, which prevents a stopped local proxy application from breaking bootstrap.
+After a standard service is loaded successfully, the installer removes its legacy predecessor (`com.kian.copilot-bridge`, `com.kian.github-monitor`, `com.kian.github-monitor-daily`, or `com.kian.reminder-qr`). This prevents old and new monitors with independent state files from sending the same GitHub update twice.
 
 The PR manager invokes Copilot CLI non-interactively without tools, repository access, MCP servers, or custom instructions; only the serialized final PR diff is supplied. Because `launchd` does not inherit an interactive shell's `PATH`, the private config should use the CLI's absolute path. On a new Mac or after OAuth expiry, run `copilot login` interactively and rerun the installer. The legacy `openrouter` backend remains available only when its private `api_key` and model are explicitly configured.
 

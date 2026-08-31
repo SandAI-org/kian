@@ -10,4 +10,11 @@ for service in bridge realtime daily qr; do
   echo "Removed com.kian.$service"
 done
 
+for label in com.kian.copilot-bridge com.kian.github-monitor com.kian.github-monitor-daily com.kian.reminder-qr; do
+  plist="$LAUNCH_AGENTS/$label.plist"
+  launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
+  rm -f "$plist"
+  echo "Removed legacy $label"
+done
+
 echo "Private config, state, and logs were preserved."

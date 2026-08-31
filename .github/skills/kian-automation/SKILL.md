@@ -104,6 +104,7 @@ PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API ke
 - 安装飞书桥接器 Node 依赖；
 - 忽略失效的桌面代理设置；
 - 渲染 `~/Library/LaunchAgents/com.kian.{bridge,realtime,daily,qr}.plist`；
+- 标准服务成功加载后清理对应的旧 label，避免新旧任务使用独立状态重复推送；
 - 校验 plist；
 - 只加载配置完整且已启用的服务。
 
