@@ -513,7 +513,9 @@ def summarize_with_copilot_cli(prompt):
     return json.loads(content)
 
 
-def summarize_current_diff(pr, files, existing_body, special_layout=False, linked_prs=None):
+def summarize_current_diff(
+    pr, files, existing_body, special_layout=False, linked_prs=None, concise=False
+):
     """Use the final PR diff to rewrite DONE as a coherent current-state summary."""
     linked_prs = linked_prs or []
     backend = SUMMARIZATION.get("backend", "openrouter")
@@ -527,6 +529,13 @@ def summarize_current_diff(pr, files, existing_body, special_layout=False, linke
         f"- {item.get('html_url', '')} | {item.get('title', '')}"
         for item in linked_prs
     ) or "(none)"
+    detail_requirement = (
+        "- Produce 2-4 short English bullets, each ideally no more than 25 words. "
+        "Consolidate related changes and focus on user-visible outcomes or major architectural effects. "
+        "Omit low-level implementation details, secondary edge cases, and validation unless essential to understand the change."
+        if concise
+        else "- Produce 3-8 concise but specific English bullets. Explain behavior, important implementation choices, and validation where the diff supports them."
+    )
     prompt = f"""Rewrite the DONE section of a GitHub pull request description.
 
 Requirements:
@@ -534,7 +543,7 @@ Requirements:
 - Describe the net behavior that exists at the current head. If later work replaced earlier work, describe only the final result.
 - Treat the existing description only as context. Remove stale, duplicated, chronological, or unsupported claims.
 - Preserve provenance for changes merged from another pull request. For EVERY URL in MERGED PR PROVENANCE below, place that exact URL on the bullet describing its final net effect. Use `w.r.t. the PR: <URL>.` when a bullet maps to one PR, and one grouped `w.r.t. the PRs: <URL>, <URL>, <URL>.` suffix when it maps to multiple PRs. Never repeat multiple singular suffixes on one bullet. Do not infer behavior from the titles; titles are attribution metadata only.
-- Produce 3-8 concise but specific English bullets. Explain behavior, important implementation choices, and validation where the diff supports them.
+{detail_requirement}
 - Do not mention file/addition/deletion counts or say merely that files were updated.
 - Every bullet must use Markdown bold (`**...**`) for 1-3 important outcomes, mechanisms, or keywords.
 - Use Markdown backticks for identifiers and paths, but do not include a leading dash in strings.
@@ -1254,6 +1263,7 @@ def update(command, number, requested_repo=None, mode="default"):
         current_body,
         repo == SPECIAL_LAYOUT_REPO,
         linked_prs,
+        mode == "simple",
     )
     rewritten_done = render_rewritten_done(summary, repo == SPECIAL_LAYOUT_REPO)
     body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)

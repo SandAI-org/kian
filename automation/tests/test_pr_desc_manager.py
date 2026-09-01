@@ -101,6 +101,29 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         self.assertEqual(summary["general"], ["**Missing bold**"])
         self.assertEqual(run.call_count, 1)
 
+    def test_simple_mode_requests_short_outcome_focused_summary(self):
+        response = mock.Mock(
+            returncode=0,
+            stdout='{"algo":[],"infra":[],"general":["Added **final behavior**"]}',
+            stderr="",
+        )
+        with mock.patch.object(
+            manager,
+            "SUMMARIZATION",
+            {"backend": "copilot_cli", "command": "/usr/local/bin/copilot", "model": "auto"},
+        ), mock.patch.object(manager.os.path, "isfile", return_value=True), mock.patch.object(
+            manager.subprocess, "run", return_value=response
+        ) as run:
+            manager.summarize_current_diff(
+                {"title": "Test"},
+                [{"filename": "src/a.py", "patch": "+value = True"}],
+                "## DONE\n",
+                concise=True,
+            )
+        prompt = run.call_args.args[0][2]
+        self.assertIn("Produce 2-4 short English bullets", prompt)
+        self.assertIn("Omit low-level implementation details", prompt)
+
     def test_linked_pr_numbers_support_squash_and_merge_commits(self):
         commits = [
             {"commit": {"message": "feat: add final behavior (#123)\n\nDetails"}},
