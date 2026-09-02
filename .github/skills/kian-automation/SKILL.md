@@ -156,13 +156,14 @@ PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API ke
 4. 一次性提醒使用 `StartCalendarInterval` 的 `Month`、`Day`、`Hour`、`Minute`；周期提醒只填写所需字段。
 5. plist 写入后先执行 `plutil -lint`，再用 `launchctl bootout gui/$(id -u)/<plist>`（允许未加载）和 `launchctl bootstrap gui/$(id -u) <plist>` 重新加载。
 6. 删除提醒前先 `bootout`，再删除 plist。不要删除共享脚本或凭据配置。
-7. 检查服务时使用 `launchctl print gui/$(id -u)/<label>`，并查看对应日志末尾；`state = not running` 对按时唤醒型任务通常是正常状态。
-8. GitHub 实时监控由 `com.kian.realtime` 执行；每日总结由 `com.kian.daily` 执行。具体启用状态和调度来自私有配置。先看日志再决定是否手动运行，避免重复推送。
-9. 不把 Kian 的 `cronjob.json` 当作持续服务来源：该调度器随 Electron 主进程停止。需要长期运行的任务必须落到 `launchd` 或其他系统级调度器。
-10. 修改脚本后执行静态语法检查；除非用户明确要求测试推送，否则不要通过真实发送来验证。
-11. 飞书 PR 更新卡片提供默认“生成/更新描述”及“生成简略版/更新完整版”按钮，文字 `desc<号>` / `up<号>` 命令仍保留；均由 `com.kian.bridge` 独立监听并调用仓库内 `pr_desc_manager.py`，不依赖 Kian Electron 进程。按钮携带仓库名以消除同号歧义，同时到达时按钮优先。
+7. 一次性提醒调用 `one_time_reminder.py`；发送成功后由脚本原子写入私有完成标记、删除 plist 并卸载自身，避免同一月日在次年重复触发。
+8. 检查服务时使用 `launchctl print gui/$(id -u)/<label>`，并查看对应日志末尾；`state = not running` 对按时唤醒型任务通常是正常状态。
+9. GitHub 实时监控由 `com.kian.realtime` 执行；每日总结由 `com.kian.daily` 执行。具体启用状态和调度来自私有配置。先看日志再决定是否手动运行，避免重复推送。
+10. 不把 Kian 的 `cronjob.json` 当作持续服务来源：该调度器随 Electron 主进程停止。需要长期运行的任务必须落到 `launchd` 或其他系统级调度器。
+11. 修改脚本后执行静态语法检查；除非用户明确要求测试推送，否则不要通过真实发送来验证。
+12. 飞书 PR 更新卡片提供默认“生成/更新描述”及“生成简略版/更新完整版”按钮，文字 `desc<号>` / `up<号>` 命令仍保留；均由 `com.kian.bridge` 独立监听并调用仓库内 `pr_desc_manager.py`，不依赖 Kian Electron 进程。按钮携带仓库名以消除同号歧义，同时到达时按钮优先。
 	- 简略版只生成 2-4 条简短、合并同类项、聚焦最终结果的要点，省略非必要实现细节、次要边界情况和验证信息。
-12. 对确定性不足、需要深入理解代码语义的复杂 PR desc，桥接器只做保守更新；用户可直接在 Copilot 对话中要求完整分析和重写。
+13. 对确定性不足、需要深入理解代码语义的复杂 PR desc，桥接器只做保守更新；用户可直接在 Copilot 对话中要求完整分析和重写。
 
 ## 常见请求
 
@@ -174,7 +175,7 @@ PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API ke
 
 1. 从用户描述解析本机时区下的触发时间与重复规则。
 2. 生成唯一、可读的 label 和 plist 文件名。
-3. `ProgramArguments` 使用安装器发现的 Python、仓库内 `feishu_remind.py`、标题、正文，并设置 `KIAN_AUTOMATION_HOME`。
+3. `ProgramArguments` 使用安装器发现的 Python、仓库内 `one_time_reminder.py`、label、plist 路径、带时区 ISO 触发时间、标题和正文，并设置 `KIAN_AUTOMATION_HOME`。
 4. 日志写入默认私有目录下的 `logs/`。
 5. 校验并 bootstrap，然后读取 `launchctl print` 确认已注册。
 6. 向用户回报准确触发时间、是否重复及 label。
