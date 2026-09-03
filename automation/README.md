@@ -62,6 +62,8 @@ Manual non-sending checks can use Python compilation and Node syntax validation.
 
 Remote endpoints use private SSH config aliases. Remote-to-remote copies stage through a local temporary directory and verify files by size and SHA-256.
 
+To recover from a stale VS Code Remote-SSH host cache, pass the pasted output or even a truncated `vscode-ssh-host-<hash>` fragment to `python3 automation/scripts/cleanup_remote_ssh_cache.py '<pasted-output>'`. The helper accepts at least eight hexadecimal hash characters, removes only matching direct child directories from the standard Remote-SSH cache root, and reports the directories actually removed. Reload the VS Code window before reconnecting.
+
 For a recurring wheel mirror, configure `wheel_sync.profiles` privately and run `python3 automation/scripts/sync_wheels.py <profile>`. Each configured dist directory must contain exactly one wheel, which is treated as the current stable build and must match the corresponding ordered `expected_distributions` entry. There are no development profiles or version locks. Before transfer, the synchronizer compares source and per-destination SHA-256 values, skipping unchanged distributions entirely, including downloads and cleanup. Changed wheels are staged once and verified after every transfer. Only after a new wheel is uploaded and verified are other versions of the same distribution removed from that target. Digest comparison also detects same-name rebuilds.
 
 QR publication is explicit: `python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`. It copies the image, commits if changed, clears proxy variables, pushes the configured branch, marks the reminder complete only after a successful push, and sends a receipt.
