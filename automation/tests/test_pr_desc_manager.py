@@ -101,7 +101,7 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         self.assertEqual(summary["general"], ["**Missing bold**"])
         self.assertEqual(run.call_count, 1)
 
-    def test_simple_mode_requests_short_outcome_focused_summary(self):
+    def test_concise_summary_requests_short_outcome_focused_bullets(self):
         response = mock.Mock(
             returncode=0,
             stdout='{"algo":[],"infra":[],"general":["Added **final behavior**"]}',
@@ -123,6 +123,26 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         prompt = run.call_args.args[0][2]
         self.assertIn("Produce 2-4 short English bullets", prompt)
         self.assertIn("Omit low-level implementation details", prompt)
+
+    def test_default_and_simple_modes_are_concise_but_full_is_detailed(self):
+        def request(repo, endpoint, method="GET", payload=None):
+            if method == "PATCH":
+                return {"number": 123, "body": payload["body"]}
+            return []
+
+        with mock.patch.object(manager, "find_pr", return_value=("example/repo", {
+            "state": "open", "body": "## DONE\n", "head": {"sha": "abc"}, "title": "Test"
+        })), mock.patch.object(manager, "pull_request_files", return_value=[]), mock.patch.object(
+            manager, "request", side_effect=request
+        ), mock.patch.object(manager, "summarize_current_diff", return_value={
+            "algo": [], "infra": [], "general": ["Added **final behavior**"]
+        }) as summarize, mock.patch.object(manager, "expand_to_full_body", side_effect=lambda repo, body, commits: body), mock.patch.object(
+            manager, "save_managed"
+        ):
+            manager.update("up", 123, "example/repo", "default")
+            manager.update("up", 123, "example/repo", "simple")
+            manager.update("up", 123, "example/repo", "full")
+        self.assertEqual([call.args[5] for call in summarize.call_args_list], [True, True, False])
 
     def test_linked_pr_numbers_support_squash_and_merge_commits(self):
         commits = [

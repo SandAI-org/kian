@@ -1263,7 +1263,7 @@ def update(command, number, requested_repo=None, mode="default"):
         current_body,
         repo == SPECIAL_LAYOUT_REPO,
         linked_prs,
-        mode == "simple",
+        mode != "full",
     )
     rewritten_done = render_rewritten_done(summary, repo == SPECIAL_LAYOUT_REPO)
     body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
