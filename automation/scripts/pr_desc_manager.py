@@ -530,9 +530,11 @@ def summarize_current_diff(
         for item in linked_prs
     ) or "(none)"
     detail_requirement = (
-        "- Produce 2-4 short English bullets, each ideally no more than 25 words. "
-        "Consolidate related changes and focus on user-visible outcomes or major architectural effects. "
-        "Omit low-level implementation details, secondary edge cases, and validation unless essential to understand the change."
+        "- Produce concise English bullets focused on user-visible outcomes or major architectural effects. "
+        "Use as many bullets as the diff needs: each bullet must cover one coherent, independently understandable change, "
+        "and unrelated changes must remain separate instead of being compressed into one bullet. "
+        "Consolidate only changes that naturally belong together. Omit low-level implementation details, "
+        "secondary edge cases, and validation unless essential to understand the change."
         if concise
         else "- Produce 3-8 concise but specific English bullets. Explain behavior, important implementation choices, and validation where the diff supports them."
     )

@@ -121,7 +121,9 @@ class PrDescriptionRewriteTest(unittest.TestCase):
                 concise=True,
             )
         prompt = run.call_args.args[0][2]
-        self.assertIn("Produce 2-4 short English bullets", prompt)
+        self.assertIn("Use as many bullets as the diff needs", prompt)
+        self.assertIn("each bullet must cover one coherent, independently understandable change", prompt)
+        self.assertIn("unrelated changes must remain separate", prompt)
         self.assertIn("Omit low-level implementation details", prompt)
 
     def test_default_and_simple_modes_are_concise_but_full_is_detailed(self):
