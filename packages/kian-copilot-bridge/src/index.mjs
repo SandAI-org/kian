@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as Lark from '@larksuiteoapi/node-sdk';
+import { disableCardAction } from './card-actions.mjs';
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(process.env.KIAN_REPO_ROOT || path.join(packageDir, '../..'));
@@ -231,6 +232,53 @@ const reply = async ({ appId, appSecret, messageId, chatId, text }) => {
   }
 };
 
+const readInteractiveCard = async ({ appId, appSecret, messageId }) => {
+  const token = await getTenantToken(appId, appSecret);
+  const response = await fetch(
+    `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(messageId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const payload = await response.json();
+  if (!response.ok || payload.code) {
+    throw new Error(`Feishu message request failed: ${payload.msg || response.status}`);
+  }
+  const item = payload.data?.items?.[0] ?? payload.data?.message ?? payload.data;
+  if (item?.msg_type !== 'interactive' || typeof item?.body?.content !== 'string') {
+    throw new Error('Feishu message is not an interactive card');
+  }
+  return JSON.parse(item.body.content);
+};
+
+const updateInteractiveCard = async ({ appId, appSecret, messageId, card }) => {
+  const token = await getTenantToken(appId, appSecret);
+  const response = await fetch(
+    `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(messageId)}`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: JSON.stringify(card) }),
+    },
+  );
+  const payload = await response.json();
+  if (!response.ok || payload.code) {
+    throw new Error(`Feishu card update failed: ${payload.msg || response.status}`);
+  }
+};
+
+const disableCompletedCardAction = async ({ appId, appSecret, messageId, command, repo, mode }) => {
+  if (!messageId) {
+    log('cannot disable card action: missing message id', command);
+    return;
+  }
+  const originalCard = await readInteractiveCard({ appId, appSecret, messageId });
+  const { card, changed } = disableCardAction(originalCard, { command, repo, mode });
+  if (!changed) {
+    log('cannot disable card action: matching button not found', command, mode);
+    return;
+  }
+  await updateInteractiveCard({ appId, appSecret, messageId, card });
+};
+
 const main = async () => {
   const config = await readJson(configPath);
   const feishuSettings = config.feishu ?? {};
@@ -352,6 +400,10 @@ const main = async () => {
         ? `✅ ${result.repo}#${result.number} desc 已更新并贴上。\n${result.details}`
         : `ℹ️ ${result.repo}#${result.number} desc 无需更新。\n${result.details}`;
       await reply({ appId, appSecret, messageId, chatId, text });
+      if (source === 'card') {
+        await disableCompletedCardAction({ appId, appSecret, messageId, command: normalized, repo, mode })
+          .catch((cause) => error('failed to disable completed card action', normalized, cause));
+      }
       log('completed command', normalized, result.status, source, mode);
     } catch (cause) {
       error('command failed', normalized, cause);

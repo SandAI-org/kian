@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node src/index.mjs"
+    "start": "node src/index.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.59.0"
