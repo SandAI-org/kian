@@ -119,9 +119,10 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        try:
-            notify("❌ 二维码发布失败", f"二维码发布失败：{exc}")
-        except Exception:
-            pass
+        if "私有配置 qr_publish." not in str(exc):
+            try:
+                notify("❌ 二维码发布失败", f"二维码发布失败：{exc}")
+            except Exception:
+                pass
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
