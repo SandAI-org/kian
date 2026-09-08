@@ -65,6 +65,40 @@ def new_round_state(today: date, prev_round_index: int) -> dict[str, Any]:
         "last_publish_commit": "",
     }
 
+
+def reconcile_published_update(state: dict[str, Any]) -> bool:
+    repo_dir = str(QR_CONFIG.get("repo_dir", ""))
+    target_file = str(QR_CONFIG.get("target_file", ""))
+    branch = str(QR_CONFIG.get("branch", "main"))
+    round_start = parse_iso_day(str(state.get("round_start", "")))
+    if not repo_dir or not target_file or not round_start:
+        return False
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%H%n%cI", "--", target_file],
+        cwd=repo_dir,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    lines = result.stdout.strip().splitlines()
+    if result.returncode != 0 or len(lines) != 2:
+        return False
+    commit, committed_at = lines
+    committed_day = parse_iso_day(committed_at)
+    if not committed_day or committed_day < round_start:
+        return False
+    pushed = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, f"origin/{branch}"],
+        cwd=repo_dir,
+        check=False,
+    ).returncode == 0
+    if not pushed:
+        return False
+    state["completed"] = True
+    state["completed_at"] = committed_at
+    state["last_publish_commit"] = commit[:7]
+    return True
+
 today = date.today()
 state = load_state()
 prev_round_index = int(state.get("round_index", -1)) if isinstance(state.get("round_index", -1), int) else -1
@@ -93,6 +127,14 @@ if state.get("completed"):
             f"next_round_start={(next_round_start.isoformat() if next_round_start else 'unknown')})"
         )
         raise SystemExit(0)
+
+if reconcile_published_update(state):
+    save_state(state)
+    print(
+        f"SKIP (round={state.get('round_index')}, reconciled_publish="
+        f"{state.get('last_publish_commit')})"
+    )
+    raise SystemExit(0)
 
 round_index = int(state.get("round_index", 0))
 round_start = parse_iso_day(str(state.get("round_start", ""))) or today
