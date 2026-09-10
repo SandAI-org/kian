@@ -22,7 +22,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from automation_common import load_config
+try:
+    from .automation_common import load_config
+except ImportError:
+    from automation_common import load_config
 
 TRANSFER_CONFIG = load_config().get("file_transfer", {})
 DOWNLOADS = Path(TRANSFER_CONFIG.get("downloads", "~/Downloads")).expanduser()
