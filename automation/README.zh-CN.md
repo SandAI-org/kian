@@ -62,7 +62,7 @@ PR 描述默认生成精简、聚焦结果且不限制数量的要点。每条�
 
 远端地址使用私有 SSH config 别名。远端到远端会经本机临时目录中转，并对文件执行大小和 SHA-256 校验。
 
-常规 Git alias 维护需在私有配置中定义 `git_alias_sync`，然后运行 `python3 automation/scripts/sync_git_aliases.py --commit-message "feat: update git aliases"`。该命令会检查 Bash 语法，可选地提交并推送源仓库，将脚本同步到所有目标并校验大小与 SHA-256，在本地和远端执行脚本，最后确认配置的 alias 值完全一致。源仓库、机器名称和远端路径都只保存在私有配置中。
+常规 Git alias 维护需在私有配置中定义 `git_alias_sync`，然后运行 `python3 automation/scripts/sync_git_aliases.py --commit-message "feat: update git aliases"`。该命令会检查 Bash 语法，可选地提交并推送源仓库，将脚本同步到所有目标并校验大小与 SHA-256。它不会执行安装脚本，而是输出本地及容器内可复制的 `bash` 命令，由用户在需要更新的容器中执行。源仓库、机器名称和远端路径都只保存在私有配置中。
 
 遇到 VS Code Remote-SSH 主机缓存过旧导致无法连接时，可将复制的输出或不完整的 `vscode-ssh-host-<hash>` 片段传给 `python3 automation/scripts/cleanup_remote_ssh_cache.py '<粘贴的输出>'`。工具接受至少 8 位十六进制哈希，只会删除标准 Remote-SSH 缓存根目录下匹配的直接子目录，并报告实际删除项。完成后重新加载 VS Code 窗口再连接。
 

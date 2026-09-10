@@ -232,12 +232,12 @@ PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API ke
 
 ### Git alias 常规刷新
 
-使用 `automation/scripts/sync_git_aliases.py`。私有配置 `git_alias_sync` 包含源脚本、源仓库、需要验证的 alias，以及由 `file_transfer.machines` 引用的目标机器和远端脚本路径。
+使用 `automation/scripts/sync_git_aliases.py`。私有配置 `git_alias_sync` 包含源脚本、源仓库，以及由 `file_transfer.machines` 引用的目标机器和远端脚本路径。
 
 1. 修改源脚本后先执行 Bash 语法检查。
 2. 需要发布改动时传入 `--commit-message`；脚本只提交源脚本文件并推送其仓库。
 3. 将源脚本同步到所有私有目标，逐端校验大小与 SHA-256。
-4. 直接在本地及所有远端执行脚本，并确认配置的 alias 值与本地完全一致；不要要求用户复制命令逐端执行。
+4. 不得在本地或远端执行 alias 安装脚本。同步完成后输出本地和各类容器可复制的 `bash` 命令，由用户自行在需要更新的容器中执行。
 5. 真实机器、个人路径和服务器目标地址只能写入私有配置，不得提交到仓库。
 
 ### 私有状态

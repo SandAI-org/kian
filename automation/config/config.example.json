@@ -43,7 +43,6 @@
   "git_alias_sync": {
     "source_script": "REPLACE_WITH_ABSOLUTE_ALIAS_SCRIPT_PATH",
     "source_repo": "REPLACE_WITH_ABSOLUTE_SOURCE_REPOSITORY_PATH",
-    "verify_aliases": ["REPLACE_WITH_ALIAS_NAME"],
     "targets": [
       {
         "machine": "example-machine",
