@@ -53,7 +53,7 @@ class Endpoint:
         return self.host is not None
 
     def rsync_value(self) -> str:
-        return f"{self.host}:{self.path}" if self.host else self.path
+        return f"{self.host}:{shlex.quote(self.path)}" if self.host else self.path
 
 
 def translate_remote(machine: str, path: str) -> Endpoint:
