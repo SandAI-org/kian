@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic PR description manager for Feishu descN/upN commands."""
 import json
+import http.client
 import os
 import re
 import shutil
@@ -58,7 +59,7 @@ def request(repo, path, method="GET", payload=None):
             if 400 <= error.code < 500 and error.code != 429:
                 raise
             last_error = error
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+        except (urllib.error.URLError, http.client.IncompleteRead, TimeoutError, ConnectionError) as error:
             last_error = error
         if attempt < 2:
             time.sleep(2 * (attempt + 1))

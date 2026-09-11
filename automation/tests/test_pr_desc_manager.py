@@ -1,4 +1,5 @@
 import importlib.util
+import http.client
 import os
 import sys
 import tempfile
@@ -20,6 +21,24 @@ spec.loader.exec_module(manager)
 
 
 class PrDescriptionRewriteTest(unittest.TestCase):
+    def test_github_request_retries_incomplete_response(self):
+        incomplete = mock.MagicMock()
+        incomplete.__enter__.return_value = incomplete
+        incomplete.__exit__.return_value = False
+        incomplete.read.side_effect = http.client.IncompleteRead(b'{"partial":', 10)
+        complete = mock.MagicMock()
+        complete.__enter__.return_value = complete
+        complete.__exit__.return_value = False
+        complete.read.return_value = b'{"number": 44}'
+
+        with mock.patch.object(manager.OPENER, "open", side_effect=[incomplete, complete]) as open_request, mock.patch.object(
+            manager.time, "sleep"
+        ):
+            result = manager.request("example/repo", "/pulls/44")
+
+        self.assertEqual(result, {"number": 44})
+        self.assertEqual(open_request.call_count, 2)
+
     def test_diff_payload_contains_only_final_file_diff(self):
         files = [{"filename": "src/a.py", "status": "modified", "additions": 1, "deletions": 1, "patch": "+final = True"}]
         payload = manager.diff_summary_payload(files)
