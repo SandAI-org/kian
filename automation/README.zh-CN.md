@@ -66,6 +66,8 @@ PR 描述默认生成精简、聚焦结果且不限制数量的要点。每条�
 
 遇到 VS Code Remote-SSH 主机缓存过旧导致无法连接时，可将复制的输出或不完整的 `vscode-ssh-host-<hash>` 片段传给 `python3 automation/scripts/cleanup_remote_ssh_cache.py '<粘贴的输出>'`。工具接受至少 8 位十六进制哈希，只会删除标准 Remote-SSH 缓存根目录下匹配的直接子目录，并报告实际删除项。完成后重新加载 VS Code 窗口再连接。
 
+套件也包含 Dev Container 会话迁移。Copilot 使用 `automation/scripts/migrate_vscode_copilot_sessions_macos.py` 在 Mac 本机按工作目录逐个合并；必须精确指定 SSH 主机和工作目录，并且只能在 VS Code 完全退出后写入。Codex 使用 `automation/scripts/migrate_codex_sessions_between_containers.sh` 在远端 Docker 宿主机按容器对迁移一次；目标必须为空，非空时安全拒绝。完整恢复步骤和安全边界见仓库根目录的 `automation.md`。
+
 常规 wheel 镜像同步需在私有 `wheel_sync.profiles` 中定义 profile，然后运行 `python3 automation/scripts/sync_wheels.py <profile>`。每个配置的 dist 目录必须恰好包含一个 wheel，该文件直接视为当前稳定包，并与按 dist 顺序配置的 `expected_distributions` 一一对应。不再维护开发 profile 或版本锁定。正式传输前会比较源 wheel 与每个目标同名文件的 SHA-256，未变化的包不会下载、清理或上传；只有变化的 wheel 才暂存一次并更新需要更新的目标，因此同版本同文件名的重新构建也能正确识别。新 wheel 上传并校验成功后，才会清理该目标中同 distribution 的其他版本。
 
 二维码发布需显式执行：`python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`。脚本复制图片、有变化时提交、清除代理变量、推送配置分支，仅在 push 成功后标记提醒完成并发送回执。
