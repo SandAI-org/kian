@@ -1,6 +1,6 @@
 ---
 name: kian-automation
-description: '安装、迁移、恢复、接管和维护可迁移 Kian 自动化。Use when: 用户换电脑或公司后需要重建自动化，或要求发送飞书消息、管理 launchd 服务、检查 GitHub 更新推送、处理 PR desc/up、传输文件、同步 wheel 或发布二维码。'
+description: '安装、迁移、恢复、接管和维护可迁移 Kian 自动化。Use when: 用户换电脑或公司后需要重建自动化，或要求发送飞书消息、管理 launchd 服务、检查 GitHub 更新推送、处理 PR desc/up、传输文件、诊断远程 VS Code 卡顿、同步 wheel 或发布二维码。'
 ---
 
 # Kian 自动化接管
@@ -249,6 +249,16 @@ PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API ke
 3. 用户确认关闭后使用 `--apply`。脚本必须先确认数据库未被进程占用，再创建 SQLite 备份。
 4. 只删除匹配 workspace 中 `agentSessions.model.cache` 和 `agentSessions.state.cache` 的 `openai-codex` 条目；不得删除真实 Codex 会话、整个数据库、Copilot/本地会话或其他 workspace 状态。
 5. 完成后核验剩余 Codex 索引为零和数据库完整性，再让用户重新打开该窗口。
+
+### 远程 VS Code workspace 卡顿诊断
+
+当用户感觉某个远程 VS Code workspace 卡顿时，立即使用 `automation/scripts/diagnose_vscode_remote.py`，并指定 SSH host、workspace 路径和可选的 Docker 容器名：
+
+1. 卡顿正在发生时采样最有价值；不要先重启 VS Code 或服务器。
+2. Dev Container 必须传 `--container`，让资源、进程、日志和存储探针在真实 VS Code 环境内运行。
+3. 脚本分层测量 SSH 延迟、远端 CPU/内存/pressure、VS Code server/extension host 进程与近期异常日志、共享存储延迟和吞吐。
+4. 存储探针只创建一个 8 MiB 隐藏临时文件，fsync 和读取后立即删除；脚本不重启或杀死任何进程。
+5. 根据 `ROOT_CAUSE` 和 `SECONDARY` 输出，向用户报告最可能根因、置信度和关键证据。若为 `inconclusive`，明确说明采样期间未捕获异常，并在下次卡顿时复测，禁止无证据猜测。
 
 ### 私有状态
 

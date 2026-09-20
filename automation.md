@@ -55,12 +55,23 @@ SSH 密码、token 和私钥必须由用户直接在交互式终端输入，禁�
 
 `python3 automation/scripts/cleanup_vscode_codex_workspace_cache.py --host B300-idg35-1 --workspace /mnt/Sandai/kato/workspace/copilot/envs --apply`
 
+## 诊断远程 VS Code workspace 卡顿
+
+用户在卡顿发生时指定 SSH host、workspace 路径，以及 Dev Container 名称（如适用），运行：
+
+`python3 automation/scripts/diagnose_vscode_remote.py --host <ssh-alias> --container <container> --workspace <path>`
+
+诊断会在一个预热后的 SSH 会话内测量数据往返延迟，并采集远端 CPU/内存与 pressure、VS Code server/extension host 进程、最近一小时异常日志，以及 workspace 所在共享存储的元数据和 8 MiB 临时文件读写/fsync。临时文件无论成功失败都会清理。输出按证据将网络、远端资源、VS Code 进程和共享存储列为主要或次要根因；没有指标越过阈值时必须报告无法归因，并建议在卡顿当下复测。
+
+容器 workspace 必须使用 `--container` 在容器内测量；不得用宿主机路径或进程替代。该命令不会重启、杀死或修改 VS Code 进程。
+
 ## 验证
 
 运行：
 
 - `python3 -m unittest automation/tests/test_migrate_vscode_copilot_sessions_macos.py automation/tests/test_migrate_codex_sessions_between_containers.py`
 - `python3 -m unittest automation/tests/test_cleanup_vscode_codex_workspace_cache.py`
+- `python3 -m unittest automation/tests/test_diagnose_vscode_remote.py`
 - `bash -n automation/scripts/migrate_codex_sessions_between_containers.sh`
 
 完整自动化说明、安装、升级和卸载流程见 `automation/README.zh-CN.md`。

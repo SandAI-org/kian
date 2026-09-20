@@ -1,6 +1,6 @@
 # Kian 服务接管清单
 
-更新日期：2026-08-15
+更新日期：2026-09-20
 
 ## 架构结论
 
@@ -32,6 +32,7 @@
 - 运行状态：`~/.config/kian-automation/state`
 - PR 描述命令处理：`pr_desc_manager.py`
 - 飞书入站桥接：源码仓库 `packages/kian-copilot-bridge`
+- 远程 VS Code 卡顿诊断：`diagnose_vscode_remote.py`
 
 实时推送卡片会保留“回复 `descN/upN`”提示，并为未管理 PR 提供“生成描述/生成简略版”，为已管理 PR 提供“更新描述/更新完整版”。简略版只含基于当前最终 diff 整体重构的 `## DONE`；完整版还会保留或补齐后续章节结构。按钮 value 包含 `action`、PR 号、仓库名和可选模式，能精确处理不同仓库中的同号 PR；按钮与文字命令短时间冲突时按钮优先。
 
