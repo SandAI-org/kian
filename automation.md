@@ -39,11 +39,28 @@ Codex 历史位于远端容器 `/root/.codex`，对同一对容器只迁移一�
 
 SSH 密码、token 和私钥必须由用户直接在交互式终端输入，禁止写入命令、日志、脚本或 Git。
 
+## 清理单个远程 workspace 的 Codex 冲突缓存
+
+当某个服务器上的特定 VS Code workspace 再次提示 Codex 会话“已在另一个应用中打开”时，使用：
+
+`automation/scripts/cleanup_vscode_codex_workspace_cache.py`
+
+1. 用户必须明确给出 SSH host alias 和远端 workspace 路径。
+2. 先不带 `--apply` 运行，只读确认脚本精确匹配到一个 `workspaceStorage` 数据库及待清理条目数。
+3. 让用户只关闭该 workspace 对应的 VS Code 窗口；不需要关闭其他服务器或容器窗口。
+4. 带 `--apply` 运行。脚本检测数据库未被占用后自动备份，只删除该 workspace 的 `openai-codex` 索引，保留真实 Codex 数据、Copilot/本地会话和其他 workspace。
+5. 数据库完整性检查通过后，让用户重新打开该 VS Code 窗口。
+
+示例：
+
+`python3 automation/scripts/cleanup_vscode_codex_workspace_cache.py --host B300-idg35-1 --workspace /mnt/Sandai/kato/workspace/copilot/envs --apply`
+
 ## 验证
 
 运行：
 
 - `python3 -m unittest automation/tests/test_migrate_vscode_copilot_sessions_macos.py automation/tests/test_migrate_codex_sessions_between_containers.py`
+- `python3 -m unittest automation/tests/test_cleanup_vscode_codex_workspace_cache.py`
 - `bash -n automation/scripts/migrate_codex_sessions_between_containers.sh`
 
 完整自动化说明、安装、升级和卸载流程见 `automation/README.zh-CN.md`。

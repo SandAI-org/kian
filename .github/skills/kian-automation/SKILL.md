@@ -240,6 +240,16 @@ PR 描述默认可使用 GitHub Copilot 订阅，不需要单独的模型 API ke
 4. 不得在本地或远端执行 alias 安装脚本。同步完成后输出本地和各类容器可复制的 `bash` 命令，由用户自行在需要更新的容器中执行。
 5. 真实机器、个人路径和服务器目标地址只能写入私有配置，不得提交到仓库。
 
+### 单个 VS Code workspace 的 Codex 冲突缓存清理
+
+当用户指定某个服务器和 workspace，要求清理 Codex 会话占用冲突时，使用 `automation/scripts/cleanup_vscode_codex_workspace_cache.py`：
+
+1. 用 `--host` 和 `--workspace` 做不带 `--apply` 的只读匹配；必须恰好匹配一个本机 `workspaceStorage` 数据库。
+2. 报告待清理的 `openai-codex` 索引数量，并让用户关闭该 workspace 对应的 VS Code 窗口；其他窗口无需关闭。
+3. 用户确认关闭后使用 `--apply`。脚本必须先确认数据库未被进程占用，再创建 SQLite 备份。
+4. 只删除匹配 workspace 中 `agentSessions.model.cache` 和 `agentSessions.state.cache` 的 `openai-codex` 条目；不得删除真实 Codex 会话、整个数据库、Copilot/本地会话或其他 workspace 状态。
+5. 完成后核验剩余 Codex 索引为零和数据库完整性，再让用户重新打开该窗口。
+
 ### 私有状态
 
 所有状态仅保存在默认私有目录的 `state/` 中。迁移旧状态是可选操作；不得把旧配置、日志或凭据复制进仓库。
