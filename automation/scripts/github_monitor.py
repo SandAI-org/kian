@@ -5,6 +5,7 @@
   python3 github_monitor.py daily      # 每日全貌总结，推送飞书
 """
 import json
+import fcntl
 import os
 import re
 import sys
@@ -68,6 +69,22 @@ def save_managed_data(data):
             os.unlink(temporary_path)
 
 
+def remove_managed_keys(keys):
+    if not keys:
+        return
+    os.makedirs(os.path.dirname(MANAGED_FILE), exist_ok=True)
+    with open(f"{MANAGED_FILE}.lock", "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        data = load_managed_data()
+        changed = False
+        for key in keys:
+            if key in data.get("managed", {}):
+                data["managed"].pop(key)
+                changed = True
+        if changed:
+            save_managed_data(data)
+
+
 def desc_hint(repo, num):
     """根据 PR 是否受管理，返回一行 desc 提醒文字（纯文本，非按钮）。"""
     key = f"{repo}#{num}"
@@ -80,11 +97,8 @@ def unmanage_pr(repo, num):
     """把已 merge/closed 的 PR 从受管理清单移除。"""
     if not os.path.exists(MANAGED_FILE):
         return
-    d = load_managed_data()
     key = f"{repo}#{num}"
-    if key in d.get("managed", {}):
-        d["managed"].pop(key, None)
-        save_managed_data(d)
+    remove_managed_keys([key])
 
 
 def llm_summarize(text, kind, concise=False):
@@ -330,18 +344,16 @@ def cleanup_managed():
     if not os.path.exists(MANAGED_FILE):
         return
     d = load_managed_data()
-    changed = False
+    closed_keys = []
     for key in list(d.get("managed", {}).keys()):
         try:
             repo, num = key.rsplit("#", 1)
             pr = gh_get(repo, f"/pulls/{num}")
             if isinstance(pr, dict) and pr.get("state") == "closed":
-                d["managed"].pop(key, None)
-                changed = True
+                closed_keys.append(key)
         except Exception:
             continue
-    if changed:
-        save_managed_data(d)
+    remove_managed_keys(closed_keys)
 
 
 def realtime():

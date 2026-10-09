@@ -271,12 +271,13 @@ const disableCompletedCardAction = async ({ appId, appSecret, messageId, command
     return;
   }
   const originalCard = await readInteractiveCard({ appId, appSecret, messageId });
-  const { card, changed } = disableCardAction(originalCard, { command, repo, mode });
+  const { card, changed, candidates } = disableCardAction(originalCard, { command, repo, mode });
   if (!changed) {
-    log('cannot disable card action: matching button not found', command, mode);
+    log('cannot disable card action: unique matching button not found', command, mode, candidates);
     return;
   }
   await updateInteractiveCard({ appId, appSecret, messageId, card });
+  log('disabled completed card action', command, mode);
 };
 
 const main = async () => {

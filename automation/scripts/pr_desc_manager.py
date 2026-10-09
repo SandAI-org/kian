@@ -2,6 +2,7 @@
 """Deterministic PR description manager for Feishu descN/upN commands."""
 import json
 import http.client
+import fcntl
 import os
 import re
 import shutil
@@ -816,20 +817,24 @@ def summarize_commit_from_diff(item):
     return markdown_inline_format(f"Updated implementation around commit {short_sha}.")
 
 
-def save_managed(managed):
+def save_managed(managed, key):
     directory = os.path.dirname(MANAGED_PATH)
     os.makedirs(directory, exist_ok=True)
-    fd, temporary_path = tempfile.mkstemp(prefix="managed-prs-", suffix=".json", dir=directory)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(managed, f, ensure_ascii=False, indent=2)
-            f.write("\n")
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temporary_path, MANAGED_PATH)
-    finally:
-        if os.path.exists(temporary_path):
-            os.unlink(temporary_path)
+    with open(f"{MANAGED_PATH}.lock", "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        current = load_json(MANAGED_PATH, {"managed": {}})
+        current.setdefault("managed", {})[key] = managed["managed"][key]
+        fd, temporary_path = tempfile.mkstemp(prefix="managed-prs-", suffix=".json", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(current, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_path, MANAGED_PATH)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
 
 def append_before_future_sections(body, bullets):
@@ -1055,7 +1060,7 @@ def update_append_only_legacy(command, number, requested_repo=None, mode="defaul
                         key, {"added": date.today().isoformat(), "note": pr.get("title", "")}
                     )
                     entry["last_head_sha"] = current_head_sha
-                    save_managed(managed)
+                    save_managed(managed, key)
                 return repo, False, "当前同步 PR 描述已与最新实际 diff 一致"
     elif command == "desc" and mode == "simple":
         if summarize_from_diff:
@@ -1200,7 +1205,7 @@ def update_append_only_legacy(command, number, requested_repo=None, mode="defaul
                 for item in commits
                 if item.get("sha", "") in processed_commits
             ]
-            save_managed(managed)
+            save_managed(managed, key)
         if command == "up" and mode == "full" and full_structure_was_current:
             return repo, False, "当前描述已是完整版结构，且没有发现尚未写入的关联 PR 更新"
         if command == "desc" and mode == "simple":
@@ -1235,7 +1240,7 @@ def update_append_only_legacy(command, number, requested_repo=None, mode="defaul
         for item in commits
         if item.get("sha", "") in processed_commits
     ]
-    save_managed(managed)
+    save_managed(managed, key)
     return repo, True, "、".join(added)
 
 
@@ -1286,7 +1291,7 @@ def update(command, number, requested_repo=None, mode="default"):
     if body.strip() == current_body.strip():
         entry["last_head_sha"] = current_head_sha
         entry["last_body_snapshot"] = current_body
-        save_managed(managed)
+        save_managed(managed, key)
         return repo, False, "当前 desc 已与最新最终 diff 一致"
 
     result = request(repo, f"/pulls/{number}", method="PATCH", payload={"body": body})
@@ -1301,7 +1306,7 @@ def update(command, number, requested_repo=None, mode="default"):
         item.get("number") for item in linked_prs if item.get("number")
     )
     entry["processed_commits"] = [item.get("sha", "") for item in commits if item.get("sha")]
-    save_managed(managed)
+    save_managed(managed, key)
     return repo, True, "已基于当前最终 diff 整体重构 desc，未使用 commit message 追加"
 
 

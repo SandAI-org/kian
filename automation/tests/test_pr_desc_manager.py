@@ -1,5 +1,6 @@
 import importlib.util
 import http.client
+import json
 import os
 import sys
 import tempfile
@@ -14,13 +15,49 @@ sys.path.insert(0, str(SCRIPT_DIR))
 os.environ.setdefault("KIAN_AUTOMATION_HOME", tempfile.mkdtemp())
 config_path = Path(os.environ["KIAN_AUTOMATION_HOME"]) / "config" / "config.json"
 config_path.parent.mkdir(parents=True, exist_ok=True)
-config_path.write_text('{"github":{"tokens":{},"repos":[]}}')
+config_path.write_text('{"feishu":{},"github":{"tokens":{},"repos":[]}}')
 spec = importlib.util.spec_from_file_location("pr_desc_manager", SCRIPT_DIR / "pr_desc_manager.py")
 manager = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manager)
+monitor_spec = importlib.util.spec_from_file_location("github_monitor", SCRIPT_DIR / "github_monitor.py")
+monitor = importlib.util.module_from_spec(monitor_spec)
+monitor_spec.loader.exec_module(monitor)
 
 
 class PrDescriptionRewriteTest(unittest.TestCase):
+    def test_cleanup_preserves_entry_added_while_checking_closed_prs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "managed-prs.json"
+            path.write_text(json.dumps({"managed": {"example/repo#1": {"note": "old"}}}))
+
+            def close_old_pr(repo, endpoint, params=None):
+                data = json.loads(path.read_text())
+                data["managed"]["example/repo#2"] = {"note": "new"}
+                path.write_text(json.dumps(data))
+                return {"state": "closed"}
+
+            with mock.patch.object(monitor, "MANAGED_FILE", str(path)), mock.patch.object(
+                monitor, "gh_get", side_effect=close_old_pr
+            ):
+                monitor.cleanup_managed()
+
+            saved = json.loads(path.read_text())
+            self.assertNotIn("example/repo#1", saved["managed"])
+            self.assertEqual(saved["managed"]["example/repo#2"]["note"], "new")
+
+    def test_save_managed_preserves_entries_written_by_another_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "managed-prs.json"
+            path.write_text(json.dumps({"managed": {"other/repo#2": {"note": "new"}}}))
+            stale = {"managed": {"example/repo#1": {"note": "updated"}}}
+
+            with mock.patch.object(manager, "MANAGED_PATH", str(path)):
+                manager.save_managed(stale, "example/repo#1")
+
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved["managed"]["example/repo#1"]["note"], "updated")
+            self.assertEqual(saved["managed"]["other/repo#2"]["note"], "new")
+
     def test_github_request_retries_incomplete_response(self):
         incomplete = mock.MagicMock()
         incomplete.__enter__.return_value = incomplete
