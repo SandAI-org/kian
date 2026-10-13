@@ -82,6 +82,63 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         self.assertIn("+final = True", payload)
         self.assertNotIn("commit message", payload.lower())
 
+    def test_large_magicore_diff_keeps_inventory_and_samples_every_scope(self):
+        files = [
+            {
+                "filename": ".github/workflows/ci.yaml",
+                "status": "modified",
+                "additions": 100,
+                "deletions": 50,
+                "patch": "+CI_ONLY\n" * 1000,
+            },
+            {
+                "filename": "apps/core/trainer.py",
+                "status": "modified",
+                "additions": 20,
+                "deletions": 10,
+                "patch": "+APPS_BEHAVIOR\n" * 100,
+            },
+            {
+                "filename": "pkgs/MagiFSDP/magi_fsdp/collectives.py",
+                "status": "modified",
+                "additions": 30,
+                "deletions": 15,
+                "patch": "+MAGIFSDP_BEHAVIOR\n" * 100,
+            },
+            {
+                "filename": "pkgs/MagiMoE/magi_moe/kernel.py",
+                "status": "modified",
+                "additions": 40,
+                "deletions": 20,
+                "patch": "+MAGIMOE_BEHAVIOR\n" * 100,
+            },
+        ]
+
+        payload = manager.diff_summary_payload(files, limit=14000, special_layout=True)
+
+        for item in files:
+            self.assertIn(f"FILE {item['filename']}", payload)
+        self.assertIn("APPS_BEHAVIOR", payload)
+        self.assertIn("MAGIFSDP_BEHAVIOR", payload)
+        self.assertIn("MAGIMOE_BEHAVIOR", payload)
+        self.assertIn("scope=others", payload)
+
+    def test_magicore_scope_line_is_compact_and_separates_apps_pkgs_others(self):
+        files = [
+            {"filename": "apps/a.py", "additions": 1200, "deletions": 3},
+            {"filename": "apps/b.py", "additions": 2, "deletions": 4},
+            {"filename": "pkgs/MagiFSDP/a.py", "additions": 3000, "deletions": 2000},
+            {"filename": ".github/ci.yml", "additions": 5, "deletions": 6},
+        ]
+
+        line = manager.render_change_scope(files)
+
+        self.assertEqual(
+            line,
+            "> **Change scope:** `apps/` 2 files (+1,202/−7) · "
+            "`pkgs/` 1 file (+3,000/−2,000) · `others` 1 file (+5/−6)",
+        )
+
     def test_replaces_entire_done_and_preserves_future_sections(self):
         body = "## DONE\n\n- Old implementation.\n- Another stale commit.\n\n## TODO in this PR\n\n- Keep this.\n"
         rewritten = "## DONE\n\n- Final net behavior.\n"
@@ -93,9 +150,15 @@ class PrDescriptionRewriteTest(unittest.TestCase):
 
     def test_special_layout_renders_coherent_sections(self):
         summary = {"algo": ["Added **final behavior**"], "infra": ["Hardened **writer synchronization**"], "general": []}
-        result = manager.render_rewritten_done(summary, special_layout=True)
+        result = manager.render_rewritten_done(
+            summary,
+            special_layout=True,
+            files=[{"filename": "pkgs/example.py", "additions": 3, "deletions": 1}],
+        )
         self.assertIn("### Algo CodeBreak", result)
         self.assertIn("### Infra CodeBreak", result)
+        self.assertIn("**Change scope:**", result)
+        self.assertLess(result.index("**Change scope:**"), result.index("### Algo CodeBreak"))
         self.assertEqual(result.count("Added **final behavior**"), 1)
 
     def test_invalid_summary_credentials_fail_immediately_without_overwrite(self):

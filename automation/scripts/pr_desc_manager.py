@@ -418,23 +418,96 @@ def build_diff_body(pr, files):
     return "## DONE\n\n" + "\n".join(bullets) + "\n"
 
 
-def diff_summary_payload(files, limit=120000):
-    """Serialize the current final diff without including commit messages."""
-    chunks = []
-    size = 0
+def diff_scope(filename):
+    if filename.startswith("apps/"):
+        return "apps/"
+    if filename.startswith("pkgs/"):
+        return "pkgs/"
+    return "others"
+
+
+def diff_summary_group(filename, special_layout=False):
+    """Return a fair-sharing group for representative patch excerpts."""
+    if special_layout:
+        if filename.startswith("apps/"):
+            return "apps/"
+        if filename.startswith("pkgs/"):
+            parts = filename.split("/", 2)
+            return "/".join(parts[:2]) + "/" if len(parts) >= 2 else "pkgs/"
+        return "others"
+    return filename.split("/", 1)[0] or "root"
+
+
+def diff_summary_payload(files, limit=120000, special_layout=False):
+    """Serialize a complete inventory plus fairly sampled final-diff excerpts.
+
+    GitHub returns PR files in path order. Appending full patches in that order made
+    early directories consume the entire prompt budget, so a large Magicore PR could
+    omit every ``pkgs/`` change. Keep every file in a compact inventory, then select
+    bounded excerpts round-robin across apps, each package, and other files.
+    """
+    inventory = ["COMPLETE FILE INVENTORY (all changed files):\n"]
     for item in files:
-        header = (
+        inventory.append(
             f"FILE {item.get('filename', '')} status={item.get('status', '')} "
             f"additions={item.get('additions', 0)} deletions={item.get('deletions', 0)}\n"
         )
-        patch = item.get("patch") or "(patch unavailable; infer only from path and statistics)"
-        chunk = header + patch + "\n"
-        remaining = limit - size
-        if remaining <= 0:
+    inventory_text = "".join(inventory)
+    if len(inventory_text) >= limit:
+        return inventory_text[:limit]
+
+    groups = {}
+    for item in files:
+        filename = item.get("filename", "")
+        groups.setdefault(diff_summary_group(filename, special_layout), []).append(item)
+
+    chunks = [inventory_text, "\nREPRESENTATIVE FINAL-DIFF PATCH EXCERPTS:\n"]
+    size = sum(len(chunk) for chunk in chunks)
+    indexes = {name: 0 for name in groups}
+    max_excerpt = 4000
+    while size < limit:
+        progressed = False
+        for group, items in groups.items():
+            index = indexes[group]
+            if index >= len(items):
+                continue
+            item = items[index]
+            indexes[group] += 1
+            progressed = True
+            patch = item.get("patch") or "(patch unavailable; infer only from inventory statistics)"
+            chunk = (
+                f"\nPATCH EXCERPT scope={group} file={item.get('filename', '')}\n"
+                f"{patch[:max_excerpt]}\n"
+            )
+            remaining = limit - size
+            if remaining <= 0:
+                break
+            chunks.append(chunk[:remaining])
+            size += min(len(chunk), remaining)
+        if not progressed:
             break
-        chunks.append(chunk[:remaining])
-        size += min(len(chunk), remaining)
     return "".join(chunks)
+
+
+def render_change_scope(files):
+    stats = {
+        scope: {"files": 0, "additions": 0, "deletions": 0}
+        for scope in ("apps/", "pkgs/", "others")
+    }
+    for item in files:
+        values = stats[diff_scope(item.get("filename", ""))]
+        values["files"] += 1
+        values["additions"] += item.get("additions", 0) or 0
+        values["deletions"] += item.get("deletions", 0) or 0
+    rendered = []
+    for scope in ("apps/", "pkgs/", "others"):
+        values = stats[scope]
+        file_label = "file" if values["files"] == 1 else "files"
+        rendered.append(
+            f"`{scope}` {values['files']:,} {file_label} "
+            f"(+{values['additions']:,}/−{values['deletions']:,})"
+        )
+    return "> **Change scope:** " + " · ".join(rendered)
 
 
 def normalize_and_validate_summary(summary, linked_prs):
@@ -553,6 +626,7 @@ Requirements:
 - Use Markdown backticks for identifiers and paths, but do not include a leading dash in strings.
 - Return JSON only with this exact shape: {schema}
 - Algo means application/model behavior under apps/. Infra means reusable implementation under pkgs/. General is for cross-cutting items.
+- The file inventory is complete, while patch bodies are representative excerpts. Cover every materially changed scope; for this layout, do not let CI or other changes eclipse substantial `apps/` or `pkgs/` work. If multiple `pkgs/<package>/` groups changed materially, summarize their distinct net effects.
 
 PR title: {pr.get('title', '')}
 
@@ -563,7 +637,7 @@ MERGED PR PROVENANCE (exact URLs are mandatory):
 {linked_context}
 
 CURRENT FINAL DIFF:
-{diff_summary_payload(files)}
+{diff_summary_payload(files, special_layout=special_layout)}
 """
     if backend == "copilot_cli":
         last_error = None
@@ -627,7 +701,7 @@ CURRENT FINAL DIFF:
     raise RuntimeError(f"无法根据当前 diff 重构 PR 描述: {last_error}")
 
 
-def render_rewritten_done(summary, special_layout=False):
+def render_rewritten_done(summary, special_layout=False, files=None):
     def bullets(values):
         return "\n".join(
             f"- {value}" if value.endswith((".", "。")) else f"- {value}."
@@ -635,7 +709,10 @@ def render_rewritten_done(summary, special_layout=False):
         )
 
     if special_layout:
-        sections = ["## DONE", "", "### Algo CodeBreak", ""]
+        sections = ["## DONE", ""]
+        if files is not None:
+            sections.extend([render_change_scope(files), ""])
+        sections.extend(["### Algo CodeBreak", ""])
         if summary["algo"]:
             sections.extend([bullets(summary["algo"]), ""])
         sections.extend(["### Infra CodeBreak", ""])
@@ -1273,7 +1350,9 @@ def update(command, number, requested_repo=None, mode="default"):
         linked_prs,
         mode != "full",
     )
-    rewritten_done = render_rewritten_done(summary, repo == SPECIAL_LAYOUT_REPO)
+    rewritten_done = render_rewritten_done(
+        summary, repo == SPECIAL_LAYOUT_REPO, files=files
+    )
     body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
     if mode == "full":
         body = expand_to_full_body(repo, body, commits)
