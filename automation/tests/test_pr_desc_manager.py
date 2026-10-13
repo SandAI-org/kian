@@ -139,6 +139,52 @@ class PrDescriptionRewriteTest(unittest.TestCase):
             "`pkgs/` 1 file (+3,000/−2,000) · `others` 1 file (+5/−6)",
         )
 
+    def test_magicore_scope_reconciles_github_zero_stats_in_one_scope(self):
+        files = [
+            {
+                "filename": "apps/a.py",
+                "status": "modified",
+                "additions": 10,
+                "deletions": 2,
+                "changes": 12,
+            },
+            {
+                "filename": "pkgs/MagiMoE/a.py",
+                "status": "modified",
+                "additions": 0,
+                "deletions": 0,
+                "changes": 0,
+            },
+            {
+                "filename": "README.md",
+                "status": "modified",
+                "additions": 1,
+                "deletions": 1,
+                "changes": 2,
+            },
+        ]
+        pr = {"changed_files": 3, "additions": 31, "deletions": 8}
+
+        line = manager.render_change_scope(files, pr)
+
+        self.assertEqual(
+            line,
+            "> **Change scope:** `apps/` 1 file (+10/−2) · "
+            "`pkgs/` 1 file (+20/−5) · `others` 1 file (+1/−1)",
+        )
+
+    def test_magicore_scope_falls_back_when_multiple_scopes_are_incomplete(self):
+        files = [
+            {"filename": "apps/a.py", "status": "modified", "changes": 0},
+            {"filename": "pkgs/a.py", "status": "modified", "changes": 0},
+        ]
+        pr = {"changed_files": 2, "additions": 20, "deletions": 4}
+
+        line = manager.render_change_scope(files, pr)
+
+        self.assertIn("**total** 2 files (+20/−4)", line)
+        self.assertIn("per-scope line counts unavailable from GitHub", line)
+
     def test_standalone_scope_uses_logical_src_tests_and_others_labels(self):
         files = [
             {"filename": "magi_attention/functional.py", "additions": 10, "deletions": 2},

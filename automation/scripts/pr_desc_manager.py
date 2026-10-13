@@ -496,7 +496,7 @@ def diff_summary_payload(files, limit=120000, special_layout=False):
     return "".join(chunks)
 
 
-def render_change_scope(files):
+def magicore_scope_stats(files, pr=None):
     stats = {
         scope: {"files": 0, "additions": 0, "deletions": 0}
         for scope in ("apps/", "pkgs/", "others")
@@ -506,6 +506,53 @@ def render_change_scope(files):
         values["files"] += 1
         values["additions"] += item.get("additions", 0) or 0
         values["deletions"] += item.get("deletions", 0) or 0
+    complete = True
+    if pr:
+        reported_additions = sum(value["additions"] for value in stats.values())
+        reported_deletions = sum(value["deletions"] for value in stats.values())
+        expected_additions = pr.get("additions")
+        expected_deletions = pr.get("deletions")
+        if (
+            isinstance(expected_additions, int)
+            and isinstance(expected_deletions, int)
+            and (reported_additions, reported_deletions)
+            != (expected_additions, expected_deletions)
+        ):
+            incomplete_scopes = {
+                diff_scope(item.get("filename", ""))
+                for item in files
+                if item.get("status") != "renamed"
+                and not (item.get("additions", 0) or 0)
+                and not (item.get("deletions", 0) or 0)
+                and not (item.get("changes", 0) or 0)
+            }
+            missing_additions = expected_additions - reported_additions
+            missing_deletions = expected_deletions - reported_deletions
+            if (
+                len(incomplete_scopes) == 1
+                and missing_additions >= 0
+                and missing_deletions >= 0
+            ):
+                scope = next(iter(incomplete_scopes))
+                stats[scope]["additions"] += missing_additions
+                stats[scope]["deletions"] += missing_deletions
+            else:
+                complete = False
+    return stats, complete
+
+
+def render_change_scope(files, pr=None):
+    stats, complete = magicore_scope_stats(files, pr)
+    if not complete:
+        return (
+            f"> **Change scope:** **total** {pr.get('changed_files', len(files)):,} files "
+            f"(+{pr.get('additions', 0):,}/−{pr.get('deletions', 0):,}) · "
+            + " · ".join(
+                f"`{scope}` {stats[scope]['files']:,} files"
+                for scope in ("apps/", "pkgs/", "others")
+            )
+            + " · per-scope line counts unavailable from GitHub"
+        )
     rendered = []
     for scope in ("apps/", "pkgs/", "others"):
         values = stats[scope]
@@ -820,7 +867,7 @@ CURRENT FINAL DIFF:
     raise RuntimeError(f"无法根据当前 diff 重构 PR 描述: {last_error}")
 
 
-def render_rewritten_done(summary, special_layout=False, files=None, repo=None):
+def render_rewritten_done(summary, special_layout=False, files=None, repo=None, pr=None):
     def bullets(values):
         return "\n".join(
             f"- {value}" if value.endswith((".", "。")) else f"- {value}."
@@ -830,7 +877,7 @@ def render_rewritten_done(summary, special_layout=False, files=None, repo=None):
     if special_layout:
         sections = ["## DONE", ""]
         if files is not None:
-            sections.extend([render_change_scope(files), ""])
+            sections.extend([render_change_scope(files, pr), ""])
         sections.extend(["### Algo CodeBreak", ""])
         if summary["algo"]:
             sections.extend([bullets(summary["algo"]), ""])
@@ -1475,7 +1522,7 @@ def update(command, number, requested_repo=None, mode="default"):
         package_syncs=package_sync_records(commits) if repo == SPECIAL_LAYOUT_REPO else [],
     )
     rewritten_done = render_rewritten_done(
-        summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo
+        summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo, pr=pr
     )
     body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
     if mode == "full":
