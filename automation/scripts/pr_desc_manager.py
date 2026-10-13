@@ -631,9 +631,22 @@ def package_sync_records(commits):
     return list(latest.values())
 
 
+def apply_package_sync_overrides(records, repo):
+    overrides = PR_MANAGER.get("sync_source_overrides", {}).get(repo, {})
+    resolved = []
+    for record in records:
+        current = dict(record)
+        override = overrides.get(current["package"], {})
+        if override and override.get("when_commit") == current["commit"]:
+            current["branch"] = override["branch"]
+            current["commit"] = override["commit"]
+        resolved.append(current)
+    return resolved
+
+
 def sync_bullet_prefix(record):
     return (
-        f"Sync {record['package']} on {record['branch']} branch at commit "
+        f"Sync `{record['package']}` on `{record['branch']}` branch at commit "
         f"`{record['commit']}`, to "
     )
 
@@ -1519,7 +1532,11 @@ def update(command, number, requested_repo=None, mode="default"):
         repo == SPECIAL_LAYOUT_REPO,
         linked_prs,
         mode != "full",
-        package_syncs=package_sync_records(commits) if repo == SPECIAL_LAYOUT_REPO else [],
+        package_syncs=(
+            apply_package_sync_overrides(package_sync_records(commits), repo)
+            if repo == SPECIAL_LAYOUT_REPO
+            else []
+        ),
     )
     rewritten_done = render_rewritten_done(
         summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo, pr=pr

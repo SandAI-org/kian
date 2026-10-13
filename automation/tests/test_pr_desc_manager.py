@@ -239,7 +239,7 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         valid = {
             "algo": [],
             "infra": [
-                "Sync magi_moe-v0.4.1 on main branch at commit `3752b44`, "
+                "Sync `magi_moe-v0.4.1` on `main` branch at commit `3752b44`, "
                 "to add **overlapped expert-parallel backward execution**."
             ],
             "general": [],
@@ -250,6 +250,37 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         invalid = {"algo": [], "infra": ["Added **MoE overlap**."], "general": []}
         with self.assertRaisesRegex(ValueError, "精确同步记录"):
             manager.normalize_and_validate_summary(invalid, [], syncs)
+
+    def test_package_sync_override_requires_exact_package_and_source_commit(self):
+        records = [
+            {
+                "package": "odin-v0.3.2",
+                "branch": "dev/fix",
+                "commit": "9bd93643",
+            },
+            {"package": "magi_moe-v0.4.1", "branch": "main", "commit": "3752b44"},
+        ]
+        overrides = {
+            "sync_source_overrides": {
+                "world-sim-dev/magicore": {
+                    "odin-v0.3.2": {
+                        "when_commit": "9bd93643",
+                        "branch": "main",
+                        "commit": "5e7ca801",
+                    }
+                }
+            }
+        }
+        with mock.patch.object(manager, "PR_MANAGER", overrides):
+            resolved = manager.apply_package_sync_overrides(
+                records, "world-sim-dev/magicore"
+            )
+
+        self.assertEqual(
+            resolved[0],
+            {"package": "odin-v0.3.2", "branch": "main", "commit": "5e7ca801"},
+        )
+        self.assertEqual(resolved[1], records[1])
 
     def test_replaces_entire_done_and_preserves_future_sections(self):
         body = "## DONE\n\n- Old implementation.\n- Another stale commit.\n\n## TODO in this PR\n\n- Keep this.\n"

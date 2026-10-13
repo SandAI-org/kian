@@ -19,7 +19,8 @@
   },
   "pr_manager": {
     "special_layout_repo": "example-owner/example-repo",
-    "legacy_replacements": {}
+    "legacy_replacements": {},
+    "sync_source_overrides": {}
   },
   "summarization": {
     "backend": "copilot_cli",
