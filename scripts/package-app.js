@@ -216,4 +216,6 @@ if (shouldBuild) {
 }
 
 const stageDir = prepareDeployDirectory();
-run(pnpmCommand, ['exec', 'electron-builder', '--projectDir', stageDir, ...builderArgs]);
+run(process.execPath, [require.resolve('electron-builder/cli.js'), '--projectDir', stageDir, ...builderArgs], {
+  cwd: stageDir
+});
