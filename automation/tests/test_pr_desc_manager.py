@@ -139,6 +139,34 @@ class PrDescriptionRewriteTest(unittest.TestCase):
             "`pkgs/` 1 file (+3,000/−2,000) · `others` 1 file (+5/−6)",
         )
 
+    def test_standalone_scope_uses_logical_src_tests_and_others_labels(self):
+        files = [
+            {"filename": "magi_attention/functional.py", "additions": 10, "deletions": 2},
+            {"filename": "magi_attention/csrc/kernel.cu", "additions": 20, "deletions": 3},
+            {"filename": "tests/test_functional.py", "additions": 15, "deletions": 4},
+            {"filename": ".github/workflows/ci.yml", "additions": 5, "deletions": 6},
+            {"filename": "README.md", "additions": 1, "deletions": 0},
+        ]
+
+        line = manager.render_standalone_change_scope(
+            files, "SandAI-org/MagiAttention"
+        )
+
+        self.assertEqual(
+            line,
+            "> **Change scope:** `src/` 2 files (+30/−5) · "
+            "`tests/` 1 file (+15/−4) · `others/` 2 files (+6/−6)",
+        )
+
+    def test_standalone_source_directories_cover_all_monitored_repos(self):
+        expected = {
+            "SandAI-org/MagiAttention": "magi_attention",
+            "SandAI-org/MagiFSDP": "magi_fsdp",
+            "SandAI-org/MagiMoE": "magi_moe",
+            "world-sim-dev/odin": "odin",
+        }
+        self.assertEqual(manager.STANDALONE_SOURCE_DIRS, expected)
+
     def test_replaces_entire_done_and_preserves_future_sections(self):
         body = "## DONE\n\n- Old implementation.\n- Another stale commit.\n\n## TODO in this PR\n\n- Keep this.\n"
         rewritten = "## DONE\n\n- Final net behavior.\n"
@@ -160,6 +188,15 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         self.assertIn("**Change scope:**", result)
         self.assertLess(result.index("**Change scope:**"), result.index("### Algo CodeBreak"))
         self.assertEqual(result.count("Added **final behavior**"), 1)
+
+    def test_standalone_layout_renders_scope_before_summary(self):
+        result = manager.render_rewritten_done(
+            {"algo": [], "infra": [], "general": ["Added **final behavior**"]},
+            files=[{"filename": "magi_fsdp/api.py", "additions": 3, "deletions": 1}],
+            repo="SandAI-org/MagiFSDP",
+        )
+        self.assertIn("`src/` 1 file (+3/−1)", result)
+        self.assertLess(result.index("**Change scope:**"), result.index("Added **final behavior**"))
 
     def test_invalid_summary_credentials_fail_immediately_without_overwrite(self):
         error = urllib.error.HTTPError(

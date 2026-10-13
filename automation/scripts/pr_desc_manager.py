@@ -36,6 +36,13 @@ PR_MANAGER = CONFIG.get("pr_manager", {})
 SPECIAL_LAYOUT_REPO = PR_MANAGER.get("special_layout_repo", "")
 SUMMARIZATION = CONFIG.get("summarization", {})
 
+STANDALONE_SOURCE_DIRS = {
+    "SandAI-org/MagiAttention": "magi_attention",
+    "SandAI-org/MagiFSDP": "magi_fsdp",
+    "SandAI-org/MagiMoE": "magi_moe",
+    "world-sim-dev/odin": "odin",
+}
+
 
 def request(repo, path, method="GET", payload=None):
     token = TOKENS.get(repo.split("/", 1)[0], "")
@@ -510,6 +517,37 @@ def render_change_scope(files):
     return "> **Change scope:** " + " · ".join(rendered)
 
 
+def standalone_diff_scope(filename, source_dir):
+    top_level = filename.split("/", 1)[0]
+    if top_level == source_dir:
+        return "src/"
+    if top_level == "tests":
+        return "tests/"
+    return "others/"
+
+
+def render_standalone_change_scope(files, repo):
+    source_dir = STANDALONE_SOURCE_DIRS.get(repo, repo.rsplit("/", 1)[-1].lower())
+    stats = {
+        scope: {"files": 0, "additions": 0, "deletions": 0}
+        for scope in ("src/", "tests/", "others/")
+    }
+    for item in files:
+        values = stats[standalone_diff_scope(item.get("filename", ""), source_dir)]
+        values["files"] += 1
+        values["additions"] += item.get("additions", 0) or 0
+        values["deletions"] += item.get("deletions", 0) or 0
+    rendered = []
+    for scope in ("src/", "tests/", "others/"):
+        values = stats[scope]
+        file_label = "file" if values["files"] == 1 else "files"
+        rendered.append(
+            f"`{scope}` {values['files']:,} {file_label} "
+            f"(+{values['additions']:,}/−{values['deletions']:,})"
+        )
+    return "> **Change scope:** " + " · ".join(rendered)
+
+
 def normalize_and_validate_summary(summary, linked_prs):
     def ensure_bold(value):
         if re.search(r"\*\*[^*]+\*\*", value):
@@ -701,7 +739,7 @@ CURRENT FINAL DIFF:
     raise RuntimeError(f"无法根据当前 diff 重构 PR 描述: {last_error}")
 
 
-def render_rewritten_done(summary, special_layout=False, files=None):
+def render_rewritten_done(summary, special_layout=False, files=None, repo=None):
     def bullets(values):
         return "\n".join(
             f"- {value}" if value.endswith((".", "。")) else f"- {value}."
@@ -722,7 +760,11 @@ def render_rewritten_done(summary, special_layout=False, files=None):
             sections.extend([bullets(summary["general"]), ""])
         return "\n".join(sections).rstrip() + "\n"
     values = summary["general"] + summary["algo"] + summary["infra"]
-    return "## DONE\n\n" + bullets(values) + "\n"
+    sections = ["## DONE", ""]
+    if files is not None and repo:
+        sections.extend([render_standalone_change_scope(files, repo), ""])
+    sections.append(bullets(values))
+    return "\n".join(sections).rstrip() + "\n"
 
 
 def replace_done_section(existing_body, rewritten_done):
@@ -1351,7 +1393,7 @@ def update(command, number, requested_repo=None, mode="default"):
         mode != "full",
     )
     rewritten_done = render_rewritten_done(
-        summary, repo == SPECIAL_LAYOUT_REPO, files=files
+        summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo
     )
     body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
     if mode == "full":
