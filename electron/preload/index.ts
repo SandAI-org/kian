@@ -381,9 +381,10 @@ const api = {
     },
   },
   settings: {
-    get: (scope: ChatScope) => invoke<ClaudeConfigStatus>("settings:get", { scope }),
-    setLastSelectedModel: (scope: ChatScope, model: string) =>
-      invoke<boolean>("settings:setLastSelectedModel", { scope, model }),
+    get: (scope: ChatScope, sessionId?: string) =>
+      invoke<ClaudeConfigStatus>("settings:get", { scope, sessionId }),
+    setLastSelectedModel: (scope: ChatScope, model: string, sessionId?: string) =>
+      invoke<boolean>("settings:setLastSelectedModel", { scope, model, sessionId }),
     setLastSelectedThinkingLevel: (
       scope: ChatScope,
       level: "low" | "medium" | "high",
@@ -411,6 +412,8 @@ const api = {
       }>;
       enabledModels: string[];
     }) => invoke<boolean>("settings:saveClaudeApiKey", payload),
+    deleteCustomProvider: (provider: string) =>
+      invoke<boolean>("settings:deleteCustomProvider", { provider }),
     oauthLoginStart: (provider: string) =>
       invoke<{ loginId: string; authUrl?: string }>(
         "settings:oauthLoginStart",
@@ -428,6 +431,8 @@ const api = {
       invoke<AgentProviderDTO[]>("settings:getAvailableProviders"),
     getAvailableModels: (provider: string) =>
       invoke<AgentModelDTO[]>("settings:getAvailableModels", { provider }),
+    refreshAvailableModels: (provider: string) =>
+      invoke<AgentModelDTO[]>("settings:refreshAvailableModels", { provider }),
     getModelProviderStatus: (provider: MediaProvider) =>
       invoke<ModelProviderConfigStatus>("settings:getModelProviderStatus", {
         provider,

@@ -1,0 +1,21 @@
+Provider brand assets
+
+Most provider SVGs are imported from @lobehub/icons-static-svg (MIT):
+https://github.com/lobehub/lobe-icons
+
+ant-ling.ico: official Ant Ling documentation favicon
+https://developer.ant-ling.com/en/docs/
+https://gw.alipayobjects.com/render/p/yuyan/180020010001289651/favicon.ico
+
+typesafe.png: official TypeSafe AI favicon
+https://typesafe.ai/
+https://framerusercontent.com/images/aNFzSFxM4fjICmnibw7npfZjcQ.png
+
+radius.svg: vector rendering of the official Radius homepage's Braille mark
+https://radius.pi.dev/
+
+xiaomi.svg: Simple Icons Xiaomi symbol (CC0)
+https://github.com/simple-icons/simple-icons/blob/develop/icons/xiaomi.svg
+https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md
+
+Brand marks belong to their respective owners and identify the available providers.

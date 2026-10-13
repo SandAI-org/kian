@@ -245,6 +245,11 @@ export const initializeChatQueryBridge = (queryClient: QueryClient): void => {
   }
 
   chatQueryBridgeInitialized = true;
+  api.appOperation.subscribe((event) => {
+    if (event.type === "reload_settings") {
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+    }
+  });
   api.chat.subscribeHistoryUpdated((event) => {
     applyChatHistoryUpdateToCache(queryClient, event);
   });

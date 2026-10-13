@@ -277,9 +277,10 @@ export const api = {
     writePng: async (dataUrl: string): Promise<boolean> => window.api.clipboard.writePng(dataUrl)
   },
   settings: {
-    get: async (scope: ChatScope) => unwrap(await window.api.settings.get(scope)),
-    setLastSelectedModel: async (scope: ChatScope, model: string) =>
-      unwrap(await window.api.settings.setLastSelectedModel(scope, model)),
+    get: async (scope: ChatScope, sessionId?: string) =>
+      unwrap(await window.api.settings.get(scope, sessionId)),
+    setLastSelectedModel: async (scope: ChatScope, model: string, sessionId?: string) =>
+      unwrap(await window.api.settings.setLastSelectedModel(scope, model, sessionId)),
     setLastSelectedThinkingLevel: async (
       scope: ChatScope,
       level: ChatThinkingLevel,
@@ -299,6 +300,8 @@ export const api = {
       enabledModels: string[];
     }) =>
       unwrap(await window.api.settings.saveClaudeApiKey(payload)),
+    deleteCustomProvider: async (provider: string) =>
+      unwrap(await window.api.settings.deleteCustomProvider(provider)),
     oauthLoginStart: async (
       provider: string,
     ): Promise<{ loginId: string; authUrl?: string }> =>
@@ -315,6 +318,8 @@ export const api = {
       unwrap(await window.api.settings.getAvailableProviders()),
     getAvailableModels: async (provider: string): Promise<AgentModelDTO[]> =>
       unwrap(await window.api.settings.getAvailableModels(provider)),
+    refreshAvailableModels: async (provider: string): Promise<AgentModelDTO[]> =>
+      unwrap(await window.api.settings.refreshAvailableModels(provider)),
     getModelProviderStatus: async (provider: MediaProvider): Promise<ModelProviderConfigStatus> =>
       unwrap(await window.api.settings.getModelProviderStatus(provider)),
     saveModelProviderConfig: async (payload: {

@@ -1,4 +1,4 @@
-import { streamSimple } from "@earendil-works/pi-ai/compat";
+import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { ChatScope } from "@shared/types";
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
@@ -23,17 +23,10 @@ const isDevelopmentMode =
   !(app?.isPackaged ?? false) || process.env.NODE_ENV === "development";
 
 type AgentLike = {
-  streamFn?:
-    | ((
-        ...args: Parameters<typeof streamSimple>
-      ) => ReturnType<typeof streamSimple> | Promise<ReturnType<typeof streamSimple>>)
-    | undefined;
+  onPayload?: SimpleStreamOptions["onPayload"];
 };
 
-const originalAgentStreamFns = new WeakMap<
-  AgentLike,
-  NonNullable<AgentLike["streamFn"]>
->();
+const originalAgentOnPayloads = new WeakMap<AgentLike, AgentLike["onPayload"]>();
 
 const DATA_URL_PREFIX = /^data:[^;]+;base64,/i;
 const BASE64_BODY = /^[A-Za-z0-9+/=\s]+$/;
@@ -141,22 +134,13 @@ export const attachAgentLlmRequestDebug = (
   }
 
   const debugOnPayload = createLlmRequestDebugOnPayload(getMetadata);
-  const originalStreamFn =
-    originalAgentStreamFns.get(agent) ?? agent.streamFn ?? streamSimple;
-  originalAgentStreamFns.set(agent, originalStreamFn);
-  const wrappedStreamFn = (
-    model: Parameters<typeof streamSimple>[0],
-    context: Parameters<typeof streamSimple>[1],
-    options?: Parameters<typeof streamSimple>[2],
-  ) =>
-    originalStreamFn(model, context, {
-      ...options,
-      onPayload: async (payload, model) => {
-        const nextPayload = await options?.onPayload?.(payload, model);
-        debugOnPayload(nextPayload ?? payload);
-        return nextPayload;
-      },
-    });
-
-  agent.streamFn = wrappedStreamFn;
+  const originalOnPayload = originalAgentOnPayloads.has(agent)
+    ? originalAgentOnPayloads.get(agent)
+    : agent.onPayload;
+  originalAgentOnPayloads.set(agent, originalOnPayload);
+  agent.onPayload = async (payload, model) => {
+    const nextPayload = await originalOnPayload?.(payload, model);
+    debugOnPayload(nextPayload ?? payload);
+    return nextPayload;
+  };
 };

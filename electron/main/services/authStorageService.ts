@@ -1,8 +1,10 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
+import { ModelRuntime, readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { shell } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { logger } from "./logger";
+import { modelCatalogStore } from "./modelCatalogService";
 import { GLOBAL_CONFIG_DIR } from "./workspacePaths";
 
 /**
@@ -15,14 +17,21 @@ import { GLOBAL_CONFIG_DIR } from "./workspacePaths";
  */
 const AUTH_STORAGE_PATH = path.join(GLOBAL_CONFIG_DIR, "auth.json");
 
-let sharedAuthStorage: AuthStorage | null = null;
+// Pi's static OAuth loaders also keep Electron bundles independent of source-relative imports.
+registerBunOAuthFlows();
+
+let sharedModelRuntime: Promise<ModelRuntime> | null = null;
 let authGeneration = 0;
 
-export const getSharedAuthStorage = (): AuthStorage => {
-  if (!sharedAuthStorage) {
-    sharedAuthStorage = AuthStorage.create(AUTH_STORAGE_PATH);
+export const getSharedModelRuntime = (): Promise<ModelRuntime> => {
+  if (!sharedModelRuntime) {
+    sharedModelRuntime = ModelRuntime.create({
+      authPath: AUTH_STORAGE_PATH,
+      modelsPath: null,
+      modelsStore: modelCatalogStore,
+    });
   }
-  return sharedAuthStorage;
+  return sharedModelRuntime;
 };
 
 /**
@@ -41,7 +50,7 @@ export const isOAuthSubscriptionProvider = (provider: string): boolean =>
   (OAUTH_SUBSCRIPTION_PROVIDERS as readonly string[]).includes(provider);
 
 export const hasOAuthCredential = (provider: string): boolean =>
-  getSharedAuthStorage().get(provider)?.type === "oauth";
+  readStoredCredential(provider, AUTH_STORAGE_PATH)?.type === "oauth";
 
 interface PendingOAuthLogin {
   loginId: string;
@@ -107,28 +116,29 @@ export const startOAuthLogin = async (
   });
   abortedPromise.catch(() => {});
 
-  const completion = getSharedAuthStorage()
-    .login(provider, {
-      onAuth: (info) => {
-        resolveAuthUrl(info.url);
-        void shell.openExternal(info.url).catch((error) => {
-          logger.warn("OAuth login: failed to open browser", {
-            provider,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      },
-      onDeviceCode: (info) => {
-        resolveAuthUrl(info.verificationUri);
-      },
-      onPrompt: () => manualCodePromise,
-      onManualCodeInput: () => manualCodePromise,
-      onSelect: async (prompt) => prompt.options[0]?.id,
-      onProgress: (message) => {
-        logger.info("OAuth login progress", { provider, message });
-      },
-      signal: controller.signal,
-    })
+  const completion = getSharedModelRuntime()
+    .then((runtime) =>
+      runtime.login(provider, "oauth", {
+        notify: (event) => {
+          if (event.type === "auth_url") {
+            resolveAuthUrl(event.url);
+            void shell.openExternal(event.url).catch((error) => {
+              logger.warn("OAuth login: failed to open browser", {
+                provider,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          } else if (event.type === "device_code") {
+            resolveAuthUrl(event.verificationUri);
+          } else if (event.type === "progress") {
+            logger.info("OAuth login progress", { provider, message: event.message });
+          }
+        },
+        prompt: async (prompt) =>
+          prompt.type === "select" ? prompt.options[0].id : manualCodePromise,
+        signal: controller.signal,
+      }),
+    )
     .then(() => {
       authGeneration += 1;
       logger.info("OAuth login completed", { provider });
@@ -207,8 +217,8 @@ export const cancelOAuthLogin = (loginId: string): void => {
   removePendingLogin(loginId);
 };
 
-export const oauthLogout = (provider: string): void => {
-  getSharedAuthStorage().logout(provider);
+export const oauthLogout = async (provider: string): Promise<void> => {
+  await (await getSharedModelRuntime()).logout(provider);
   authGeneration += 1;
   logger.info("OAuth logout", { provider });
 };

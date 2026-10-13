@@ -177,6 +177,27 @@ describe("chatService auto title", () => {
     });
   });
 
+  it("ignores a saved model that is no longer enabled when generating a title", async () => {
+    const status = await state.getClaudeStatus();
+    state.getClaudeStatus.mockResolvedValue({
+      ...status,
+      lastSelectedModel: "openrouter:disabled-model",
+    });
+    state.getChatSession
+      .mockResolvedValueOnce({ id: "session-1", title: "" })
+      .mockResolvedValue({ id: "session-1", title: "帮我整理一下这次迭代要做的任务" });
+    const { chatService } = await import("../../electron/main/services/chatService");
+    await chatService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "session-1",
+      message: "帮我整理一下这次迭代要做的任务",
+    });
+    await vi.waitFor(() => expect(state.completeSimple).toHaveBeenCalledTimes(1));
+    expect(state.resolveAgentModel).toHaveBeenCalledWith("anthropic", "claude-3-7-sonnet");
+    expect(state.getClaudeSecret).not.toHaveBeenCalledWith("openrouter");
+  });
+
   it("skips title update when title generation fails", async () => {
     state.completeSimple.mockReset().mockRejectedValue(new Error("rate limited"));
     state.getChatSession

@@ -2,7 +2,7 @@ import { completeSimple, streamSimple } from "@earendil-works/pi-ai/compat";
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { OpenaiCompatServerStatusDTO } from "@shared/types";
-import { getSharedAuthStorage } from "../authStorageService";
+import { getSharedModelRuntime } from "../authStorageService";
 import { logger } from "../logger";
 import { settingsService } from "../settingsService";
 import {
@@ -122,8 +122,9 @@ const resolveRequestedModel = async (rawModel: string) => {
   const apiKey =
     providerEntry?.apiKey ||
     (await settingsService.getClaudeSecret(provider)) ||
-    (await getSharedAuthStorage()
-      .getApiKey(provider)
+    (await getSharedModelRuntime()
+      .then((runtime) => runtime.getAuth(provider))
+      .then((result) => result?.auth.apiKey)
       .catch(() => undefined)) ||
     (isCustomApiProvider(provider) ? "kian-custom-api-no-auth" : undefined);
   if (!apiKey) {

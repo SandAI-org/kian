@@ -557,11 +557,11 @@ export const registerHandlers = (): void => {
 
   handle(
     'settings:get',
-    z.object({ scope: chatScopeSchema }).optional(),
-    async (input) => settingsService.getClaudeStatus(input?.scope ?? { type: 'main' })
+    z.object({ scope: chatScopeSchema, sessionId: z.string().min(1).optional() }).optional(),
+    async (input) => settingsService.getClaudeStatus(input?.scope ?? { type: 'main' }, input?.sessionId)
   );
-  handle('settings:setLastSelectedModel', z.object({ scope: chatScopeSchema, model: z.string().min(1) }), async (input) => {
-    await settingsService.setLastSelectedModel(input.scope, input.model);
+  handle('settings:setLastSelectedModel', z.object({ scope: chatScopeSchema, model: z.string().min(1), sessionId: z.string().min(1).optional() }), async (input) => {
+    await settingsService.setLastSelectedModel(input.scope, input.model, input.sessionId);
     return true;
   });
   handle(
@@ -602,6 +602,13 @@ export const registerHandlers = (): void => {
     });
     return true;
   });
+  handle('settings:deleteCustomProvider', z.object({ provider: z.string().min(1) }), async (input) => {
+    await settingsService.deleteCustomProvider(input.provider);
+    await settingsRuntimeService.reload({
+      targets: [...settingsReloadTargets.agentRuntime]
+    });
+    return true;
+  });
   handle('settings:oauthLoginStart', oauthLoginStartSchema, async (input) =>
     startOAuthLogin(input.provider)
   );
@@ -622,7 +629,7 @@ export const registerHandlers = (): void => {
     return true;
   });
   handle('settings:oauthLogout', oauthLogoutSchema, async (input) => {
-    oauthLogout(input.provider);
+    await oauthLogout(input.provider);
     await settingsRuntimeService.reload({
       targets: [...settingsReloadTargets.agentRuntime]
     });
@@ -634,6 +641,11 @@ export const registerHandlers = (): void => {
   handle('settings:getAvailableModels', getAvailableModelsSchema, async (input) =>
     settingsService.getAvailableModels(input.provider)
   );
+  handle('settings:refreshAvailableModels', getAvailableModelsSchema, async (input) => {
+    const models = await settingsService.refreshAvailableModels(input.provider);
+    await settingsRuntimeService.reload({ targets: [...settingsReloadTargets.agentRuntime] });
+    return models;
+  });
   handle('settings:getModelProviderStatus', z.object({ provider: z.enum(['fal']) }), async (input) =>
     settingsService.getModelProviderStatus(input.provider)
   );

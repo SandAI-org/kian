@@ -62,6 +62,108 @@ describe("settingsService.getAgentSystemPrompt", () => {
     }
   });
 
+  it("refreshes one provider, shares enabled models and restores the catalog offline", async () => {
+    const { settingsService } = await import("../../electron/main/services/settingsService");
+    const { getSharedModelRuntime } = await import("../../electron/main/services/authStorageService");
+    const runtime = await getSharedModelRuntime();
+    const model = { ...runtime.getModel("openai", "gpt-4o")!, id: "catalog-new-model", name: "Catalog New Model" };
+    const request = vi.fn(async (_input: unknown, _init?: unknown) => new Response(JSON.stringify([model]), {
+      headers: { "content-type": "application/json", "last-modified": "Thu, 01 Jan 2099 00:00:00 GMT" },
+    }));
+    vi.stubGlobal("fetch", request);
+    try {
+      await settingsService.saveClaudeConfig({
+        provider: "openai", enabled: true, secret: "catalog-test-key", customModels: [], enabledModels: [],
+      });
+      expect((await settingsService.getAvailableModels("openai")).some((item) => item.id === model.id)).toBe(false);
+      expect(request).not.toHaveBeenCalled();
+      expect(await settingsService.refreshAvailableModels("openai")).toContainEqual(expect.objectContaining({ id: model.id }));
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(String(request.mock.calls[0][0])).toContain("/api/models/providers/openai?");
+      expect(JSON.stringify(request.mock.calls)).not.toContain("catalog-test-key");
+      await settingsService.saveClaudeConfig({
+        provider: "openai", enabled: true, customModels: [], enabledModels: [model.id],
+      });
+      const main = await settingsService.getClaudeStatus({ type: "main" }, "session-a");
+      const other = await settingsService.getClaudeStatus({ type: "project", projectId: "agent-b" }, "session-b");
+      expect(main.allEnabledModels).toEqual([{ provider: "openai", modelId: model.id, modelName: model.name }]);
+      expect(other.allEnabledModels).toEqual(main.allEnabledModels);
+      expect(await settingsService.resolveAgentModel("openai", model.id)).toMatchObject(model);
+      expect(await fs.readFile(path.join(tempRoot, ".global", "auth.json"), "utf8")).not.toContain("catalog-test-key");
+
+      request.mockImplementation(async () => new Response("unavailable", { status: 400 }));
+      await expect(settingsService.refreshAvailableModels("openai")).rejects.toThrow("400");
+      expect(await settingsService.resolveAgentModel("openai", model.id)).toMatchObject(model);
+
+      vi.resetModules();
+      const restarted = (await import("../../electron/main/services/settingsService")).settingsService;
+      request.mockClear();
+      expect(await restarted.getAvailableModels("openai")).toContainEqual(expect.objectContaining({ id: model.id }));
+      expect(await restarted.resolveAgentModel("openai", model.id)).toMatchObject(model);
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["openai", "openai-codex", "anthropic", "openrouter"])(
+    "refreshes %s without enabling the provider or configuring credentials",
+    async (provider) => {
+      for (const name of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_FEDERATION_RULE_ID", "OPENROUTER_API_KEY"]) {
+        vi.stubEnv(name, "");
+      }
+      vi.stubEnv("PI_OFFLINE", undefined);
+      const { settingsService } = await import("../../electron/main/services/settingsService");
+      const { getSharedModelRuntime } = await import("../../electron/main/services/authStorageService");
+      const runtime = await getSharedModelRuntime();
+      const model = { ...runtime.getModels(provider)[0], id: "public-new-model", name: "Public New Model" };
+      const request = vi.fn(async (_input: unknown, _init?: unknown) => new Response(JSON.stringify([model]), {
+        headers: { "content-type": "application/json", "last-modified": "Thu, 01 Jan 2099 00:00:00 GMT" },
+      }));
+      vi.stubGlobal("fetch", request);
+      try {
+        await settingsService.saveClaudeConfig({
+          provider, enabled: false, customModels: [], enabledModels: [],
+        });
+        expect(await runtime.checkAuth(provider)).toBeUndefined();
+        expect(await settingsService.refreshAvailableModels(provider)).toContainEqual(expect.objectContaining({ id: model.id }));
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(String(request.mock.calls[0][0])).toContain(`/api/models/providers/${provider}?`);
+        expect(request.mock.calls[0][1]).toMatchObject({ headers: expect.not.objectContaining({ authorization: expect.anything() }) });
+        const status = await settingsService.getClaudeStatus();
+        expect(status.providers[provider]).toMatchObject({ configured: false, enabled: false });
+        expect(status.allEnabledModels).toEqual([]);
+        expect(await settingsService.resolveAgentModel(provider, model.id)).toMatchObject({ id: model.id });
+        vi.resetModules();
+        const restarted = (await import("../../electron/main/services/settingsService")).settingsService;
+        request.mockClear();
+        expect(await restarted.getAvailableModels(provider)).toContainEqual(expect.objectContaining({ id: model.id }));
+        expect(request).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
+  it("keeps model choices per session while enabled models remain shared", async () => {
+    const { settingsService } = await import("../../electron/main/services/settingsService");
+    const scope = { type: "main" } as const;
+    await settingsService.setLastSelectedModel(scope, "openai:gpt-4o");
+    await settingsService.setLastSelectedModel(scope, "openai:gpt-4o", "session-a");
+    await settingsService.setLastSelectedModel(scope, "anthropic:claude-b", "session-b");
+    await settingsService.setLastSelectedModel(scope, "openai:gpt-new-default");
+    expect((await settingsService.getClaudeStatus(scope, "session-a")).lastSelectedModel).toBe("openai:gpt-4o");
+    expect((await settingsService.getClaudeStatus(scope, "session-b")).lastSelectedModel).toBe("anthropic:claude-b");
+    expect((await settingsService.getClaudeStatus(scope)).lastSelectedModel).toBe("openai:gpt-new-default");
+    const otherScope = { type: "project", projectId: "agent-b" } as const;
+    await settingsService.setLastSelectedModel(otherScope, "openai:other", "session-a");
+    expect((await settingsService.getClaudeStatus(scope, "session-a")).lastSelectedModel).toBe("openai:gpt-4o");
+    vi.resetModules();
+    const restarted = (await import("../../electron/main/services/settingsService")).settingsService;
+    expect((await restarted.getClaudeStatus(scope, "session-b")).lastSelectedModel).toBe("anthropic:claude-b");
+  });
+
   it("loads different bundled prompt templates for main and project agents", async () => {
     const { settingsService } = await import(
       "../../electron/main/services/settingsService"
@@ -552,6 +654,73 @@ describe("settingsService.getAgentSystemPrompt", () => {
     );
   });
 
+  it.each(["custom-api", "custom-api__proxy"])(
+    "deletes %s and its model selections while preserving other providers",
+    async (provider) => {
+      const { settingsService } = await import(
+        "../../electron/main/services/settingsService"
+      );
+      const otherProvider = `${provider}__other`;
+      for (const id of [provider, otherProvider, "openai"]) {
+        await settingsService.saveClaudeConfig({
+          provider: id,
+          enabled: true,
+          secret: `test-key-${id}`,
+          baseUrl: "https://proxy.example.com/v1",
+          api: "openai-completions",
+          customModels: [{
+            id: "model:custom",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 4096,
+          }],
+          enabledModels: ["model:custom"],
+        });
+      }
+      const main = { type: "main" } as const;
+      const project = { type: "project", projectId: "agent-a" } as const;
+      await settingsService.setLastSelectedModel(main, `${provider}:model:custom`);
+      await settingsService.setLastSelectedModel(main, `${provider}:model:custom`, "session-a");
+      await settingsService.setLastSelectedModel(main, `${otherProvider}:model:custom`, "session-b");
+      await settingsService.setLastSelectedModel(project, "openai:model:custom");
+      await settingsService.setLastSelectedModel(project, `${provider}:model:custom`, "session-a");
+      await settingsService.deleteCustomProvider(provider);
+
+      const status = await settingsService.getClaudeStatus(main, "session-a");
+      expect(status.providers).not.toHaveProperty(provider);
+      expect(status.providers[otherProvider]).toMatchObject({ enabled: true, apiKey: `test-key-${otherProvider}` });
+      expect(status.providers.openai).toMatchObject({ enabled: true, apiKey: "test-key-openai" });
+      expect(status.allEnabledModels.map((model) => model.provider)).toEqual([otherProvider, "openai"]);
+      expect(status.lastSelectedModel).toBeUndefined();
+      expect((await settingsService.getClaudeStatus(main, "session-b")).lastSelectedModel).toBe(`${otherProvider}:model:custom`);
+      expect((await settingsService.getClaudeStatus(project, "session-a")).lastSelectedModel).toBe("openai:model:custom");
+      expect((await settingsService.getAvailableProviders()).map((entry) => entry.id)).not.toContain(provider);
+      expect(await settingsService.getAvailableModels(provider)).toEqual([]);
+      expect(await settingsService.getClaudeSecret(provider)).toBeNull();
+      const stored = JSON.parse(await fs.readFile(path.join(tempRoot, ".kian", "settings.json"), "utf8"));
+      expect(stored.lastSelectedModel).toBeUndefined();
+      expect(stored.lastSelectedModelByScope).toEqual({ "project:agent-a": "openai:model:custom" });
+      expect(stored.lastSelectedModelBySession).toEqual({ "main:session-b": `${otherProvider}:model:custom` });
+      vi.resetModules();
+      const restarted = (await import("../../electron/main/services/settingsService")).settingsService;
+      expect((await restarted.getClaudeStatus()).providers).not.toHaveProperty(provider);
+      expect((await restarted.getAvailableProviders()).map((entry) => entry.id)).not.toContain(provider);
+    },
+  );
+
+  it("rejects deleting a built-in provider without changing its configuration", async () => {
+    const { settingsService } = await import(
+      "../../electron/main/services/settingsService"
+    );
+    await settingsService.saveClaudeConfig({
+      provider: "openai", enabled: false, secret: "test-key", customModels: [], enabledModels: [],
+    });
+    const before = await fs.readFile(path.join(tempRoot, ".kian", "settings.json"), "utf8");
+    await expect(settingsService.deleteCustomProvider("openai")).rejects.toThrow("Only custom providers can be deleted");
+    expect(await fs.readFile(path.join(tempRoot, ".kian", "settings.json"), "utf8")).toBe(before);
+  });
+
   it("treats Custom API as configured without an API key when URL, API type, and custom models are present", async () => {
     const { settingsService } = await import(
       "../../electron/main/services/settingsService"
@@ -596,6 +765,41 @@ describe("settingsService.getAgentSystemPrompt", () => {
     await expect(settingsService.getClaudeSecret("custom-api")).resolves.toBe(
       "kian-custom-api-no-auth",
     );
+  });
+
+  it("preserves Azure credentials and scoped model selections after the provider rename", async () => {
+    await fs.writeFile(
+      path.join(tempRoot, ".kian", "settings.json"),
+      JSON.stringify({
+        providers: [{
+          provider: "azure-openai-responses",
+          enabled: true,
+          apiKey: "azure-test-key",
+          baseUrl: "https://example.openai.azure.com",
+          enabledModels: ["gpt-4o"],
+        }],
+        lastSelectedModel: "azure-openai-responses:gpt-4o",
+        lastSelectedModelByScope: {
+          "project:azure-project": "azure-openai-responses:gpt-4o",
+        },
+      }),
+    );
+    const { settingsService } = await import(
+      "../../electron/main/services/settingsService"
+    );
+
+    const status = await settingsService.getClaudeStatus();
+    expect(status.providers.azure).toMatchObject({
+      apiKey: "azure-test-key",
+      enabled: true,
+      enabledModels: ["gpt-4o"],
+    });
+    expect(status.providers["azure-openai-responses"]).toBeUndefined();
+    expect(status.lastSelectedModel).toBe("azure:gpt-4o");
+    await expect(settingsService.getClaudeStatus({ type: "project", projectId: "azure-project" }))
+      .resolves.toMatchObject({ lastSelectedModel: "azure:gpt-4o" });
+    await expect(settingsService.resolveAgentModel("azure", "gpt-4o"))
+      .resolves.toMatchObject({ provider: "azure", baseUrl: "https://example.openai.azure.com" });
   });
 
   it("persists model selection separately for main and project scopes", async () => {

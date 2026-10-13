@@ -1,6 +1,4 @@
 import {
-  getModel,
-  getModels,
   getProviders,
   type Api,
   type Model,
@@ -46,12 +44,14 @@ import os from "node:os";
 import path from "node:path";
 import {
   OAUTH_SUBSCRIPTION_PROVIDERS,
+  getSharedModelRuntime,
   hasOAuthCredential,
   isOAuthSubscriptionProvider,
 } from "./authStorageService";
 import { chatChannelOwnerDiscoveryService } from "./chatChannelOwnerDiscoveryService";
 import { FAL_SUPPORTED_MODELS } from "./modelProviders/falProvider";
 import { logger } from "./logger";
+import { refreshPublicProviderModels } from "./modelCatalogService";
 import { GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_PATH, INTERNAL_ROOT, WORKSPACE_ROOT } from "./workspacePaths";
 
 const SETTINGS_PATH = path.join(INTERNAL_ROOT, "settings.json");
@@ -63,7 +63,9 @@ const LEGACY_OPENAI_COMPATIBLE_PROVIDER = "openai-compatible";
 const normalizeAgentProviderId = (provider: string): string =>
   provider === LEGACY_OPENAI_COMPATIBLE_PROVIDER
     ? CUSTOM_API_PROVIDER
-    : provider;
+    : provider === "azure-openai-responses"
+      ? "azure"
+      : provider;
 
 const isCustomAgentProviderId = (provider: string): boolean => {
   const normalized = normalizeAgentProviderId(provider);
@@ -176,6 +178,7 @@ interface SettingsFile {
   lastSelectedModel?: string;
   lastSelectedThinkingLevel?: ChatThinkingLevel;
   lastSelectedModelByScope: Record<string, string>;
+  lastSelectedModelBySession: Record<string, string>;
   lastSelectedThinkingLevelByScope: Record<string, ChatThinkingLevel>;
   shortcuts: ShortcutConfigDTO;
   mcpServers: McpServerSettings[];
@@ -196,6 +199,7 @@ interface LegacySettingsFile {
   defaultModel?: unknown;
   lastSelectedThinkingLevel?: unknown;
   lastSelectedModelByScope?: unknown;
+  lastSelectedModelBySession?: unknown;
   lastSelectedThinkingLevelByScope?: unknown;
   shortcuts?: unknown;
   mcpServers?: unknown;
@@ -366,7 +370,9 @@ const normalizeModelSelectionMap = (
       if (!normalizedKey || typeof item !== "string") {
         return acc;
       }
-      const normalizedValue = item.trim();
+      const normalizedValue = item
+        .trim()
+        .replace(/^azure-openai-responses:/, "azure:");
       if (!normalizedValue) {
         return acc;
       }
@@ -777,10 +783,10 @@ const toAgentModelDto = (
   source,
 });
 
-const getConfiguredModelsForProvider = (
+const getConfiguredModelsForProvider = async (
   provider: string,
   providerEntry?: ProviderEntry,
-): AgentModelDTO[] => {
+): Promise<AgentModelDTO[]> => {
   if (providerEntry?.customModels.length) {
     return providerEntry.customModels.map((model) =>
       toAgentModelDto(
@@ -801,24 +807,10 @@ const getConfiguredModelsForProvider = (
     return [];
   }
 
-  try {
-    const models = getModels(provider as Parameters<typeof getModels>[0]);
-    return models.map((model) => toAgentModelDto(model, "builtin"));
-  } catch {
-    return [];
-  }
-};
-
-const getConfiguredEnabledModels = (
-  providerEntry?: ProviderEntry,
-): string[] => {
-  if (!providerEntry) return [];
-  const availableIds = new Set(
-    getConfiguredModelsForProvider(providerEntry.provider, providerEntry).map(
-      (model) => model.id,
-    ),
+  const runtime = await getSharedModelRuntime();
+  return runtime.getModels(provider).map((model) =>
+    toAgentModelDto(model, "builtin"),
   );
-  return providerEntry.enabledModels.filter((modelId) => availableIds.has(modelId));
 };
 
 const isCustomApiProviderEntryConfigured = (
@@ -862,11 +854,11 @@ const getProviderRuntimeApiKey = (
   return null;
 };
 
-const resolveConfiguredModel = (
+const resolveConfiguredModel = async (
   provider: string,
   modelId: string,
   providerEntry?: ProviderEntry,
-): Model<Api> | null => {
+): Promise<Model<Api> | null> => {
   if (
     isCustomAgentProviderId(provider) ||
     providerEntry?.customModels.length
@@ -893,24 +885,12 @@ const resolveConfiguredModel = (
     };
   }
 
-  try {
-    const builtInModel = getModel(
-      provider as Parameters<typeof getModel>[0],
-      modelId as never,
-    );
-    if (!builtInModel) {
-      return null;
-    }
-    if (providerEntry?.baseUrl) {
-      return {
-        ...builtInModel,
-        baseUrl: providerEntry.baseUrl,
-      };
-    }
-    return builtInModel;
-  } catch {
-    return null;
-  }
+  const runtime = await getSharedModelRuntime();
+  const builtInModel = runtime.getModel(provider, modelId);
+  if (!builtInModel) return null;
+  return providerEntry?.baseUrl
+    ? { ...builtInModel, baseUrl: providerEntry.baseUrl }
+    : builtInModel;
 };
 
 const normalizeSettingsFile = (
@@ -929,7 +909,10 @@ const normalizeSettingsFile = (
   }
   const mcpServers = normalizeMcpServers(raw?.mcpServers);
 
-  const lastSelectedModel = raw?.lastSelectedModel;
+  const lastSelectedModel =
+    typeof raw?.lastSelectedModel === "string"
+      ? raw.lastSelectedModel.replace(/^azure-openai-responses:/, "azure:")
+      : undefined;
   const normalizedLastSelectedModel =
     typeof lastSelectedModel === "string" &&
     lastSelectedModel.startsWith(`${LEGACY_OPENAI_COMPATIBLE_PROVIDER}:`)
@@ -1001,6 +984,9 @@ const normalizeSettingsFile = (
     lastSelectedModel: normalizedLastSelectedModel,
     lastSelectedThinkingLevel,
     lastSelectedModelByScope,
+    lastSelectedModelBySession: normalizeModelSelectionMap(
+      raw?.lastSelectedModelBySession,
+    ),
     lastSelectedThinkingLevelByScope,
     shortcuts: normalizeShortcutConfig(raw?.shortcuts),
     mcpServers,
@@ -1220,8 +1206,13 @@ const migrateLegacyWorkspaceSettings = async (
 const getScopedSelectedModel = (
   settings: SettingsFile,
   scope: ChatScope = { type: "main" },
+  sessionId?: string,
 ): string | undefined => {
   const scopeKey = getSettingsScopeKey(scope);
+  const sessionModel = sessionId
+    ? settings.lastSelectedModelBySession[`${scopeKey}:${sessionId}`]
+    : undefined;
+  if (sessionModel) return sessionModel;
   const scopedModel = settings.lastSelectedModelByScope[scopeKey]?.trim();
   if (scopedModel) {
     return scopedModel;
@@ -1350,10 +1341,13 @@ export const settingsService = {
             : [],
         enabledModels: [],
       };
+      const availableModels = await getConfiguredModelsForProvider(
+        providerId,
+        nextEntryDraft,
+      );
+      const availableIds = new Set(availableModels.map((model) => model.id));
       const enabledModels = uniqueStrings(input.enabledModels).filter((modelId) =>
-        getConfiguredModelsForProvider(providerId, nextEntryDraft).some(
-          (model) => model.id === modelId,
-        ),
+        availableIds.has(modelId),
       );
       const nextEntry: ProviderEntry = {
         ...nextEntryDraft,
@@ -1371,8 +1365,37 @@ export const settingsService = {
     });
   },
 
+  async deleteCustomProvider(provider: string): Promise<void> {
+    const providerId = normalizeAgentProviderId(provider);
+    if (!isCustomAgentProviderId(providerId)) {
+      throw new Error("Only custom providers can be deleted");
+    }
+    await withSettingsWriteLock(async () => {
+      const settings = await readSettingsFile();
+      const modelPrefix = `${providerId}:`;
+      await writeSettingsFile({
+        ...settings,
+        providers: settings.providers.filter((entry) => entry.provider !== providerId),
+        lastSelectedModel: settings.lastSelectedModel?.startsWith(modelPrefix)
+          ? undefined
+          : settings.lastSelectedModel,
+        lastSelectedModelByScope: Object.fromEntries(
+          Object.entries(settings.lastSelectedModelByScope).filter(
+            ([, model]) => !model.startsWith(modelPrefix),
+          ),
+        ),
+        lastSelectedModelBySession: Object.fromEntries(
+          Object.entries(settings.lastSelectedModelBySession).filter(
+            ([, model]) => !model.startsWith(modelPrefix),
+          ),
+        ),
+      });
+    });
+  },
+
   async getClaudeStatus(
     scope: ChatScope = { type: "main" },
+    sessionId?: string,
   ): Promise<ClaudeConfigStatus> {
     const settings = await readSettingsFile();
 
@@ -1385,7 +1408,14 @@ export const settingsService = {
 
     for (const entry of settings.providers) {
       const configured = isProviderEntryConfigured(entry);
-      const enabledModels = getConfiguredEnabledModels(entry);
+      const availableModels = await getConfiguredModelsForProvider(
+        entry.provider,
+        entry,
+      );
+      const availableIds = new Set(availableModels.map((model) => model.id));
+      const enabledModels = entry.enabledModels.filter((modelId) =>
+        availableIds.has(modelId),
+      );
       const oauthSupported = isOAuthSubscriptionProvider(entry.provider);
       providers[entry.provider] = {
         configured,
@@ -1402,10 +1432,6 @@ export const settingsService = {
       };
 
       if (entry.enabled && configured && enabledModels.length > 0) {
-        const availableModels = getConfiguredModelsForProvider(
-          entry.provider,
-          entry,
-        );
         const modelNameMap = new Map(
           availableModels.map((m) => [m.id, m.name]),
         );
@@ -1439,7 +1465,7 @@ export const settingsService = {
     return {
       providers,
       allEnabledModels,
-      lastSelectedModel: getScopedSelectedModel(settings, scope),
+      lastSelectedModel: getScopedSelectedModel(settings, scope, sessionId),
       lastSelectedThinkingLevel: getScopedThinkingLevel(settings, scope),
     };
   },
@@ -2110,10 +2136,26 @@ export const settingsService = {
     });
   },
 
-  async setLastSelectedModel(scope: ChatScope, model: string): Promise<void> {
+  async setLastSelectedModel(
+    scope: ChatScope,
+    model: string,
+    sessionId?: string,
+  ): Promise<void> {
     await withSettingsWriteLock(async () => {
       const settings = await readSettingsFile();
       const scopeKey = getSettingsScopeKey(scope);
+      if (sessionId) {
+        const sessionKey = `${scopeKey}:${sessionId}`;
+        if (settings.lastSelectedModelBySession[sessionKey] === model) return;
+        await writeSettingsFile({
+          ...settings,
+          lastSelectedModelBySession: {
+            ...settings.lastSelectedModelBySession,
+            [sessionKey]: model,
+          },
+        });
+        return;
+      }
       const currentModel = getScopedSelectedModel(settings, scope);
       if (currentModel === model) return;
       await writeSettingsFile({
@@ -2210,6 +2252,44 @@ export const settingsService = {
     return getConfiguredModelsForProvider(providerId, providerEntry);
   },
 
+  async refreshAvailableModels(provider: string): Promise<AgentModelDTO[]> {
+    const settings = await readSettingsFile();
+    const providerId = normalizeAgentProviderId(provider);
+    const entry = settings.providers.find(
+      (candidate) => candidate.provider === providerId,
+    );
+    if (isCustomAgentProviderId(providerId) || entry?.customModels.length) {
+      return getConfiguredModelsForProvider(providerId, entry);
+    }
+    const runtime = await getSharedModelRuntime();
+    const apiKey = getProviderRuntimeApiKey(entry);
+    try {
+      if (apiKey) await runtime.setRuntimeApiKey(providerId, apiKey);
+      const auth = await runtime.checkAuth(providerId);
+      if (process.env.PI_OFFLINE !== undefined) {
+        throw new Error("Model refresh is disabled in offline mode");
+      }
+      const signal = AbortSignal.timeout(30_000);
+      if (!auth) {
+        const catalogProvider = runtime.getProvider(providerId);
+        if (!catalogProvider) throw new Error(`Unknown provider: ${providerId}`);
+        await refreshPublicProviderModels(catalogProvider, signal);
+      }
+      const result = await runtime.refresh({
+        providers: [providerId],
+        force: true,
+        allowNetwork: Boolean(auth),
+        signal,
+      });
+      const error = result.errors.get(providerId);
+      if (error) throw error;
+      if (result.aborted) throw new Error("Model refresh was cancelled or timed out");
+    } finally {
+      if (apiKey) await runtime.removeRuntimeApiKey(providerId);
+    }
+    return getConfiguredModelsForProvider(providerId, entry);
+  },
+
   async resolveAgentModel(
     provider: string,
     modelId: string,
@@ -2219,7 +2299,11 @@ export const settingsService = {
     const providerEntry = settings.providers.find(
       (entry) => entry.provider === providerId,
     );
-    const resolvedModel = resolveConfiguredModel(providerId, modelId, providerEntry);
+    const resolvedModel = await resolveConfiguredModel(
+      providerId,
+      modelId,
+      providerEntry,
+    );
     if (!resolvedModel) {
       return null;
     }

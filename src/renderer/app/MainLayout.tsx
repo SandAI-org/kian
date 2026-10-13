@@ -204,10 +204,6 @@ export const MainLayout = () => {
   useEffect(
     () =>
       api.appOperation.subscribe((event) => {
-        if (event.type === 'reload_settings') {
-          void queryClient.invalidateQueries({ queryKey: ['settings'] });
-          return;
-        }
         if (event.type === 'open_chat_session') {
           const params = new URLSearchParams();
           params.set('session', event.sessionId);

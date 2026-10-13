@@ -11,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import type { MainLayoutOutletContext } from "@renderer/app/MainLayout";
 import { ScrollArea } from "@renderer/components/ScrollArea";
+import { ProviderIcon } from "@renderer/components/ProviderIcon";
 import { useAppI18n } from "@renderer/i18n/AppI18nProvider";
 import { api } from "@renderer/lib/api";
 import { openUrl } from "@renderer/lib/openUrl";
@@ -1002,6 +1003,9 @@ export const SettingsPage = () => {
   const [editingCustomProviderId, setEditingCustomProviderId] = useState<
     string | null
   >(null);
+  const [deletingCustomProvider, setDeletingCustomProvider] = useState<
+    AgentProviderDTO | null
+  >(null);
   const [customModelModalOpen, setCustomModelModalOpen] = useState(false);
   const [oauthLogin, setOauthLogin] = useState<OAuthLoginState | null>(null);
   const [oauthManualCode, setOauthManualCode] = useState("");
@@ -1053,6 +1057,18 @@ export const SettingsPage = () => {
     queryKey: ["settings", "available-models", provider],
     queryFn: () => api.settings.getAvailableModels(provider),
     enabled: Boolean(provider),
+  });
+  const refreshModelsMutation = useMutation({
+    mutationFn: api.settings.refreshAvailableModels,
+    onSuccess: (models, refreshedProvider) => {
+      queryClient.setQueryData(
+        ["settings", "available-models", refreshedProvider],
+        models,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["settings", "claude"] });
+      message.success(t("模型列表已刷新"));
+    },
+    onError: () => message.error(t("刷新模型列表失败，请检查凭证和网络后重试")),
   });
   const providerStatusQuery = useQuery({
     queryKey: ["settings", "model-provider", "fal"],
@@ -1455,6 +1471,22 @@ export const SettingsPage = () => {
     secretValue,
     selectedProviderName,
   ]);
+
+  const deleteCustomProviderMutation = useMutation({
+    mutationFn: api.settings.deleteCustomProvider,
+    onSuccess: async (_result, deletedProviderId) => {
+      const providersResult = await availableProvidersQuery.refetch();
+      const nextProvider = providersResult.data?.find(
+        (item) => item.id !== deletedProviderId,
+      )?.id ?? "anthropic";
+      handleClaudeProviderChange(nextProvider);
+      delete claudeProviderDraftsRef.current[deletedProviderId];
+      setProviderSearch("");
+      setAgentModelSearch("");
+      await claudeStatusQuery.refetch();
+      setDeletingCustomProvider(null);
+    },
+  });
 
   const closeCustomProviderModal = useCallback(() => {
     setCustomProviderModalOpen(false);
@@ -2099,6 +2131,7 @@ export const SettingsPage = () => {
     saveGeneralMutation.isPending ||
     saveShortcutConfigMutation.isPending ||
     saveClaudeMutation.isPending ||
+    deleteCustomProviderMutation.isPending ||
     saveProviderMutation.isPending ||
     saveTelegramMutation.isPending ||
     saveDiscordMutation.isPending ||
@@ -2117,7 +2150,7 @@ export const SettingsPage = () => {
   );
 
   const handleAutoSaveChanges = useCallback(async (): Promise<boolean> => {
-    if (autoSaveInFlightRef.current) return false;
+    if (autoSaveInFlightRef.current || deletingCustomProvider) return false;
     if (!hasUnsavedChanges) return true;
     autoSaveInFlightRef.current = true;
     setAutoSaveError(null);
@@ -2312,6 +2345,7 @@ export const SettingsPage = () => {
     setAutoSaveError(null);
     return true;
   }, [
+    deletingCustomProvider,
     hasUnsavedChanges,
     generalDirty,
     generalForm,
@@ -2422,7 +2456,7 @@ export const SettingsPage = () => {
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
-    if (isSavingAny || autoSaveInFlightRef.current) return;
+    if (isSavingAny || autoSaveInFlightRef.current || deletingCustomProvider) return;
 
     const timer = window.setTimeout(() => {
       void handleAutoSaveChanges();
@@ -2433,6 +2467,7 @@ export const SettingsPage = () => {
     };
   }, [
     autoSaveSignature,
+    deletingCustomProvider,
     handleAutoSaveChanges,
     hasUnsavedChanges,
     isSavingAny,
@@ -3074,6 +3109,7 @@ export const SettingsPage = () => {
                                         )
                                       }
                                     >
+                                      <ProviderIcon provider={providerEntry.id} />
                                       <span className="provider-switcher__item-name">
                                         {providerEntry.name}
                                       </span>
@@ -3119,9 +3155,26 @@ export const SettingsPage = () => {
                                     >
                                       {selectedProviderName}
                                     </Typography.Text>
-                                    <Button onClick={openEditCustomProviderModal}>
-                                      {t("编辑 Provider")}
-                                    </Button>
+                                    <div className="flex gap-2">
+                                      <Button onClick={openEditCustomProviderModal}>
+                                        {t("编辑 Provider")}
+                                      </Button>
+                                      <Button
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        disabled={isSavingAny}
+                                        onClick={() => {
+                                          if (autoSaveInFlightRef.current) return;
+                                          deleteCustomProviderMutation.reset();
+                                          setDeletingCustomProvider({
+                                            id: provider,
+                                            name: selectedProviderName,
+                                          });
+                                        }}
+                                      >
+                                        {t("删除 Provider")}
+                                      </Button>
+                                    </div>
                                   </div>
                                   <div className="custom-provider-summary__meta">
                                     <div className="custom-provider-summary__meta-item">
@@ -3249,6 +3302,21 @@ export const SettingsPage = () => {
                                       )}
                                     </span>
                                     <div className="flex items-center gap-2">
+                                      {!isCustomApiProvider && normalizedCustomModels.length === 0 ? (
+                                        <Button
+                                          size="small"
+                                          icon={<ReloadOutlined />}
+                                          loading={
+                                            refreshModelsMutation.isPending &&
+                                            refreshModelsMutation.variables === provider
+                                          }
+                                          disabled={refreshModelsMutation.isPending}
+                                          title={t("刷新当前供应商的模型列表")}
+                                          onClick={() => refreshModelsMutation.mutate(provider)}
+                                        >
+                                          {t("刷新模型列表")}
+                                        </Button>
+                                      ) : null}
                                       {isCustomApiProvider ? (
                                         <Button
                                           size="small"
@@ -3338,7 +3406,7 @@ export const SettingsPage = () => {
                       initialValues={{ secret: "", enabledModels: [] }}
                     >
                       <Form.Item label={getFieldLabel("Provider", true)}>
-                        <Input value="fal" readOnly />
+                        <Input value="fal" prefix={<ProviderIcon provider="fal" />} readOnly />
                       </Form.Item>
 
                       <Form.Item
@@ -4781,6 +4849,37 @@ export const SettingsPage = () => {
               : []),
           ]}
         />
+        <Modal
+          open={Boolean(deletingCustomProvider)}
+          title={t("删除自定义 Provider")}
+          onCancel={() => setDeletingCustomProvider(null)}
+          onOk={() => {
+            if (deletingCustomProvider) {
+              deleteCustomProviderMutation.mutate(deletingCustomProvider.id);
+            }
+          }}
+          confirmLoading={deleteCustomProviderMutation.isPending}
+          okButtonProps={{ danger: true }}
+          cancelButtonProps={{ disabled: deleteCustomProviderMutation.isPending }}
+          closable={!deleteCustomProviderMutation.isPending}
+          maskClosable={!deleteCustomProviderMutation.isPending}
+          keyboard={!deleteCustomProviderMutation.isPending}
+          okText={t("删除")}
+          cancelText={t("取消")}
+          destroyOnHidden
+        >
+          <Typography.Paragraph strong>
+            {deletingCustomProvider?.name}
+          </Typography.Paragraph>
+          <Typography.Paragraph>
+            {t("删除后，该 Provider 的配置和模型将被移除，并同步到所有会话。聊天记录会保留。")}
+          </Typography.Paragraph>
+          {deleteCustomProviderMutation.error ? (
+            <Typography.Paragraph type="danger" role="alert">
+              {deleteCustomProviderMutation.error.message || t("删除失败")}
+            </Typography.Paragraph>
+          ) : null}
+        </Modal>
         <Modal
           open={customProviderModalOpen}
           title={t(

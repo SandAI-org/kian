@@ -19,7 +19,7 @@ import {
   trackAnalyticsEvent,
 } from "./analyticsService";
 import { appOperationEvents } from "./appOperationEvents";
-import { getSharedAuthStorage } from "./authStorageService";
+import { getSharedModelRuntime } from "./authStorageService";
 import { chatEvents } from "./chatEvents";
 import { logger } from "./logger";
 import {
@@ -206,7 +206,12 @@ const resolveAutoTitleModel = (
   }
 
   const lastSelectedModel = status.lastSelectedModel?.trim();
-  if (lastSelectedModel) {
+  if (
+    lastSelectedModel &&
+    status.allEnabledModels.some(
+      (model) => `${model.provider}:${model.modelId}` === lastSelectedModel,
+    )
+  ) {
     return {
       modelKey: lastSelectedModel,
       source: "settings.lastSelectedModel",
@@ -259,7 +264,7 @@ const generateSessionTitle = async (
       return;
     }
 
-    const status = await settingsService.getClaudeStatus(payload.scope);
+    const status = await settingsService.getClaudeStatus(payload.scope, payload.sessionId);
     const resolvedModel = resolveAutoTitleModel(payload, status);
     if (!resolvedModel) {
       logger.debug("Auto title skipped: no available model", {
@@ -286,8 +291,9 @@ const generateSessionTitle = async (
     const apiKey =
       providerState?.apiKey ||
       (await settingsService.getClaudeSecret(provider)) ||
-      (await getSharedAuthStorage()
-        .getApiKey(provider)
+      (await getSharedModelRuntime()
+        .then((runtime) => runtime.getAuth(provider))
+        .then((result) => result?.auth.apiKey)
         .catch(() => undefined));
     if (!apiKey) {
       logger.debug("Auto title skipped: missing provider api key", {

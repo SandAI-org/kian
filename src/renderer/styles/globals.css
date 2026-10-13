@@ -1032,6 +1032,20 @@ a:focus-visible,
     0 10px 22px rgba(15, 23, 42, 0.08);
 }
 
+.provider-icon {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  object-fit: contain;
+  vertical-align: middle;
+  font-size: 22px;
+}
+
+:root.theme-dark .provider-icon--monochrome {
+  filter: invert(1);
+}
+
 .provider-switcher__item-name {
   display: block;
   min-width: 0;

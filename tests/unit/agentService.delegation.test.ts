@@ -59,19 +59,17 @@ vi.mock("@earendil-works/pi-ai", () => ({
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-  AuthStorage: {
-    inMemory: () => ({
-      setRuntimeApiKey: vi.fn(),
-    }),
-    create: () => ({
-      setRuntimeApiKey: vi.fn(),
-      removeRuntimeApiKey: vi.fn(),
-      get: vi.fn(() => undefined),
-      getApiKey: vi.fn(async () => undefined),
+  ModelRuntime: {
+    create: async () => ({
+      setRuntimeApiKey: vi.fn(async () => {}),
+      removeRuntimeApiKey: vi.fn(async () => {}),
+      registerProvider: vi.fn(),
+      getAuth: vi.fn(async () => undefined),
       login: vi.fn(async () => {}),
-      logout: vi.fn(),
+      logout: vi.fn(async () => {}),
     }),
   },
+  readStoredCredential: vi.fn(() => undefined),
   createAgentSession: (...args: unknown[]) => state.createAgentSession(...args),
   createCodingTools: () => [],
   DefaultResourceLoader: class {
@@ -1095,6 +1093,55 @@ describe("agentService delegation reporting", () => {
     );
   });
 
+  it("registers custom models and runtime credentials before creating a pi session", async () => {
+    const model = {
+      provider: "custom-api",
+      id: "custom-model",
+      api: "openai-completions",
+      baseUrl: "http://localhost:2276/v1",
+      name: "Custom model",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 8192,
+      maxTokens: 1024,
+      compat: { supportsDeveloperRole: false },
+    };
+    state.resolveAgentModel.mockResolvedValue(model);
+    state.getClaudeStatus.mockResolvedValue({
+      allEnabledModels: [{ provider: model.provider, modelId: model.id }],
+      providers: {
+        [model.provider]: {
+          apiKey: "custom-key",
+          api: model.api,
+          baseUrl: model.baseUrl,
+          customModels: [model],
+        },
+      },
+    });
+    state.prompt.mockImplementation(async () => {
+      state.sessionListener?.({ type: "agent_end" });
+    });
+    const { agentService } = await import("../../electron/main/services/agentService");
+    await agentService.send({
+      scope: { type: "main" },
+      module: "main",
+      sessionId: "custom-session",
+      message: "Use the custom provider",
+      model: "custom-api:custom-model",
+    });
+
+    const options = state.createAgentSession.mock.calls[0][0];
+    expect(options.authStorage).toBeUndefined();
+    expect(options.modelRuntime.registerProvider).toHaveBeenCalledWith("custom-api", {
+      api: model.api,
+      baseUrl: model.baseUrl,
+      models: [model],
+    });
+    expect(options.modelRuntime.setRuntimeApiKey).toHaveBeenCalledWith("custom-api", "custom-key");
+    expect(options.model).toEqual(model);
+  });
+
   it("rebuilds a reused session when the resolved model runtime config changes", async () => {
     const oldRuntimeModel = {
       provider: "custom-api",
@@ -1155,7 +1202,10 @@ describe("agentService delegation reporting", () => {
 
   it("uses the scope-specific saved model when no payload model is provided", async () => {
     state.getClaudeStatus.mockReset().mockResolvedValue({
-      allEnabledModels: [{ provider: "anthropic", modelId: "claude-test" }],
+      allEnabledModels: [
+        { provider: "anthropic", modelId: "claude-test" },
+        { provider: "openai", modelId: "gpt-5-mini" },
+      ],
       providers: {
         anthropic: {
           apiKey: "anthropic-key",
@@ -1197,11 +1247,53 @@ describe("agentService delegation reporting", () => {
     expect(state.getClaudeStatus).toHaveBeenCalledWith({
       type: "project",
       projectId: "agent-a",
-    });
+    }, "sub-session-saved-model");
     expect(state.resolveAgentModel).toHaveBeenCalledWith(
       "openai",
       "gpt-5-mini",
     );
+  });
+
+  it.each([
+    { savedModel: "openrouter:old-model", providerEnabled: false, enabledModels: ["old-model"] },
+    { savedModel: "openrouter:old-model", providerEnabled: true, enabledModels: [] },
+    { savedModel: "removed-provider:old-model", providerEnabled: false, enabledModels: [] },
+  ])("uses an enabled model for a group runtime with stale selection $savedModel ($providerEnabled)", async ({ savedModel, providerEnabled, enabledModels }) => {
+    state.getChatSession.mockResolvedValue({
+      id: "group-session",
+      kind: "group_runtime",
+      hidden: true,
+      metadataJson: JSON.stringify({ kind: "agent_group_notification", groupId: "group-a" }),
+    });
+    state.getClaudeStatus.mockResolvedValue({
+      allEnabledModels: [{ provider: "anthropic", modelId: "claude-test" }],
+      providers: {
+        anthropic: { configured: true, enabled: true, apiKey: "working-key", enabledModels: ["claude-test"] },
+        openrouter: { configured: true, enabled: providerEnabled, apiKey: "expired-key", enabledModels },
+      },
+      lastSelectedModel: savedModel,
+    });
+    state.prompt.mockImplementation(async () => {
+      state.sessionListener?.({ type: "agent_end" });
+    });
+    const { agentService } = await import("../../electron/main/services/agentService");
+    await agentService.send({
+      scope: { type: "project", projectId: "agent-a" },
+      module: "main",
+      sessionId: "group-session",
+      message: "Reply to the group message",
+    });
+    expect(state.getClaudeStatus).toHaveBeenCalledWith(
+      { type: "project", projectId: "agent-a" }, "group-session",
+    );
+    expect(state.resolveAgentModel.mock.calls.map(([provider, modelId]) => `${provider}:${modelId}`)).toEqual([
+      "anthropic:claude-test",
+      "anthropic:claude-test",
+    ]);
+    expect(state.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      model: expect.objectContaining({ provider: "anthropic", id: "claude-test" }),
+    }));
+    expect(state.prompt).toHaveBeenCalledTimes(1);
   });
 
   it("uses the current chat scope for send preflight model resolution", async () => {
@@ -1274,7 +1366,7 @@ describe("agentService delegation reporting", () => {
     expect(state.getClaudeStatus).toHaveBeenNthCalledWith(1, {
       type: "project",
       projectId: "agent-a",
-    });
+    }, "sub-session-scope-preflight");
     expect(state.resolveAgentModel).toHaveBeenCalledWith(
       "openai",
       "gpt-5-mini",

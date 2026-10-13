@@ -51,19 +51,17 @@ vi.mock("@earendil-works/pi-ai", () => ({
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-  AuthStorage: {
-    inMemory: () => ({
-      setRuntimeApiKey: vi.fn(),
-    }),
-    create: () => ({
-      setRuntimeApiKey: vi.fn(),
-      removeRuntimeApiKey: vi.fn(),
-      get: vi.fn(() => undefined),
-      getApiKey: vi.fn(async () => undefined),
+  ModelRuntime: {
+    create: async () => ({
+      setRuntimeApiKey: vi.fn(async () => {}),
+      removeRuntimeApiKey: vi.fn(async () => {}),
+      registerProvider: vi.fn(),
+      getAuth: vi.fn(async () => undefined),
       login: vi.fn(async () => {}),
-      logout: vi.fn(),
+      logout: vi.fn(async () => {}),
     }),
   },
+  readStoredCredential: vi.fn(() => undefined),
   createAgentSession: (...args: unknown[]) => state.createAgentSession(...args),
   createCodingTools: () => [],
   DefaultResourceLoader: class {

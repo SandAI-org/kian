@@ -3,6 +3,7 @@ import {
   createAgentSession,
   createCodingTools,
   DefaultResourceLoader,
+  ModelRuntime,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
@@ -34,8 +35,9 @@ import {
   buildSessionSystemPrompt,
   type SessionContextFile,
 } from "./agentPrompt";
-import { getAuthGeneration, getSharedAuthStorage } from "./authStorageService";
+import { getAuthGeneration } from "./authStorageService";
 import { appOperationEvents } from "./appOperationEvents";
+import { modelCatalogStore } from "./modelCatalogService";
 import { createAppOperationTools } from "./appOperationMcpServer";
 import { createAgentGroupTools } from "./agentGroupService";
 import { createBuiltinTools } from "./builtinMcpServer";
@@ -220,7 +222,12 @@ const resolveEffectiveAgentModelSelection = (
     };
   }
   const savedScopeModel = status.lastSelectedModel?.trim();
-  if (savedScopeModel) {
+  if (
+    savedScopeModel &&
+    status.allEnabledModels.some(
+      (model) => `${model.provider}:${model.modelId}` === savedScopeModel,
+    )
+  ) {
     const sepIdx = savedScopeModel.indexOf(":");
     if (sepIdx > 0 && sepIdx < savedScopeModel.length - 1) {
       return {
@@ -1437,7 +1444,7 @@ const createOrResumeSession = async (
   const agentGroupRuntimeMetadata =
     parseAgentGroupRuntimeMetadata(currentChatSession);
   const effectiveCapabilityMode: ChatCapabilityMode = capabilityMode;
-  const status = await settingsService.getClaudeStatus(scope);
+  const status = await settingsService.getClaudeStatus(scope, chatSessionId);
   const effectiveThinkingLevel = thinkingLevel ?? DEFAULT_CHAT_THINKING_LEVEL;
 
   // Resolve provider and model from override, saved scope state, or first enabled model.
@@ -1567,18 +1574,36 @@ const createOrResumeSession = async (
   // Sync the user's API keys into the shared persistent auth storage as
   // runtime overrides. Providers without a key fall through to OAuth
   // subscription credentials in ~/.kian/auth.json (auto-refreshed by pi).
-  const authStorage = getSharedAuthStorage();
+  const modelRuntime = await ModelRuntime.create({
+    authPath: path.join(GLOBAL_CONFIG_DIR, "auth.json"),
+    modelsPath: path.join(agentRuntimeDir, "models.json"),
+    modelsStore: modelCatalogStore,
+  });
+  for (const [provider, providerState] of Object.entries(status.providers)) {
+    if (providerState.customModels?.length) {
+      const models = await Promise.all(
+        providerState.customModels.map((customModel) =>
+          settingsService.resolveAgentModel(provider, customModel.id),
+        ),
+      );
+      modelRuntime.registerProvider(provider, {
+        api: providerState.api,
+        baseUrl: providerState.baseUrl,
+        models: models.filter((candidate) => candidate !== null),
+      });
+    }
+  }
   for (const [provider, providerState] of Object.entries(status.providers)) {
     const authKey = toAuthProviderKey(provider);
     if (providerState.apiKey) {
-      authStorage.setRuntimeApiKey(authKey, providerState.apiKey);
+      await modelRuntime.setRuntimeApiKey(authKey, providerState.apiKey);
     } else {
-      authStorage.removeRuntimeApiKey(authKey);
+      await modelRuntime.removeRuntimeApiKey(authKey);
     }
   }
   if (!status.providers[effectiveProvider]?.apiKey) {
     if (providerApiKey) {
-      authStorage.setRuntimeApiKey(
+      await modelRuntime.setRuntimeApiKey(
         toAuthProviderKey(effectiveProvider),
         providerApiKey,
       );
@@ -1807,7 +1832,7 @@ const createOrResumeSession = async (
       cwd: projectCwd,
       agentDir: agentRuntimeDir,
       model,
-      authStorage,
+      modelRuntime,
       tools: toolNames,
       customTools,
       thinkingLevel: effectiveThinkingLevel,
@@ -1857,7 +1882,7 @@ export const agentService = {
     payload: ChatSendPayload,
     onStream?: (event: ChatStreamEvent) => void,
   ): Promise<ChatSendResponse> {
-    const status = await settingsService.getClaudeStatus(payload.scope);
+    const status = await settingsService.getClaudeStatus(payload.scope, payload.sessionId);
 
     if (status.allEnabledModels.length === 0) {
       return {

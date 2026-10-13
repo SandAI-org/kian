@@ -2549,9 +2549,6 @@ export const ModuleChatPane = ({
   const scopeKey = getScopeKey(effectiveScope);
   const [input, setInput] = useState("");
   const [isComposing, setIsComposing] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<string | undefined>(
-    undefined,
-  );
   const [selectedThinkingLevel, setSelectedThinkingLevel] =
     useState<ChatThinkingLevel>("low");
   const [internalSessionId, setInternalSessionId] = useState<
@@ -2650,8 +2647,8 @@ export const ModuleChatPane = ({
     queryFn: api.settings.getShortcutConfig,
   });
   const claudeStatusQuery = useQuery({
-    queryKey: ["settings", "claude", scopeKey],
-    queryFn: () => api.settings.get(effectiveScope),
+    queryKey: ["settings", "claude", scopeKey, currentSessionId],
+    queryFn: () => api.settings.get(effectiveScope, currentSessionId),
   });
   const availableProvidersQuery = useQuery({
     queryKey: ["settings", "available-providers"],
@@ -2731,6 +2728,15 @@ export const ModuleChatPane = ({
     [shortcutConfig, t],
   );
   const enabledModels = claudeStatusQuery.data?.allEnabledModels ?? [];
+  const savedModel = claudeStatusQuery.data?.lastSelectedModel;
+  const firstEnabledModel = enabledModels[0];
+  const selectedModel = enabledModels.some(
+    (model) => `${model.provider}:${model.modelId}` === savedModel,
+  )
+    ? savedModel
+    : firstEnabledModel
+      ? `${firstEnabledModel.provider}:${firstEnabledModel.modelId}`
+      : undefined;
   const providerNameMap = useMemo(
     () =>
       new Map(
@@ -2742,7 +2748,8 @@ export const ModuleChatPane = ({
     [availableProvidersQuery.data],
   );
   const hasEnabledModels = enabledModels.length > 0;
-  const hasHydratedSelectedModel = !hasEnabledModels || Boolean(selectedModel);
+  const hasHydratedSelectedModel =
+    claudeStatusQuery.isSuccess && (!hasEnabledModels || Boolean(selectedModel));
   const docsQuery = useQuery<DocumentDTO[]>({
     queryKey: ["docs", docsQueryProjectId],
     queryFn: () => api.docs.list(docsQueryProjectId),
@@ -2767,18 +2774,11 @@ export const ModuleChatPane = ({
   );
 
   useEffect(() => {
-    if (claudeStatusQuery.data && !selectedModel) {
-      const models = claudeStatusQuery.data.allEnabledModels;
-      const saved = claudeStatusQuery.data.lastSelectedModel;
-      // Restore saved model if it's still in the enabled list
-      if (saved && models.some((m) => `${m.provider}:${m.modelId}` === saved)) {
-        setSelectedModel(saved);
-      } else {
-        const first = models[0];
-        if (first) setSelectedModel(`${first.provider}:${first.modelId}`);
-      }
-    }
-  }, [claudeStatusQuery.data, selectedModel]);
+    if (!currentSessionId || !selectedModel) return;
+    void api.settings
+      .setLastSelectedModel(effectiveScope, selectedModel, currentSessionId)
+      .catch(() => {});
+  }, [currentSessionId, effectiveScope, selectedModel]);
 
   useEffect(() => {
     if (!claudeStatusQuery.data || hasHydratedThinkingLevelRef.current) return;
@@ -2802,7 +2802,6 @@ export const ModuleChatPane = ({
     setInternalSessionId(undefined);
     setInput("");
     setIsComposing(false);
-    setSelectedModel(undefined);
     setSelectedThinkingLevel("low");
     setPendingUserMessages([]);
     queuedSendPayloadsRef.current = [];
@@ -3723,6 +3722,13 @@ export const ModuleChatPane = ({
             title: "",
           });
           sessionId = created.id;
+          if (selectedModel) {
+            await api.settings.setLastSelectedModel(
+              effectiveScope,
+              selectedModel,
+              created.id,
+            );
+          }
           setCurrentSessionId(created.id);
           void queryClient.invalidateQueries({
             queryKey: ["chat-sessions", scopeKey],
@@ -4247,9 +4253,8 @@ export const ModuleChatPane = ({
         value: `${m.provider}:${m.modelId}`,
       }))}
       onModelChange={(value) => {
-        setSelectedModel(value);
         queryClient.setQueryData(
-          ["settings", "claude", scopeKey],
+          ["settings", "claude", scopeKey, currentSessionId],
           (
             previous:
               | Awaited<ReturnType<typeof api.settings.get>>
@@ -4262,13 +4267,15 @@ export const ModuleChatPane = ({
                 }
               : previous,
         );
-        api.settings.setLastSelectedModel(effectiveScope, value).catch(() => {});
+        if (!currentSessionId) {
+          api.settings.setLastSelectedModel(effectiveScope, value).catch(() => {});
+        }
       }}
       selectedThinkingLevel={selectedThinkingLevel}
       onThinkingLevelChange={(value) => {
         setSelectedThinkingLevel(value);
         queryClient.setQueryData(
-          ["settings", "claude", scopeKey],
+          ["settings", "claude", scopeKey, currentSessionId],
           (
             previous:
               | Awaited<ReturnType<typeof api.settings.get>>
