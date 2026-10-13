@@ -548,7 +548,52 @@ def render_standalone_change_scope(files, repo):
     return "> **Change scope:** " + " · ".join(rendered)
 
 
-def normalize_and_validate_summary(summary, linked_prs):
+SYNC_PACKAGE_NAMES = {
+    "magiattn": "magi_attention",
+    "magiattention": "magi_attention",
+    "magifsdp": "magi_fsdp",
+    "magimoe": "magi_moe",
+    "odin": "odin",
+}
+
+
+def package_sync_records(commits):
+    pattern = re.compile(
+        r"\bsync\s+(?P<package>[A-Za-z0-9_.-]+)\s+(?:on\s+)?"
+        r"(?P<branch>.+?)\s+branch\s+at\s+commit\s+(?P<commit>[0-9a-f]{7,40})"
+        r"(?=\s*(?:&\s*sync\b|$))",
+        flags=re.I,
+    )
+    latest = {}
+    for item in commits:
+        subject = item.get("commit", {}).get("message", "").splitlines()[0].strip()
+        for match in pattern.finditer(subject):
+            raw_package = match.group("package").lower()
+            version = ""
+            version_match = re.match(r"(.+?)(-v\d[0-9A-Za-z.-]*)$", raw_package)
+            if version_match:
+                raw_name, version = version_match.groups()
+            else:
+                raw_name = raw_package
+            identity = SYNC_PACKAGE_NAMES.get(raw_name.replace("_", ""), raw_name)
+            latest[identity] = {
+                "package": identity + version,
+                "branch": match.group("branch").strip(),
+                "commit": match.group("commit").lower(),
+            }
+    return list(latest.values())
+
+
+def sync_bullet_prefix(record):
+    return (
+        f"Sync {record['package']} on {record['branch']} branch at commit "
+        f"`{record['commit']}`, to "
+    )
+
+
+def normalize_and_validate_summary(summary, linked_prs, package_syncs=None):
+    package_syncs = package_syncs or []
+
     def ensure_bold(value):
         if re.search(r"\*\*[^*]+\*\*", value):
             return value
@@ -559,11 +604,25 @@ def normalize_and_validate_summary(summary, linked_prs):
     normalized = {}
     for bucket in ("algo", "infra", "general"):
         values = summary.get(bucket, [])
-        normalized[bucket] = [
-            ensure_bold(markdown_inline_format(str(value).strip().lstrip("- ")))
-            for value in values
-            if str(value).strip()
-        ]
+        normalized[bucket] = []
+        for value in values:
+            raw = str(value).strip().lstrip("- ")
+            if not raw:
+                continue
+            sync_prefix = next(
+                (
+                    prefix
+                    for prefix in map(sync_bullet_prefix, package_syncs)
+                    if raw.startswith(prefix)
+                ),
+                "",
+            )
+            formatted = (
+                sync_prefix + markdown_inline_format(raw[len(sync_prefix):])
+                if sync_prefix
+                else markdown_inline_format(raw)
+            )
+            normalized[bucket].append(ensure_bold(formatted))
     if not any(normalized.values()):
         raise RuntimeError("摘要后端返回了空的 diff 摘要")
     rendered_values = "\n".join(
@@ -582,6 +641,13 @@ def normalize_and_validate_summary(summary, linked_prs):
             raise ValueError("多个关联 PR 必须合并为一个 `w.r.t. the PRs:` 后缀")
         if len(attributed_urls) == 1 and "w.r.t. the PR:" not in value:
             raise ValueError("单个关联 PR 必须使用 `w.r.t. the PR:` 后缀")
+    for record in package_syncs:
+        prefix = sync_bullet_prefix(record)
+        matches = [value for value in normalized["infra"] if value.startswith(prefix)]
+        if len(matches) != 1:
+            raise ValueError(
+                f"Infra 必须包含且仅包含一条精确同步记录: {prefix.strip()}"
+            )
     return normalized
 
 
@@ -627,10 +693,17 @@ def summarize_with_copilot_cli(prompt):
 
 
 def summarize_current_diff(
-    pr, files, existing_body, special_layout=False, linked_prs=None, concise=False
+    pr,
+    files,
+    existing_body,
+    special_layout=False,
+    linked_prs=None,
+    concise=False,
+    package_syncs=None,
 ):
     """Use the final PR diff to rewrite DONE as a coherent current-state summary."""
     linked_prs = linked_prs or []
+    package_syncs = package_syncs or []
     backend = SUMMARIZATION.get("backend", "openrouter")
     api_key = SUMMARIZATION.get("api_key")
     schema = (
@@ -641,6 +714,10 @@ def summarize_current_diff(
     linked_context = "\n".join(
         f"- {item.get('html_url', '')} | {item.get('title', '')}"
         for item in linked_prs
+    ) or "(none)"
+    sync_context = "\n".join(
+        f"- {sync_bullet_prefix(record)}<final imported behavior from the diff>"
+        for record in package_syncs
     ) or "(none)"
     detail_requirement = (
         "- Produce concise English bullets focused on user-visible outcomes or major architectural effects. "
@@ -654,7 +731,7 @@ def summarize_current_diff(
     prompt = f"""Rewrite the DONE section of a GitHub pull request description.
 
 Requirements:
-- Analyze the CURRENT FINAL DIFF below. Do not summarize or quote commit messages; none are provided.
+- Analyze the CURRENT FINAL DIFF below. Commit messages are not provided as behavioral evidence. PACKAGE SYNC PROVENANCE contains only structured source metadata extracted from explicit sync commits.
 - Describe the net behavior that exists at the current head. If later work replaced earlier work, describe only the final result.
 - Treat the existing description only as context. Remove stale, duplicated, chronological, or unsupported claims.
 - Preserve provenance for changes merged from another pull request. For EVERY URL in MERGED PR PROVENANCE below, place that exact URL on the bullet describing its final net effect. Use `w.r.t. the PR: <URL>.` when a bullet maps to one PR, and one grouped `w.r.t. the PRs: <URL>, <URL>, <URL>.` suffix when it maps to multiple PRs. Never repeat multiple singular suffixes on one bullet. Do not infer behavior from the titles; titles are attribution metadata only.
@@ -665,6 +742,7 @@ Requirements:
 - Return JSON only with this exact shape: {schema}
 - Algo means application/model behavior under apps/. Infra means reusable implementation under pkgs/. General is for cross-cutting items.
 - The file inventory is complete, while patch bodies are representative excerpts. Cover every materially changed scope; for this layout, do not let CI or other changes eclipse substantial `apps/` or `pkgs/` work. If multiple `pkgs/<package>/` groups changed materially, summarize their distinct net effects.
+- For EVERY record in PACKAGE SYNC PROVENANCE, emit exactly one Infra string beginning with the exact supplied prefix, then complete its `to ...` clause with a grammatical infinitive verb phrase describing the package's final imported behavior supported by the current diff (for example, `to add ...` or `to integrate ...`; never write `to` followed directly by a noun phrase). Preserve package, branch, and source commit exactly. Do not turn a package sync into a generic feature bullet, and do not duplicate the same imported behavior in another Infra bullet.
 
 PR title: {pr.get('title', '')}
 
@@ -674,6 +752,9 @@ Existing description:
 MERGED PR PROVENANCE (exact URLs are mandatory):
 {linked_context}
 
+PACKAGE SYNC PROVENANCE (exact Infra prefixes are mandatory):
+{sync_context}
+
 CURRENT FINAL DIFF:
 {diff_summary_payload(files, special_layout=special_layout)}
 """
@@ -682,7 +763,7 @@ CURRENT FINAL DIFF:
         for attempt in range(3):
             try:
                 return normalize_and_validate_summary(
-                    summarize_with_copilot_cli(prompt), linked_prs
+                    summarize_with_copilot_cli(prompt), linked_prs, package_syncs
                 )
             except (
                 json.JSONDecodeError,
@@ -723,7 +804,7 @@ CURRENT FINAL DIFF:
             content = result["choices"][0]["message"]["content"].strip()
             content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.I)
             summary = json.loads(content)
-            return normalize_and_validate_summary(summary, linked_prs)
+            return normalize_and_validate_summary(summary, linked_prs, package_syncs)
         except urllib.error.HTTPError as error:
             if error.code in (401, 403):
                 raise RuntimeError(
@@ -1391,6 +1472,7 @@ def update(command, number, requested_repo=None, mode="default"):
         repo == SPECIAL_LAYOUT_REPO,
         linked_prs,
         mode != "full",
+        package_syncs=package_sync_records(commits) if repo == SPECIAL_LAYOUT_REPO else [],
     )
     rewritten_done = render_rewritten_done(
         summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo
@@ -1428,7 +1510,7 @@ def update(command, number, requested_repo=None, mode="default"):
     )
     entry["processed_commits"] = [item.get("sha", "") for item in commits if item.get("sha")]
     save_managed(managed, key)
-    return repo, True, "已基于当前最终 diff 整体重构 desc，未使用 commit message 追加"
+    return repo, True, "已基于当前最终 diff 整体重构 desc；仅将显式 sync commit 用作来源元数据"
 
 
 def main():

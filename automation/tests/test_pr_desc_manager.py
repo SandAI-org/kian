@@ -167,6 +167,44 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         }
         self.assertEqual(manager.STANDALONE_SOURCE_DIRS, expected)
 
+    def test_package_sync_records_collapse_intermediate_syncs_and_split_combined_commit(self):
+        commits = [
+            {"commit": {"message": "sync magifsdp optim branch at commit 111aaaa"}},
+            {"commit": {"message": "sync magimoe-v0.4.1 main branch at commit 3752b44"}},
+            {"commit": {"message": "sync magifsdp-v0.3.1 main branch at commit b9a1a76 & sync odin-v0.3.1 main branch at commit 5e7ca801"}},
+            {"commit": {"message": "sync magifsdp-v0.3.2 on main branch at commit 3abb0f3"}},
+            {"commit": {"message": "sync magiattn-v1.1.6 on main branch at commit 1f84a48"}},
+        ]
+
+        self.assertEqual(
+            manager.package_sync_records(commits),
+            [
+                {"package": "magi_fsdp-v0.3.2", "branch": "main", "commit": "3abb0f3"},
+                {"package": "magi_moe-v0.4.1", "branch": "main", "commit": "3752b44"},
+                {"package": "odin-v0.3.1", "branch": "main", "commit": "5e7ca801"},
+                {"package": "magi_attention-v1.1.6", "branch": "main", "commit": "1f84a48"},
+            ],
+        )
+
+    def test_summary_requires_exact_sync_prefix_in_infra(self):
+        syncs = [
+            {"package": "magi_moe-v0.4.1", "branch": "main", "commit": "3752b44"}
+        ]
+        valid = {
+            "algo": [],
+            "infra": [
+                "Sync magi_moe-v0.4.1 on main branch at commit `3752b44`, "
+                "to add **overlapped expert-parallel backward execution**."
+            ],
+            "general": [],
+        }
+        normalized = manager.normalize_and_validate_summary(valid, [], syncs)
+        self.assertEqual(normalized["infra"], valid["infra"])
+
+        invalid = {"algo": [], "infra": ["Added **MoE overlap**."], "general": []}
+        with self.assertRaisesRegex(ValueError, "精确同步记录"):
+            manager.normalize_and_validate_summary(invalid, [], syncs)
+
     def test_replaces_entire_done_and_preserves_future_sections(self):
         body = "## DONE\n\n- Old implementation.\n- Another stale commit.\n\n## TODO in this PR\n\n- Keep this.\n"
         rewritten = "## DONE\n\n- Final net behavior.\n"
