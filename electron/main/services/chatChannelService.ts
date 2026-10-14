@@ -821,6 +821,85 @@ const mapFeishuReceiveEventToMessage = (
   };
 };
 
+/**
+ * Map a Feishu interactive-card action (button click) callback into a synthetic
+ * text message, so it can flow through the same processFeishuMessage pipeline as
+ * a normal user message.
+ *
+ * The card button's `value` carries the command. Two shapes are supported:
+ *   1) { text: "up514" }              -> uses the text directly
+ *   2) { action: "up", pr: 514 }      -> assembled into "up514"
+ * Any other object is JSON-stringified as a fallback so nothing is silently lost.
+ */
+const mapFeishuCardActionToMessage = (
+  data: Record<string, unknown>,
+): FeishuMessageItem | null => {
+  const action = (data.action as Record<string, unknown> | undefined) ?? undefined;
+  const value =
+    action && typeof action === "object"
+      ? (action.value as Record<string, unknown> | string | undefined)
+      : undefined;
+
+  let commandText = "";
+  if (typeof value === "string") {
+    commandText = value.trim();
+  } else if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const directText =
+      typeof record.text === "string" ? record.text.trim() : "";
+    if (directText) {
+      commandText = directText;
+    } else if (typeof record.action === "string") {
+      const prPart =
+        record.pr !== undefined && record.pr !== null ? String(record.pr) : "";
+      commandText = `${record.action}${prPart}`.trim();
+    } else {
+      try {
+        commandText = JSON.stringify(record);
+      } catch {
+        commandText = "";
+      }
+    }
+  }
+  if (!commandText) return null;
+
+  // Feishu card.action.trigger (v2) payload carries context ids at the top level
+  // after SDK parse spreads header/event fields.
+  const openChatId = normalizeChatId(
+    (data.open_chat_id as string | undefined) ??
+      ((data.context as Record<string, unknown> | undefined)?.open_chat_id as
+        | string
+        | undefined),
+  );
+  const openMessageId = normalizeChatId(
+    (data.open_message_id as string | undefined) ??
+      ((data.context as Record<string, unknown> | undefined)
+        ?.open_message_id as string | undefined),
+  );
+  const openId = normalizeChatId(data.open_id as string | undefined);
+  if (!openChatId || !openId) return null;
+
+  // Synthesize a text message id; card actions have no message id of their own.
+  const syntheticId =
+    openMessageId || `card_action_${openChatId}_${Date.now()}`;
+
+  return {
+    message_id: syntheticId,
+    chat_id: openChatId,
+    chat_type: "p2p",
+    create_time: String(Date.now()),
+    msg_type: "text",
+    body: {
+      content: JSON.stringify({ text: commandText }),
+    },
+    sender: {
+      sender_type: "user",
+      id: { open_id: openId },
+      sender_id: { open_id: openId },
+    },
+  };
+};
+
 const startFeishuWebSocket = (
   state: BotRuntime,
   options?: { reason?: string },
@@ -913,6 +992,46 @@ const startFeishuWebSocket = (
             error,
           });
         });
+    },
+    "card.action.trigger": async (data: Record<string, unknown>) => {
+      recordFeishuWsEvent();
+      logger.info("Feishu inbound card action received", {
+        openId: data.open_id,
+        hasAction: Boolean(data.action),
+      });
+      if (feishuRuntime !== state) return;
+      const message = mapFeishuCardActionToMessage(data);
+      if (!message) {
+        logger.warn(
+          "Feishu card action ignored: cannot derive command/message",
+          { openId: data.open_id },
+        );
+        return;
+      }
+      const eventKey = `card_action:${message.message_id}:${message.body?.content ?? ""}`;
+      if (!markFeishuEventSeen(eventKey)) {
+        logger.info("Feishu card action skipped as duplicate", { eventKey });
+        return;
+      }
+      logger.info("Feishu card action accepted", {
+        chatId: message.chat_id,
+        command: message.body?.content,
+      });
+      // Websocket callbacks should return quickly to avoid timeout retries.
+      void processFeishuMessage(message, state, message.chat_id ?? "")
+        .then(() => {
+          logger.info("Feishu card action processed", {
+            chatId: message.chat_id,
+          });
+        })
+        .catch((error) => {
+          logger.error("Feishu card action process failed", {
+            chatId: message.chat_id,
+            error,
+          });
+        });
+      // Return empty object: no card update, just acknowledge.
+      return {};
     },
   });
 
