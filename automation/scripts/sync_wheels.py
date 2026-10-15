@@ -25,9 +25,7 @@ def discover_unique(
 ) -> list[Endpoint]:
     host = translate_remote(machine, "/").host
     wheels = []
-    for directory, expected_distribution in zip(
-        directories, expected_distributions, strict=True
-    ):
+    for directory, expected_distribution in zip(directories, expected_distributions):
         remote_dir = translate_remote(machine, directory).path
         command = f"find {shlex.quote(remote_dir)} -maxdepth 1 -type f -name '*.whl' -print"
         candidates = [path for path in ssh(host or "", command).splitlines() if path]
