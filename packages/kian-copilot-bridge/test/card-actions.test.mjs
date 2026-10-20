@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { disableCardAction, disableReminderAction } from '../src/card-actions.mjs';
+import {
+  disableCardAction,
+  disablePublicPinAction,
+  disableReminderAction,
+} from '../src/card-actions.mjs';
 
 const card = {
   config: { wide_screen_mode: true },
@@ -237,5 +241,37 @@ test('does not disable a reminder button from another occurrence', () => {
     occurrence: '2026-10-20',
     completedText: '今日已服用 ✓',
   });
+  assert.equal(result.changed, false);
+});
+
+test('disables and relabels a public PR pin button', () => {
+  const pinCard = {
+    elements: [{
+      tag: 'action',
+      actions: [{
+        tag: 'button',
+        type: 'primary',
+        text: { tag: 'plain_text', content: '📌 持续关注 #123' },
+        value: { action: 'pin_public_pr', repo: 'PyTorch/PyTorch', pr: 123 },
+      }],
+    }],
+  };
+  const result = disablePublicPinAction(pinCard, { repo: 'pytorch/pytorch', number: 123 });
+  assert.equal(result.changed, true);
+  assert.equal(result.card.elements[0].actions[0].disabled, true);
+  assert.equal(result.card.elements[0].actions[0].type, 'default');
+  assert.equal(result.card.elements[0].actions[0].text.content, '已关注 #123 ✓');
+  assert.equal(pinCard.elements[0].actions[0].disabled, undefined);
+});
+
+test('does not disable another public PR pin button', () => {
+  const pinCard = {
+    elements: [[{
+      tag: 'button',
+      text: '📌 持续关注 #124',
+      value: JSON.stringify({ action: 'pin_public_pr', repo: 'pytorch/pytorch', pr: 124 }),
+    }]],
+  };
+  const result = disablePublicPinAction(pinCard, { repo: 'pytorch/pytorch', number: 123 });
   assert.equal(result.changed, false);
 });

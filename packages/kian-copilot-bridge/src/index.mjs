@@ -4,7 +4,11 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as Lark from '@larksuiteoapi/node-sdk';
-import { disableCardAction, disableReminderAction } from './card-actions.mjs';
+import {
+  disableCardAction,
+  disablePublicPinAction,
+  disableReminderAction,
+} from './card-actions.mjs';
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(process.env.KIAN_REPO_ROOT || path.join(packageDir, '../..'));
@@ -17,6 +21,7 @@ const stateDir = path.join(automationHome, 'state');
 const prManagerPath = path.join(repoRoot, 'automation/scripts/pr_desc_manager.py');
 const connectionAlertStatePath = path.join(stateDir, 'connection-state.json');
 const ackReminderStateDir = path.join(stateDir, 'ack-reminders');
+const publicWatchPinsDir = path.join(stateDir, 'public-watch-pins');
 const pythonBin = process.env.KIAN_PYTHON || 'python3';
 const logPrefix = '[kian-copilot-bridge]';
 const seen = new Map();
@@ -204,6 +209,19 @@ const parseReminderAction = (data) => {
   return { reminderId, occurrence };
 };
 
+const parsePublicPinAction = (data) => {
+  let value = data?.action?.value ?? data?.event?.action?.value ?? data?.value;
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  if (!value || value.action !== 'pin_public_pr') return null;
+  const repo = typeof value.repo === 'string' ? value.repo.trim() : '';
+  const number = Number(value.pr);
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)
+    || !Number.isSafeInteger(number) || number <= 0) return null;
+  return { repo, number };
+};
+
 const pruneRecentCommands = () => {
   const now = Date.now();
   for (const [key, at] of recentCommands) {
@@ -319,6 +337,38 @@ const acknowledgeReminder = async ({
     }
   }
   log('acknowledged reminder', reminderId, occurrence);
+};
+
+const pinPublicPr = async ({ appId, appSecret, messageId, repo, number, userId }) => {
+  const [owner, name] = repo.split('/');
+  const pinDir = path.join(publicWatchPinsDir, owner, name);
+  const pinStatePath = path.join(pinDir, `${number}.json`);
+  await fs.mkdir(pinDir, { recursive: true, mode: 0o700 });
+  const state = {
+    active: true,
+    repo,
+    number,
+    pinned_at: new Date().toISOString(),
+    pinned_by: userId,
+  };
+  const temporaryPath = `${pinStatePath}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  await fs.rename(temporaryPath, pinStatePath);
+
+  if (messageId) {
+    try {
+      const originalCard = await readInteractiveCard({ appId, appSecret, messageId });
+      const result = disablePublicPinAction(originalCard, { repo, number });
+      if (result.changed) {
+        await updateInteractiveCard({ appId, appSecret, messageId, card: result.card });
+      } else {
+        log('cannot disable public PR pin action: unique matching button not found', repo, number);
+      }
+    } catch (cause) {
+      error('pinned public PR but failed to update its source card', repo, number, cause);
+    }
+  }
+  log('pinned public PR', repo, number);
 };
 
 const main = async () => {
@@ -490,6 +540,24 @@ const main = async () => {
       const userId = event?.open_id || event?.operator?.open_id || '';
       const chatId = event?.open_chat_id || event?.context?.open_chat_id || '';
       const messageId = event?.open_message_id || event?.context?.open_message_id || '';
+      const publicPinAction = parsePublicPinAction(data);
+      if (publicPinAction) {
+        if (!userId) return { toast: { type: 'error', content: '无法识别操作用户' } };
+        if (allowedUsers.size && !allowedUsers.has(userId)) {
+          return { toast: { type: 'error', content: '当前用户无权关注此 PR' } };
+        }
+        const eventKey = `public-pin:${messageId}:${userId}:${publicPinAction.repo}:${publicPinAction.number}`;
+        if (!markSeen(eventKey)) {
+          return { toast: { type: 'info', content: '该 PR 已经在持续关注' } };
+        }
+        try {
+          await pinPublicPr({ appId, appSecret, messageId, userId, ...publicPinAction });
+          return { toast: { type: 'success', content: `已持续关注 ${publicPinAction.repo}#${publicPinAction.number}` } };
+        } catch (cause) {
+          error('failed to pin public PR', publicPinAction.repo, publicPinAction.number, cause);
+          return { toast: { type: 'error', content: '关注失败，请稍后重试' } };
+        }
+      }
       const reminderAction = parseReminderAction(data);
       if (reminderAction) {
         if (!userId) return { toast: { type: 'error', content: '无法识别操作用户' } };

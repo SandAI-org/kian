@@ -29,7 +29,10 @@ def send(title, body_md, actions=None, template="green"):
     token = feishu_token()
     elements = [{"tag": "markdown", "content": body_md}]
     if actions:
-        elements.append({"tag": "action", "actions": actions})
+        elements.extend(
+            {"tag": "action", "actions": actions[index:index + 5]}
+            for index in range(0, len(actions), 5)
+        )
     card = {
         "config": {"wide_screen_mode": True},
         "header": {"title": {"tag": "plain_text", "content": title}, "template": template},

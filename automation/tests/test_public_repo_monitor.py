@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -121,6 +122,91 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertNotIn("@@KIAN_CHINESE_SUMMARY@@", rendered[0])
         self.assertLess(rendered[0].index("Title"), rendered[0].index("中文摘要"))
         self.assertLess(rendered[0].index("中文摘要"), rendered[0].index("判断依据"))
+
+    def test_open_pr_event_exposes_pin_action(self):
+        block = monitor.event_block("body", {
+            "number": 123, "state": "open", "title": "Important change",
+        }, "pr", 123, repo="owner/repo")
+        self.assertEqual(block["pin"], {"repo": "owner/repo", "number": 123})
+        with patch.object(monitor, "load_pin", return_value={}):
+            actions = monitor.pin_actions([block, block])
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["value"]["action"], "pin_public_pr")
+
+    def test_pinned_update_and_outcome_show_synthetic_label(self):
+        pr = {
+            "number": 123, "title": "Important change", "labels": [],
+            "html_url": "https://example/pr/123", "base": {"ref": "main"},
+            "merged_at": "2026-10-20T01:00:00Z",
+        }
+        self.assertIn("标签：`pinned`", monitor.pinned_update_block(pr, ["new commit"]))
+        self.assertIn("标签：`pinned`", monitor.pr_outcome_block(
+            pr, ["main"], watched_early=True, pinned=True,
+        ))
+
+    def test_new_commit_messages_start_after_previous_head(self):
+        commits = [
+            {"sha": "old", "commit": {"message": "old subject\nbody"}},
+            {"sha": "new-1", "commit": {"message": "first new subject"}},
+            {"sha": "new-2", "commit": {"message": "second new subject"}},
+        ]
+        with patch.object(monitor, "github_get", return_value=commits):
+            messages, force_pushed = monitor.new_pr_commit_messages("owner/repo", 123, "old")
+        self.assertEqual(messages, ["first new subject", "second new subject"])
+        self.assertFalse(force_pushed)
+
+    def test_pin_state_can_be_completed_without_deleting_history(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            monitor, "PINS_DIR", Path(directory),
+        ):
+            target = monitor.pin_path("owner/repo", 123)
+            target.parent.mkdir(parents=True)
+            target.write_text('{"active": true}\n', encoding="utf-8")
+            monitor.deactivate_pin("owner/repo", 123, "merged")
+            state = monitor.load_pin("owner/repo", 123)
+        self.assertFalse(state["active"])
+        self.assertEqual(state["outcome"], "merged")
+        self.assertIn("completed_at", state)
+
+    def test_pinned_pr_head_change_creates_follow_up_even_below_threshold(self):
+        responses = {
+            "": {"default_branch": "main"},
+            "/releases": [],
+            "/pulls:closed": [],
+            "/pulls:open": [{
+                "number": 123, "title": "Routine change", "body": "", "labels": [],
+                "state": "open", "updated_at": "2026-10-20T01:00:00Z",
+                "head": {"sha": "new"}, "html_url": "https://example/pr/123",
+            }],
+            "/issues": [],
+            "/pulls/123/commits": [
+                {"sha": "old", "commit": {"message": "old"}},
+                {"sha": "new", "commit": {"message": "new commit"}},
+            ],
+        }
+
+        def fake_get(_repo, path, params=None):
+            if path == "/pulls":
+                return responses["/pulls:" + params["state"]]
+            return responses[path]
+
+        prior = {
+            "last_check": "2026-10-20T00:00:00Z",
+            "signals": {"pr:123": {
+                "notified": True, "head_sha": "old", "updated_at": "2026-10-19T00:00:00Z",
+            }},
+        }
+        with patch.object(monitor, "github_get", side_effect=fake_get), patch.object(
+            monitor, "load_pin", return_value={"active": True},
+        ):
+            blocks, state = monitor.collect_repo(
+                {"repo": "owner/repo", "level": "essential"}, prior,
+                "2026-10-20T02:00:00Z",
+            )
+        self.assertEqual(len(blocks), 1)
+        self.assertIn("已关注 PR 更新", blocks[0]["markdown"])
+        self.assertIn("标签：`pinned`", blocks[0]["markdown"])
+        self.assertEqual(state["signals"]["pr:123"]["head_sha"], "new")
 
     def test_bootstrap_builds_baseline_without_notifications(self):
         responses = {

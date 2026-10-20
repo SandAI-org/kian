@@ -23,6 +23,7 @@ GITHUB = {}
 SUMMARIZATION = {}
 STATE_FILE = STATE_DIR / "public-watch-state.json"
 LOCK_FILE = STATE_DIR / "public-watch.lock"
+PINS_DIR = STATE_DIR / "public-watch-pins"
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 LEVEL_THRESHOLDS = {
@@ -41,11 +42,11 @@ def configure(config=None):
     SUMMARIZATION = config.get("summarization", {})
 
 
-def send_card(title, body, template):
+def send_card(title, body, template, actions=None):
     # Import lazily so the pure filtering helpers remain testable without a
     # private runtime configuration file.
     from feishu_remind import send
-    return send(title, body, template=template)
+    return send(title, body, actions=actions, template=template)
 
 SEMANTIC_SIGNALS = (
     ("安全", 8, r"\bsecurity\b|vulnerab|\bcve[- ]|remote code|privilege escalat"),
@@ -206,6 +207,33 @@ def compact_body(value, limit=280):
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def pin_path(repo, number):
+    owner, name = repo.split("/", 1)
+    return PINS_DIR / owner / name / (str(int(number)) + ".json")
+
+
+def load_pin(repo, number):
+    try:
+        with pin_path(repo, number).open(encoding="utf-8") as handle:
+            value = json.load(handle)
+            return value if isinstance(value, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+        return {}
+
+
+def deactivate_pin(repo, number, outcome):
+    current = load_pin(repo, number)
+    if not current.get("active"):
+        return
+    current.update({"active": False, "completed_at": now_iso(), "outcome": outcome})
+    target = pin_path(repo, number)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = target.with_suffix(".{0}.tmp".format(os.getpid()))
+    temporary.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(str(temporary), 0o600)
+    os.replace(str(temporary), str(target))
+
+
 def custom_exclusion(repo_config, item, file_paths=None):
     rules = repo_config.get("exclude", {})
     title = str(item.get("title", ""))
@@ -259,14 +287,17 @@ def excluded_event(repo_config, repo, item, kind):
     return custom_exclusion(repo_config, item, pr_file_paths(repo, item["number"]))
 
 
-def event_block(markdown, item, kind, identity):
-    return {
+def event_block(markdown, item, kind, identity, repo=""):
+    block = {
         "markdown": markdown,
         "summary_key": "{0}:{1}".format(kind, identity),
         "summary_kind": kind,
         "title": str(item.get("title") or item.get("name") or item.get("tag_name") or ""),
         "body": str(item.get("body") or ""),
     }
+    if kind == "pr" and repo and item.get("state") == "open":
+        block["pin"] = {"repo": repo, "number": int(item["number"])}
+    return block
 
 
 def summary_body(value):
@@ -386,7 +417,14 @@ def release_block(release):
     )
 
 
-def pr_outcome_block(pr, branches, watched_early):
+def rendered_labels(item, pinned=False):
+    labels = label_names(item)
+    if pinned and "pinned" not in [label.lower() for label in labels]:
+        labels.insert(0, "pinned")
+    return "标签：`{0}`".format("` `".join(labels[:8])) if labels else ""
+
+
+def pr_outcome_block(pr, branches, watched_early, pinned=False):
     number = pr["number"]
     base = pr.get("base", {}).get("ref", "")
     if pr.get("merged_at"):
@@ -400,12 +438,51 @@ def pr_outcome_block(pr, branches, watched_early):
         heading = "**⛔ 已关注的重要 PR 关闭但未合入 #{0}**".format(number)
     else:
         return ""
-    labels = label_names(pr)
-    labels_line = "\n\n标签：`{0}`".format("` `".join(labels[:8])) if labels else ""
+    labels = rendered_labels(pr, pinned=pinned)
+    labels_line = "\n\n" + labels if labels else ""
     return "{0}\n\n📌 **{1}**\n\n{2}{3}\n\n[🔗 查看 PR]({4})".format(
         heading, pr.get("title", ""), SUMMARY_MARKER, labels_line,
         pr.get("html_url", "")
     )
+
+
+def pinned_update_block(pr, commit_messages, force_pushed=False):
+    detail = "（可能包含 rebase / force-push）" if force_pushed else ""
+    labels = rendered_labels(pr, pinned=True)
+    labels_line = "\n\n" + labels if labels else ""
+    return (
+        "**📌 已关注 PR 更新 #{0}** · {1} 条新 commit {2}\n\n"
+        "📌 **{3}**\n\n{4}{5}\n\n[🔗 查看 PR]({6})"
+    ).format(
+        pr["number"], len(commit_messages), detail, pr.get("title", ""),
+        SUMMARY_MARKER, labels_line, pr.get("html_url", ""),
+    )
+
+
+def new_pr_commit_messages(repo, number, previous_head):
+    commits = []
+    page = 1
+    while True:
+        batch = github_get(repo, "/pulls/{0}/commits".format(number), {
+            "per_page": 100, "page": page,
+        })
+        if not isinstance(batch, list):
+            break
+        commits.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    old_index = next(
+        (index for index, item in enumerate(commits) if item.get("sha") == previous_head),
+        None,
+    )
+    selected = commits[old_index + 1:] if old_index is not None else commits[-10:]
+    messages = [
+        item.get("commit", {}).get("message", "").splitlines()[0][:240]
+        for item in selected
+        if item.get("commit", {}).get("message")
+    ]
+    return messages, old_index is None
 
 
 def issue_outcome_block(issue, previous):
@@ -431,6 +508,7 @@ def remember_signal(signals, key, item, score, notified=None):
         "notified": old.get("notified", False) if notified is None else bool(notified),
         "state": item.get("state", "open"),
         "updated_at": item.get("updated_at", ""),
+        "head_sha": item.get("head", {}).get("sha", "") or old.get("head_sha", ""),
     }
 
 
@@ -467,14 +545,25 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             break
         key = signal_key("pr", pr["number"])
         previous = signals.get(key, {})
+        pin = load_pin(repo, pr["number"])
+        pinned = bool(pin.get("active"))
         event_time = pr.get("merged_at") or pr.get("closed_at") or ""
         if not bootstrap and event_time > last_check:
-            is_excluded, reason = excluded_event(repo_config, repo, pr, "pr")
+            is_excluded, reason = (False, "") if pinned else excluded_event(
+                repo_config, repo, pr, "pr"
+            )
             block = "" if is_excluded else pr_outcome_block(
-                pr, branches, previous.get("notified", False)
+                pr, branches, previous.get("notified", False) or pinned, pinned=pinned,
             )
             if block:
-                blocks.append(event_block(block, pr, "pr", pr["number"]))
+                event = event_block(block, pr, "pr", pr["number"], repo=repo)
+                if pinned:
+                    event["complete_pin"] = {
+                        "repo": repo,
+                        "number": pr["number"],
+                        "outcome": "merged" if pr.get("merged_at") else "closed",
+                    }
+                blocks.append(event)
             elif is_excluded:
                 print("[filter] {0} PR #{1} excluded by {2}".format(repo, pr["number"], reason))
         remember_signal(signals, key, pr, previous.get("score", 0), previous.get("notified", False))
@@ -486,8 +575,24 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
     for pr in open_prs if isinstance(open_prs, list) else []:
         key = signal_key("pr", pr["number"])
         previous = signals.get(key, {})
+        pin = load_pin(repo, pr["number"])
+        pinned = bool(pin.get("active"))
         score, reasons = importance(pr, "pr")
         changed = pr.get("updated_at", "") > last_check
+        head_sha = pr.get("head", {}).get("sha", "")
+        previous_head = previous.get("head_sha", "")
+        if not bootstrap and pinned and previous_head and head_sha and head_sha != previous_head:
+            commit_messages, force_pushed = new_pr_commit_messages(
+                repo, pr["number"], previous_head,
+            )
+            if not commit_messages:
+                commit_messages = ["PR head commit 已更新"]
+            summary_item = dict(pr)
+            summary_item["body"] = "\n".join(commit_messages)
+            blocks.append(event_block(
+                pinned_update_block(pr, commit_messages, force_pushed),
+                summary_item, "pr", pr["number"], repo=repo,
+            ))
         should_notify = (
             not bootstrap and changed and pr_threshold is not None
             and score >= pr_threshold and not previous.get("notified", False)
@@ -499,7 +604,8 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
                 print("[filter] {0} PR #{1} excluded by {2}".format(repo, pr["number"], reason))
             else:
                 blocks.append(event_block(
-                    importance_block("pr", pr, score, reasons), pr, "pr", pr["number"]
+                    importance_block("pr", pr, score, reasons), pr, "pr", pr["number"],
+                    repo=repo,
                 ))
         remember_signal(signals, key, pr, score, previous.get("notified", False) or should_notify)
 
@@ -560,6 +666,30 @@ def render_card(repo_config, repo_state, blocks):
     return intro + "\n\n---\n\n" + "\n\n---\n\n".join(rendered_blocks)
 
 
+def pin_actions(blocks):
+    actions = []
+    seen = set()
+    for block in blocks:
+        pin = block.get("pin")
+        if not pin:
+            continue
+        identity = (pin["repo"], pin["number"])
+        if identity in seen or load_pin(*identity).get("active"):
+            continue
+        seen.add(identity)
+        actions.append({
+            "tag": "button",
+            "type": "primary",
+            "text": {"tag": "plain_text", "content": "📌 持续关注 #{0}".format(pin["number"])},
+            "value": {
+                "action": "pin_public_pr",
+                "repo": pin["repo"],
+                "pr": pin["number"],
+            },
+        })
+    return actions
+
+
 def run():
     configure()
     repositories = [item for item in WATCH.get("repositories", []) if item.get("enabled", True)]
@@ -592,7 +722,14 @@ def run():
                         "🌐 Public 仓库重要更新",
                         render_card(repo_config, next_state, blocks),
                         template="purple",
+                        actions=pin_actions(blocks),
                     )
+                    for block in blocks:
+                        completion = block.get("complete_pin")
+                        if completion:
+                            deactivate_pin(
+                                completion["repo"], completion["number"], completion["outcome"],
+                            )
                     pushed += len(blocks)
                 repo_states[repo] = next_state
                 save_state(state)

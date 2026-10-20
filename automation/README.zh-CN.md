@@ -12,6 +12,8 @@
 
 每个仓库的 `level` 可随时调整：`detailed` 的 PR/Issue 默认阈值为 4，`balanced` 为 7，`essential` 禁用早期信号，只保留发版和主开发分支合入。`thresholds.pr` / `thresholds.issue` 可以覆盖单库阈值。已经推送过的早期信号会继续跟踪合入、关闭或 Issue 状态变化，即使之后下调监控等级。状态保存在 `state/public-watch-state.json`。
 
+每条仍处于 open 状态的 PR 推送都带有“持续关注”按钮。只有用户主动点击后，后续 head commit 变化（包括 rebase / force-push）才会再次推送；这些卡片的标签会加入合成的 `pinned` 标识。PR 合入或关闭时会发送最终结果并自动结束关注。Pin 状态独立保存在 `state/public-watch-pins/<owner>/<repo>/<number>.json`，因此不会与主监控检查点竞争写入；主动 pin 也会覆盖单库等级与噪声过滤规则。
+
 单库 `exclude` 支持 `title_patterns`、`body_patterns`、兼容旧配置的 `text_patterns`、`label_patterns` 和 `path_patterns` 正则表达式。标题和正文规则相互独立，可避免正文仅在兼容性说明中提到某后端时误杀整个 PR。路径规则默认 `path_match: "all"`，即 PR 的全部改动文件都属于排除路径时才过滤，避免一个同时修改核心代码和特定后端的 PR 被误杀；设为 `any` 可采用更激进的过滤。自定义过滤同时作用于早期信号和主开发分支合入，但不影响 Release。PR 卡片按 title、中文摘要、判断依据、labels、原文链接的顺序展示，不重复附带英文正文或 ghstack 清单。
 
 ## 私有数据边界
