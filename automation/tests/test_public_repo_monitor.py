@@ -106,7 +106,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
 
     def test_card_adds_chinese_summary_for_each_event(self):
         blocks = [{
-            "markdown": "**PR #1**",
+            "markdown": "**PR #1**\n\nTitle\n\n@@KIAN_CHINESE_SUMMARY@@\n\n判断依据：性能",
             "summary_key": "pr:1",
             "summary_kind": "pr",
             "title": "Optimize matmul",
@@ -118,6 +118,9 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             rendered = monitor.add_chinese_summaries(blocks)
         self.assertIn("中文摘要", rendered[0])
         self.assertIn("优化 CUDA 矩阵乘性能", rendered[0])
+        self.assertNotIn("@@KIAN_CHINESE_SUMMARY@@", rendered[0])
+        self.assertLess(rendered[0].index("Title"), rendered[0].index("中文摘要"))
+        self.assertLess(rendered[0].index("中文摘要"), rendered[0].index("判断依据"))
 
     def test_bootstrap_builds_baseline_without_notifications(self):
         responses = {

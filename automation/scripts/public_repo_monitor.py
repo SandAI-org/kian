@@ -30,6 +30,7 @@ LEVEL_THRESHOLDS = {
     "balanced": {"pr": 7, "issue": 7},
     "essential": {"pr": None, "issue": None},
 }
+SUMMARY_MARKER = "@@KIAN_CHINESE_SUMMARY@@"
 
 
 def configure(config=None):
@@ -336,7 +337,13 @@ def add_chinese_summaries(blocks):
         summary = summaries.get(block["summary_key"])
         if not summary:
             summary = "中文摘要暂时生成失败，请通过原始标题和链接查看详情。"
-        rendered.append(block["markdown"] + "\n\n📝 **中文摘要：** " + summary)
+        summary_line = "📝 **中文摘要：** " + summary
+        markdown = block["markdown"]
+        if SUMMARY_MARKER in markdown:
+            markdown = markdown.replace(SUMMARY_MARKER, summary_line, 1)
+        else:
+            markdown += "\n\n" + summary_line
+        rendered.append(markdown)
     return rendered
 
 
@@ -354,19 +361,28 @@ def signal_key(kind, number):
 def importance_block(kind, item, score, reasons):
     icon = "🔀" if kind == "pr" else "🐛"
     noun = "PR" if kind == "pr" else "Issue"
+    labels = label_names(item)
     lines = [
         "**{0} 重要{1}早期信号 #{2}** · 评分 {3}".format(icon, noun, item["number"], score),
         "",
+        "📌 **{0}**".format(item.get("title", "")),
+        "",
+        SUMMARY_MARKER,
+        "",
         "判断依据：{0}".format("、".join(reasons) if reasons else "自定义阈值"),
     ]
+    if labels:
+        lines.extend(["", "标签：`{0}`".format("` `".join(labels[:8]))])
     lines.extend(["", "[🔗 查看{0}]({1})".format(noun, item.get("html_url", ""))])
     return "\n".join(lines)
 
 
 def release_block(release):
+    title = release.get("name") or release.get("tag_name") or "未命名版本"
     badge = "（预发布）" if release.get("prerelease") else ""
-    return "**🚀 新版本 {0} {1}**\n\n[🔗 查看 Release]({2})".format(
-        release.get("tag_name", ""), badge, release.get("html_url", "")
+    return "**🚀 新版本 {0} {1}**\n\n📌 **{2}**\n\n{3}\n\n[🔗 查看 Release]({4})".format(
+        release.get("tag_name", ""), badge, title, SUMMARY_MARKER,
+        release.get("html_url", "")
     )
 
 
@@ -384,7 +400,12 @@ def pr_outcome_block(pr, branches, watched_early):
         heading = "**⛔ 已关注的重要 PR 关闭但未合入 #{0}**".format(number)
     else:
         return ""
-    return "{0}\n\n[🔗 查看 PR]({1})".format(heading, pr.get("html_url", ""))
+    labels = label_names(pr)
+    labels_line = "\n\n标签：`{0}`".format("` `".join(labels[:8])) if labels else ""
+    return "{0}\n\n📌 **{1}**\n\n{2}{3}\n\n[🔗 查看 PR]({4})".format(
+        heading, pr.get("title", ""), SUMMARY_MARKER, labels_line,
+        pr.get("html_url", "")
+    )
 
 
 def issue_outcome_block(issue, previous):
@@ -395,8 +416,11 @@ def issue_outcome_block(issue, previous):
     if old_state == new_state:
         return ""
     heading = "✅ 已关注的重要 Issue 已关闭" if new_state == "closed" else "♻️ 已关注的重要 Issue 重新打开"
-    return "**{0} #{1}**\n\n[🔗 查看 Issue]({2})".format(
-        heading, issue["number"], issue.get("html_url", "")
+    labels = label_names(issue)
+    labels_line = "\n\n标签：`{0}`".format("` `".join(labels[:8])) if labels else ""
+    return "**{0} #{1}**\n\n📌 **{2}**\n\n{3}{4}\n\n[🔗 查看 Issue]({5})".format(
+        heading, issue["number"], issue.get("title", ""), SUMMARY_MARKER,
+        labels_line, issue.get("html_url", "")
     )
 
 
