@@ -149,9 +149,15 @@ export const disablePublicPinAction = (card, target) => {
       if (typeof actionValue === 'string') {
         try { actionValue = JSON.parse(actionValue); } catch { actionValue = null; }
       }
-      if (actionValue?.action === 'pin_public_pr'
+      const legacyPr = actionValue?.action === 'pin_public_pr'
+        && target.kind === 'pr'
+        && Number(actionValue.pr) === target.number;
+      const currentItem = actionValue?.action === 'pin_public_item'
+        && actionValue.kind === target.kind
+        && Number(actionValue.number) === target.number;
+      if ((legacyPr || currentItem)
         && String(actionValue.repo || '').toLowerCase() === target.repo.toLowerCase()
-        && Number(actionValue.pr) === target.number) {
+      ) {
         match = value;
         count += 1;
       }

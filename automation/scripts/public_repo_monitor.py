@@ -2,6 +2,7 @@
 """Watch selected public GitHub repositories for high-value events."""
 
 import fcntl
+import hashlib
 import html
 import json
 import os
@@ -221,6 +222,10 @@ def load_pin(repo, number):
         return {}
 
 
+def pin_is_active(pin, kind):
+    return bool(pin.get("active")) and pin.get("kind", "pr") == kind
+
+
 def deactivate_pin(repo, number, outcome):
     current = load_pin(repo, number)
     if not current.get("active"):
@@ -295,8 +300,8 @@ def event_block(markdown, item, kind, identity, repo=""):
         "title": str(item.get("title") or item.get("name") or item.get("tag_name") or ""),
         "body": str(item.get("body") or ""),
     }
-    if kind == "pr" and repo and item.get("state") == "open":
-        block["pin"] = {"repo": repo, "number": int(item["number"])}
+    if kind in ("pr", "issue") and repo and item.get("state") == "open":
+        block["pin"] = {"repo": repo, "number": int(item["number"]), "kind": kind}
     return block
 
 
@@ -485,19 +490,58 @@ def new_pr_commit_messages(repo, number, previous_head):
     return messages, old_index is None
 
 
-def issue_outcome_block(issue, previous):
-    if not previous or not previous.get("notified"):
+def issue_outcome_block(issue, previous, pinned=False):
+    if not previous or not (previous.get("notified") or pinned):
         return ""
     old_state = previous.get("state")
     new_state = issue.get("state")
     if old_state == new_state:
         return ""
     heading = "✅ 已关注的重要 Issue 已关闭" if new_state == "closed" else "♻️ 已关注的重要 Issue 重新打开"
-    labels = label_names(issue)
-    labels_line = "\n\n标签：`{0}`".format("` `".join(labels[:8])) if labels else ""
+    labels = rendered_labels(issue, pinned=pinned)
+    labels_line = "\n\n" + labels if labels else ""
     return "**{0} #{1}**\n\n📌 **{2}**\n\n{3}{4}\n\n[🔗 查看 Issue]({5})".format(
         heading, issue["number"], issue.get("title", ""), SUMMARY_MARKER,
         labels_line, issue.get("html_url", "")
+    )
+
+
+def issue_update_context(repo, issue, previous):
+    details = []
+    previous_comments = int(previous.get("comments", 0) or 0)
+    current_comments = int(issue.get("comments", 0) or 0)
+    new_comment_count = max(0, current_comments - previous_comments)
+    if new_comment_count:
+        comments = github_get(repo, "/issues/{0}/comments".format(issue["number"]), {
+            "since": previous.get("updated_at", ""), "per_page": 100,
+        })
+        for comment in comments if isinstance(comments, list) else []:
+            body = compact_body(comment.get("body", ""), 600)
+            if body:
+                details.append("New comment: " + body)
+    if previous.get("title") and previous.get("title") != issue.get("title", ""):
+        details.append("Title changed to: " + issue.get("title", ""))
+    current_body_digest = hashlib.sha256((issue.get("body", "") or "").encode()).hexdigest()
+    if previous.get("body_digest") and previous.get("body_digest") != current_body_digest:
+        details.append("Issue description updated: " + compact_body(issue.get("body", ""), 800))
+    current_labels = label_names(issue)
+    if "labels" in previous and previous.get("labels") != current_labels:
+        details.append("Labels changed to: " + ", ".join(current_labels))
+    if not details:
+        details.append("Issue discussion or metadata was updated.")
+    return details, new_comment_count
+
+
+def pinned_issue_update_block(issue, new_comment_count):
+    detail = " · {0} 条新评论".format(new_comment_count) if new_comment_count else ""
+    labels = rendered_labels(issue, pinned=True)
+    labels_line = "\n\n" + labels if labels else ""
+    return (
+        "**📌 已关注 Issue 更新 #{0}**{1}\n\n"
+        "📌 **{2}**\n\n{3}{4}\n\n[🔗 查看 Issue]({5})"
+    ).format(
+        issue["number"], detail, issue.get("title", ""), SUMMARY_MARKER,
+        labels_line, issue.get("html_url", ""),
     )
 
 
@@ -509,6 +553,10 @@ def remember_signal(signals, key, item, score, notified=None):
         "state": item.get("state", "open"),
         "updated_at": item.get("updated_at", ""),
         "head_sha": item.get("head", {}).get("sha", "") or old.get("head_sha", ""),
+        "title": item.get("title", ""),
+        "body_digest": hashlib.sha256((item.get("body", "") or "").encode()).hexdigest(),
+        "labels": label_names(item),
+        "comments": int(item.get("comments", 0) or 0),
     }
 
 
@@ -546,7 +594,7 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
         key = signal_key("pr", pr["number"])
         previous = signals.get(key, {})
         pin = load_pin(repo, pr["number"])
-        pinned = bool(pin.get("active"))
+        pinned = pin_is_active(pin, "pr")
         event_time = pr.get("merged_at") or pr.get("closed_at") or ""
         if not bootstrap and event_time > last_check:
             is_excluded, reason = (False, "") if pinned else excluded_event(
@@ -576,7 +624,7 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
         key = signal_key("pr", pr["number"])
         previous = signals.get(key, {})
         pin = load_pin(repo, pr["number"])
-        pinned = bool(pin.get("active"))
+        pinned = pin_is_active(pin, "pr")
         score, reasons = importance(pr, "pr")
         changed = pr.get("updated_at", "") > last_check
         head_sha = pr.get("head", {}).get("sha", "")
@@ -618,15 +666,35 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             continue
         key = signal_key("issue", issue["number"])
         previous = signals.get(key, {})
+        pin = load_pin(repo, issue["number"])
+        pinned = pin_is_active(pin, "issue")
         changed = issue.get("updated_at", "") > last_check
-        outcome = "" if bootstrap or not changed else issue_outcome_block(issue, previous)
+        outcome = "" if bootstrap or not changed else issue_outcome_block(
+            issue, previous, pinned=pinned,
+        )
         if outcome:
-            is_excluded, reason = custom_exclusion(repo_config, issue)
+            is_excluded, reason = (False, "") if pinned else custom_exclusion(repo_config, issue)
             if is_excluded:
                 outcome = ""
                 print("[filter] {0} Issue #{1} excluded by {2}".format(repo, issue["number"], reason))
             else:
-                blocks.append(event_block(outcome, issue, "issue", issue["number"]))
+                event = event_block(outcome, issue, "issue", issue["number"], repo=repo)
+                if pinned and issue.get("state") == "closed":
+                    event["complete_pin"] = {
+                        "repo": repo, "number": issue["number"], "outcome": "closed",
+                    }
+                blocks.append(event)
+        if (
+            not bootstrap and pinned and changed and issue.get("state") == "open"
+            and previous.get("updated_at") and previous.get("state") == "open"
+        ):
+            details, new_comment_count = issue_update_context(repo, issue, previous)
+            summary_item = dict(issue)
+            summary_item["body"] = "\n".join(details)
+            blocks.append(event_block(
+                pinned_issue_update_block(issue, new_comment_count), summary_item,
+                "issue", issue["number"], repo=repo,
+            ))
         score, reasons = importance(issue, "issue")
         should_notify = (
             not bootstrap and changed and issue.get("state") == "open"
@@ -640,7 +708,8 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
                 print("[filter] {0} Issue #{1} excluded by {2}".format(repo, issue["number"], reason))
             else:
                 blocks.append(event_block(
-                    importance_block("issue", issue, score, reasons), issue, "issue", issue["number"]
+                    importance_block("issue", issue, score, reasons), issue, "issue", issue["number"],
+                    repo=repo,
                 ))
         remember_signal(
             signals, key, issue, score,
@@ -673,8 +742,8 @@ def pin_actions(blocks):
         pin = block.get("pin")
         if not pin:
             continue
-        identity = (pin["repo"], pin["number"])
-        if identity in seen or load_pin(*identity).get("active"):
+        identity = (pin["repo"], pin["number"], pin["kind"])
+        if identity in seen or pin_is_active(load_pin(pin["repo"], pin["number"]), pin["kind"]):
             continue
         seen.add(identity)
         actions.append({
@@ -682,9 +751,10 @@ def pin_actions(blocks):
             "type": "primary",
             "text": {"tag": "plain_text", "content": "📌 持续关注 #{0}".format(pin["number"])},
             "value": {
-                "action": "pin_public_pr",
+                "action": "pin_public_item",
                 "repo": pin["repo"],
-                "pr": pin["number"],
+                "number": pin["number"],
+                "kind": pin["kind"],
             },
         })
     return actions

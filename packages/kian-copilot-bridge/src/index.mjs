@@ -214,12 +214,14 @@ const parsePublicPinAction = (data) => {
   if (typeof value === 'string') {
     try { value = JSON.parse(value); } catch { return null; }
   }
-  if (!value || value.action !== 'pin_public_pr') return null;
+  if (!value || !['pin_public_pr', 'pin_public_item'].includes(value.action)) return null;
   const repo = typeof value.repo === 'string' ? value.repo.trim() : '';
-  const number = Number(value.pr);
+  const kind = value.action === 'pin_public_pr' ? 'pr' : value.kind;
+  const number = Number(value.action === 'pin_public_pr' ? value.pr : value.number);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)
+    || !['pr', 'issue'].includes(kind)
     || !Number.isSafeInteger(number) || number <= 0) return null;
-  return { repo, number };
+  return { repo, number, kind };
 };
 
 const pruneRecentCommands = () => {
@@ -339,7 +341,7 @@ const acknowledgeReminder = async ({
   log('acknowledged reminder', reminderId, occurrence);
 };
 
-const pinPublicPr = async ({ appId, appSecret, messageId, repo, number, userId }) => {
+const pinPublicItem = async ({ appId, appSecret, messageId, repo, number, kind, userId }) => {
   const [owner, name] = repo.split('/');
   const pinDir = path.join(publicWatchPinsDir, owner, name);
   const pinStatePath = path.join(pinDir, `${number}.json`);
@@ -348,6 +350,7 @@ const pinPublicPr = async ({ appId, appSecret, messageId, repo, number, userId }
     active: true,
     repo,
     number,
+    kind,
     pinned_at: new Date().toISOString(),
     pinned_by: userId,
   };
@@ -358,17 +361,17 @@ const pinPublicPr = async ({ appId, appSecret, messageId, repo, number, userId }
   if (messageId) {
     try {
       const originalCard = await readInteractiveCard({ appId, appSecret, messageId });
-      const result = disablePublicPinAction(originalCard, { repo, number });
+      const result = disablePublicPinAction(originalCard, { repo, number, kind });
       if (result.changed) {
         await updateInteractiveCard({ appId, appSecret, messageId, card: result.card });
       } else {
-        log('cannot disable public PR pin action: unique matching button not found', repo, number);
+        log('cannot disable public item pin action: unique matching button not found', repo, number, kind);
       }
     } catch (cause) {
-      error('pinned public PR but failed to update its source card', repo, number, cause);
+      error('pinned public item but failed to update its source card', repo, number, kind, cause);
     }
   }
-  log('pinned public PR', repo, number);
+  log('pinned public item', repo, number, kind);
 };
 
 const main = async () => {
@@ -544,17 +547,18 @@ const main = async () => {
       if (publicPinAction) {
         if (!userId) return { toast: { type: 'error', content: '无法识别操作用户' } };
         if (allowedUsers.size && !allowedUsers.has(userId)) {
-          return { toast: { type: 'error', content: '当前用户无权关注此 PR' } };
+          return { toast: { type: 'error', content: '当前用户无权关注此项目' } };
         }
-        const eventKey = `public-pin:${messageId}:${userId}:${publicPinAction.repo}:${publicPinAction.number}`;
+        const eventKey = `public-pin:${messageId}:${userId}:${publicPinAction.repo}:${publicPinAction.kind}:${publicPinAction.number}`;
         if (!markSeen(eventKey)) {
-          return { toast: { type: 'info', content: '该 PR 已经在持续关注' } };
+          return { toast: { type: 'info', content: '该项目已经在持续关注' } };
         }
         try {
-          await pinPublicPr({ appId, appSecret, messageId, userId, ...publicPinAction });
-          return { toast: { type: 'success', content: `已持续关注 ${publicPinAction.repo}#${publicPinAction.number}` } };
+          await pinPublicItem({ appId, appSecret, messageId, userId, ...publicPinAction });
+          const noun = publicPinAction.kind === 'pr' ? 'PR' : 'Issue';
+          return { toast: { type: 'success', content: `已持续关注 ${noun} ${publicPinAction.repo}#${publicPinAction.number}` } };
         } catch (cause) {
-          error('failed to pin public PR', publicPinAction.repo, publicPinAction.number, cause);
+          error('failed to pin public item', publicPinAction.repo, publicPinAction.number, cause);
           return { toast: { type: 'error', content: '关注失败，请稍后重试' } };
         }
       }

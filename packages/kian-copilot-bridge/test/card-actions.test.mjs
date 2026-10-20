@@ -256,7 +256,7 @@ test('disables and relabels a public PR pin button', () => {
       }],
     }],
   };
-  const result = disablePublicPinAction(pinCard, { repo: 'pytorch/pytorch', number: 123 });
+  const result = disablePublicPinAction(pinCard, { repo: 'pytorch/pytorch', number: 123, kind: 'pr' });
   assert.equal(result.changed, true);
   assert.equal(result.card.elements[0].actions[0].disabled, true);
   assert.equal(result.card.elements[0].actions[0].type, 'default');
@@ -272,6 +272,28 @@ test('does not disable another public PR pin button', () => {
       value: JSON.stringify({ action: 'pin_public_pr', repo: 'pytorch/pytorch', pr: 124 }),
     }]],
   };
-  const result = disablePublicPinAction(pinCard, { repo: 'pytorch/pytorch', number: 123 });
+  const result = disablePublicPinAction(pinCard, { repo: 'pytorch/pytorch', number: 123, kind: 'pr' });
   assert.equal(result.changed, false);
+});
+
+test('disables and relabels a public Issue pin button', () => {
+  const pinCard = {
+    elements: [{
+      tag: 'action',
+      actions: [{
+        tag: 'button',
+        type: 'primary',
+        text: { tag: 'plain_text', content: '📌 持续关注 #321' },
+        value: {
+          action: 'pin_public_item', repo: 'pytorch/pytorch', number: 321, kind: 'issue',
+        },
+      }],
+    }],
+  };
+  const result = disablePublicPinAction(pinCard, {
+    repo: 'PyTorch/PyTorch', number: 321, kind: 'issue',
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.card.elements[0].actions[0].disabled, true);
+  assert.equal(result.card.elements[0].actions[0].text.content, '已关注 #321 ✓');
 });

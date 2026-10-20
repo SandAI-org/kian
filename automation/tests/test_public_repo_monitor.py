@@ -127,11 +127,25 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         block = monitor.event_block("body", {
             "number": 123, "state": "open", "title": "Important change",
         }, "pr", 123, repo="owner/repo")
-        self.assertEqual(block["pin"], {"repo": "owner/repo", "number": 123})
+        self.assertEqual(block["pin"], {
+            "repo": "owner/repo", "number": 123, "kind": "pr",
+        })
         with patch.object(monitor, "load_pin", return_value={}):
             actions = monitor.pin_actions([block, block])
         self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0]["value"]["action"], "pin_public_pr")
+        self.assertEqual(actions[0]["value"]["action"], "pin_public_item")
+        self.assertEqual(actions[0]["value"]["kind"], "pr")
+
+    def test_open_issue_event_exposes_pin_action(self):
+        block = monitor.event_block("body", {
+            "number": 321, "state": "open", "title": "Important bug",
+        }, "issue", 321, repo="owner/repo")
+        self.assertEqual(block["pin"], {
+            "repo": "owner/repo", "number": 321, "kind": "issue",
+        })
+        with patch.object(monitor, "load_pin", return_value={}):
+            actions = monitor.pin_actions([block])
+        self.assertEqual(actions[0]["value"]["kind"], "issue")
 
     def test_pinned_update_and_outcome_show_synthetic_label(self):
         pr = {
@@ -207,6 +221,46 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertIn("已关注 PR 更新", blocks[0]["markdown"])
         self.assertIn("标签：`pinned`", blocks[0]["markdown"])
         self.assertEqual(state["signals"]["pr:123"]["head_sha"], "new")
+
+    def test_pinned_issue_comment_creates_follow_up_even_below_threshold(self):
+        issue = {
+            "number": 321, "title": "Routine issue", "body": "Initial report",
+            "labels": [], "comments": 2, "state": "open",
+            "updated_at": "2026-10-20T01:00:00Z", "html_url": "https://example/issue/321",
+        }
+        responses = {
+            "": {"default_branch": "main"}, "/releases": [],
+            "/pulls:closed": [], "/pulls:open": [], "/issues": [issue],
+            "/issues/321/comments": [{"body": "I reproduced this on H100."}],
+        }
+
+        def fake_get(_repo, path, params=None):
+            if path == "/pulls":
+                return responses["/pulls:" + params["state"]]
+            return responses[path]
+
+        prior = {
+            "last_check": "2026-10-20T00:00:00Z",
+            "signals": {"issue:321": {
+                "notified": True, "state": "open", "comments": 1,
+                "title": "Routine issue", "labels": [],
+                "body_digest": monitor.hashlib.sha256(b"Initial report").hexdigest(),
+                "updated_at": "2026-10-19T00:00:00Z",
+            }},
+        }
+        with patch.object(monitor, "github_get", side_effect=fake_get), patch.object(
+            monitor, "load_pin", return_value={"active": True, "kind": "issue"},
+        ):
+            blocks, state = monitor.collect_repo(
+                {"repo": "owner/repo", "level": "essential"}, prior,
+                "2026-10-20T02:00:00Z",
+            )
+        self.assertEqual(len(blocks), 1)
+        self.assertIn("已关注 Issue 更新", blocks[0]["markdown"])
+        self.assertIn("1 条新评论", blocks[0]["markdown"])
+        self.assertIn("标签：`pinned`", blocks[0]["markdown"])
+        self.assertIn("reproduced", blocks[0]["body"])
+        self.assertEqual(state["signals"]["issue:321"]["comments"], 2)
 
     def test_bootstrap_builds_baseline_without_notifications(self):
         responses = {
