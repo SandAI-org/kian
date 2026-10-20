@@ -124,7 +124,9 @@ render() {
   elif [[ "$service" == "reminders" ]]; then
     /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.reminders.poll_interval_seconds 60)" "$output"
   elif [[ "$service" == "public_watch" ]]; then
-    /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.public_watch.interval_seconds 1800)" "$output"
+    /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.public_watch.interval_seconds 3600)" "$output"
+    /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Hour $(read_config services.public_watch.flush_hour 10)" "$output"
+    /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Minute $(read_config services.public_watch.flush_minute 30)" "$output"
   fi
   chmod 600 "$output"
   plutil -lint "$output" >/dev/null

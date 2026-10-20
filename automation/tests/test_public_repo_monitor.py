@@ -1,8 +1,9 @@
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -180,6 +181,118 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         ))
         self.assertNotIn("`detailed`", rendered)
         self.assertNotIn("监控级别", rendered)
+
+    def test_beijing_quiet_hours_end_at_1030(self):
+        settings = {
+            "quiet_hours": {
+                "enabled": True,
+                "timezone": "Asia/Shanghai",
+                "start": "00:00",
+                "end": "10:30",
+            },
+        }
+        with patch.object(monitor, "WATCH", settings):
+            self.assertFalse(monitor.in_quiet_hours(
+                datetime(2026, 10, 20, 15, 59, tzinfo=timezone.utc)
+            ))
+            self.assertTrue(monitor.in_quiet_hours(
+                datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc)
+            ))
+            self.assertTrue(monitor.in_quiet_hours(
+                datetime(2026, 10, 21, 2, 29, tzinfo=timezone.utc)
+            ))
+            self.assertFalse(monitor.in_quiet_hours(
+                datetime(2026, 10, 21, 2, 30, tzinfo=timezone.utc)
+            ))
+
+    def test_notification_batch_merges_repeated_repository_sections(self):
+        groups = [
+            {
+                "repo": "owner/one", "level": "balanced",
+                "integration_branches": ["main"],
+                "events": [{"markdown": "first"}],
+            },
+            {
+                "repo": "owner/two", "level": "detailed",
+                "integration_branches": ["dev"],
+                "events": [{"markdown": "second"}],
+            },
+            {
+                "repo": "owner/one", "level": "balanced",
+                "integration_branches": ["main"],
+                "events": [{"markdown": "third"}],
+            },
+        ]
+        rendered = monitor.render_notification_batch(groups)
+        self.assertEqual(rendered.count("📦 **owner/one**"), 1)
+        self.assertEqual(rendered.count("📦 **owner/two**"), 1)
+        self.assertLess(rendered.index("first"), rendered.index("third"))
+        self.assertEqual(len(monitor.pending_events(groups)), 3)
+
+    def test_quiet_run_persists_events_without_sending(self):
+        state = {"repos": {"owner/repo": {"last_check": "old"}}}
+        block = {
+            "markdown": "event", "summary_key": "pr:1", "summary_kind": "pr",
+            "title": "Change", "body": "Details",
+        }
+        next_state = {"last_check": "new", "integration_branches": ["main"]}
+        sender = MagicMock()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            monitor, "LOCK_FILE", Path(directory) / "watch.lock",
+        ), patch.object(monitor, "configure"), patch.object(
+            monitor, "WATCH", {"repositories": [{"repo": "owner/repo"}]},
+        ), patch.object(monitor, "load_state", return_value=state), patch.object(
+            monitor, "save_state",
+        ), patch.object(
+            monitor, "collect_repo", return_value=([block], next_state),
+        ), patch.object(
+            monitor, "add_chinese_summaries", return_value=["rendered event"],
+        ), patch.object(monitor, "in_quiet_hours", return_value=True), patch.object(
+            monitor, "send_card", sender,
+        ):
+            monitor.run()
+        sender.assert_not_called()
+        self.assertEqual(len(state["pending_notifications"]), 1)
+        self.assertEqual(
+            state["pending_notifications"][0]["events"][0]["markdown"],
+            "rendered event",
+        )
+
+    def test_daytime_run_sends_multiple_repositories_in_one_card(self):
+        repositories = [{"repo": "owner/one"}, {"repo": "owner/two"}]
+        state = {"repos": {
+            "owner/one": {"last_check": "old"},
+            "owner/two": {"last_check": "old"},
+        }}
+
+        def collect(config, _previous, _capture_time, _bootstrap):
+            repo = config["repo"]
+            return ([{
+                "markdown": repo, "summary_key": repo, "summary_kind": "issue",
+                "title": repo, "body": "Details",
+            }], {"last_check": "new", "integration_branches": ["main"]})
+
+        sender = MagicMock()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            monitor, "LOCK_FILE", Path(directory) / "watch.lock",
+        ), patch.object(monitor, "configure"), patch.object(
+            monitor, "WATCH", {"repositories": repositories},
+        ), patch.object(monitor, "load_state", return_value=state), patch.object(
+            monitor, "save_state",
+        ), patch.object(monitor, "collect_repo", side_effect=collect), patch.object(
+            monitor, "add_chinese_summaries", side_effect=lambda blocks: [
+                block["markdown"] for block in blocks
+            ],
+        ), patch.object(monitor, "in_quiet_hours", return_value=False), patch.object(
+            monitor, "send_card", sender,
+        ):
+            monitor.run()
+        sender.assert_called_once()
+        title, body = sender.call_args.args[:2]
+        self.assertIn("2 个仓库 / 2 项", title)
+        self.assertIn("owner/one", body)
+        self.assertIn("owner/two", body)
+        self.assertEqual(state["pending_notifications"], [])
 
     def test_pinned_update_and_outcome_show_synthetic_label(self):
         pr = {

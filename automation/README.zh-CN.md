@@ -14,6 +14,8 @@
 
 每条仍处于 open 状态的 PR 或 Issue 推送都带有“持续关注”按钮。只有用户主动点击后，PR 的后续 head commit 变化（包括 rebase / force-push），以及 Issue 的新增评论、标题、正文或标签变化才会再次推送；这些卡片的标签会加入合成的 `pinned` 标识。PR 合入/关闭或 Issue 关闭时会发送最终结果并自动结束关注。Pin 状态独立保存在 `state/public-watch-pins/<owner>/<repo>/<number>.json`，因此不会与主监控检查点竞争写入；主动 pin 也会覆盖单库等级与噪声过滤规则。
 
+公共仓库监控支持持久化合并投递。北京时间 `00:00–10:29` 发现的事件只写入 `state/public-watch-state.json` 的待发送队列，并由每天 `10:30` 的精确调度统一发送；发送失败时保留队列供下次重试。白天每轮扫描产生的多个仓库事件也会合并成一张飞书卡片，同一仓库的多批事件归入同一个分区，减少连续弹窗。默认轮询间隔为一小时。
+
 单库 `exclude` 支持 `title_patterns`、`body_patterns`、兼容旧配置的 `text_patterns`、`label_patterns` 和 `path_patterns` 正则表达式。标题和正文规则相互独立，可避免正文仅在兼容性说明中提到某后端时误杀整个 PR。路径规则默认 `path_match: "all"`，即 PR 的全部改动文件都属于排除路径时才过滤，避免一个同时修改核心代码和特定后端的 PR 被误杀；设为 `any` 可采用更激进的过滤。自定义过滤同时作用于早期信号和主开发分支合入，但不影响 Release。PR 卡片按 title、中文摘要、合并后的英文 Signals、原文链接的顺序展示，不重复附带英文正文或 ghstack 清单。
 
 ## 私有数据边界

@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from automation_common import STATE_DIR, load_config
 
@@ -70,6 +71,25 @@ LABEL_SIGNALS = (
 
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def clock_minutes(value):
+    hour, minute = str(value).split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def in_quiet_hours(at=None):
+    settings = WATCH.get("quiet_hours", {})
+    if not settings.get("enabled", False):
+        return False
+    zone = ZoneInfo(str(settings.get("timezone", "Asia/Shanghai")))
+    current = at.astimezone(zone) if at else datetime.now(zone)
+    minute = current.hour * 60 + current.minute
+    start = clock_minutes(settings.get("start", "00:00"))
+    end = clock_minutes(settings.get("end", "10:30"))
+    if start <= end:
+        return start <= minute < end
+    return minute >= start or minute < end
 
 
 def load_state():
@@ -732,14 +752,59 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
     }
 
 
-def render_card(repo_config, repo_state, blocks):
-    branches = " / ".join(repo_state.get("integration_branches", []))
-    level = str(repo_config.get("level", "balanced")).capitalize()
-    intro = "📦 **{0}** · Watch level: {1} · Integration: {2}".format(
-        repo_config["repo"], level, branches,
+def repo_intro(repo, level, branches):
+    return "📦 **{0}** · Watch level: {1} · Integration: {2}".format(
+        repo, str(level).capitalize(), " / ".join(branches),
     )
-    rendered_blocks = add_chinese_summaries(blocks)
-    return intro + "\n\n---\n\n" + "\n\n---\n\n".join(rendered_blocks)
+
+
+def prepare_notification_group(repo_config, repo_state, blocks):
+    rendered = add_chinese_summaries(blocks)
+    events = []
+    for block, markdown in zip(blocks, rendered):
+        event = {"markdown": markdown}
+        for key in ("pin", "complete_pin"):
+            if key in block:
+                event[key] = block[key]
+        events.append(event)
+    return {
+        "repo": repo_config["repo"],
+        "level": repo_config.get("level", "balanced"),
+        "integration_branches": repo_state.get("integration_branches", []),
+        "events": events,
+    }
+
+
+def render_notification_batch(groups):
+    combined = {}
+    for group in groups:
+        repo = group["repo"]
+        if repo not in combined:
+            combined[repo] = {
+                "repo": repo,
+                "level": group.get("level", "balanced"),
+                "integration_branches": group.get("integration_branches", []),
+                "events": [],
+            }
+        combined[repo]["events"].extend(group.get("events", []))
+    sections = []
+    for group in combined.values():
+        intro = repo_intro(
+            group["repo"], group["level"], group.get("integration_branches", []),
+        )
+        markdown = "\n\n---\n\n".join(event["markdown"] for event in group["events"])
+        sections.append(intro + "\n\n" + markdown)
+    return "\n\n---\n\n".join(sections)
+
+
+def render_card(repo_config, repo_state, blocks):
+    return render_notification_batch([
+        prepare_notification_group(repo_config, repo_state, blocks),
+    ])
+
+
+def pending_events(groups):
+    return [event for group in groups for event in group.get("events", [])]
 
 
 def pin_actions(blocks):
@@ -782,9 +847,11 @@ def run():
             return
         state = load_state()
         repo_states = state.setdefault("repos", {})
+        pending = state.setdefault("pending_notifications", [])
         capture_time = now_iso()
         bootstrapped = 0
-        pushed = 0
+        queued = 0
+        delivered = 0
         failures = 0
         for repo_config in repositories:
             repo = repo_config["repo"]
@@ -795,25 +862,38 @@ def run():
                 if bootstrap:
                     bootstrapped += 1
                 elif blocks:
-                    send_card(
-                        "🌐 Public 仓库重要更新",
-                        render_card(repo_config, next_state, blocks),
-                        template="purple",
-                        actions=pin_actions(blocks),
-                    )
-                    for block in blocks:
-                        completion = block.get("complete_pin")
-                        if completion:
-                            deactivate_pin(
-                                completion["repo"], completion["number"], completion["outcome"],
-                            )
-                    pushed += len(blocks)
+                    pending.append(prepare_notification_group(repo_config, next_state, blocks))
+                    queued += len(blocks)
                 repo_states[repo] = next_state
                 save_state(state)
             except Exception as cause:
                 failures += 1
                 print("[error] {0}: {1}".format(repo, cause), file=sys.stderr)
-        print("DONE bootstrapped={0} pushed={1} failures={2}".format(bootstrapped, pushed, failures))
+        if pending and not in_quiet_hours():
+            events = pending_events(pending)
+            repositories_count = len({group["repo"] for group in pending})
+            send_card(
+                "🌐 Public 仓库重要更新 · {0} 个仓库 / {1} 项".format(
+                    repositories_count, len(events),
+                ),
+                render_notification_batch(pending),
+                template="purple",
+                actions=pin_actions(events),
+            )
+            for event in events:
+                completion = event.get("complete_pin")
+                if completion:
+                    deactivate_pin(
+                        completion["repo"], completion["number"], completion["outcome"],
+                    )
+            delivered = len(events)
+            pending.clear()
+            save_state(state)
+        print(
+            "DONE bootstrapped={0} queued={1} delivered={2} pending={3} failures={4}".format(
+                bootstrapped, queued, delivered, len(pending_events(pending)), failures,
+            )
+        )
         if failures:
             raise SystemExit(1)
 
