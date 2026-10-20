@@ -50,21 +50,21 @@ def send_card(title, body, template, actions=None):
     return send(title, body, actions=actions, template=template)
 
 SEMANTIC_SIGNALS = (
-    ("安全", 8, r"\bsecurity\b|vulnerab|\bcve[- ]|remote code|privilege escalat"),
-    ("正确性/回归", 5, r"regression|data corruption|wrong result|incorrect|silent error|race condition|deadlock|hang\b|crash\b"),
-    ("破坏性/API 变化", 5, r"breaking change|backward incompat|api change|deprecat|remove[sd]? api|abi change"),
-    ("性能关键", 4, r"performance|speedup|throughput|latency|memory usage|out of memory|\boom\b|optimi[sz]"),
-    ("核心能力/硬件支持", 3, r"blackwell|sm100|hopper|cuda 1[3-9]|fp8|fp4|distributed|collective|compiler|kernel"),
-    ("重要修复/功能", 1, r"\bfix(?:es|ed)?\b|bugfix|new feature|support for|implement"),
+    ("Security", 8, r"\bsecurity\b|vulnerab|\bcve[- ]|remote code|privilege escalat"),
+    ("Correctness / regression", 5, r"regression|data corruption|wrong result|incorrect|silent error|race condition|deadlock|hang\b|crash\b"),
+    ("Breaking / API change", 5, r"breaking change|backward incompat|api change|deprecat|remove[sd]? api|abi change"),
+    ("Performance", 4, r"performance|speedup|throughput|latency|memory usage|out of memory|\boom\b|optimi[sz]"),
+    ("Core capability / hardware", 3, r"blackwell|sm100|hopper|cuda 1[3-9]|fp8|fp4|distributed|collective|compiler|kernel"),
+    ("Important fix / feature", 1, r"\bfix(?:es|ed)?\b|bugfix|new feature|support for|implement"),
 )
 
 LABEL_SIGNALS = (
-    ("security", 8, r"security|vulnerab|cve"),
-    ("regression/correctness", 5, r"regression|correctness|data.?loss|critical"),
-    ("performance", 4, r"performance|perf|optimization|memory"),
-    ("bug", 3, r"(^|[^a-z])bug([^a-z]|$)|crash|hang"),
-    ("API", 3, r"api|breaking|deprecat"),
-    ("feature", 1, r"feature|enhancement"),
+    ("Security", 8, r"security|vulnerab|cve"),
+    ("Regression / correctness", 5, r"regression|correctness|data.?loss|critical"),
+    ("Performance", 4, r"performance|perf|optimization|memory"),
+    ("Bug / crash", 3, r"(^|[^a-z])bug([^a-z]|$)|crash|hang"),
+    ("API change", 3, r"api|breaking|deprecat"),
+    ("Feature", 1, r"feature|enhancement"),
 )
 
 
@@ -160,32 +160,32 @@ def importance(item, kind):
     for reason, points, pattern in LABEL_SIGNALS:
         if re.search(pattern, labels_text, re.I):
             score += points
-            reasons.append("标签:" + reason)
+            reasons.append(reason)
     association = str(item.get("author_association", "")).upper()
     if association in ("OWNER", "MEMBER", "COLLABORATOR"):
         score += 2
-        reasons.append("维护者提交")
+        reasons.append("Maintainer-authored")
     comments = int(item.get("comments", 0) or 0)
     reactions = item.get("reactions", {}) or {}
     reaction_count = int(reactions.get("total_count", 0) or 0)
     if comments >= 25:
         score += 4
-        reasons.append("高讨论度")
+        reasons.append("High discussion")
     elif comments >= 10:
         score += 3
-        reasons.append("较高讨论度")
+        reasons.append("Active discussion")
     elif comments >= 5:
         score += 1
-        reasons.append("已有讨论")
+        reasons.append("Some discussion")
     if reaction_count >= 20:
         score += 3
-        reasons.append("高关注度")
+        reasons.append("High engagement")
     elif reaction_count >= 5:
         score += 1
-        reasons.append("已有关注")
+        reasons.append("Some engagement")
     if kind == "pr" and item.get("draft"):
         score -= 2
-        reasons.append("草稿降权")
+        reasons.append("Draft penalty")
     return max(0, score), list(dict.fromkeys(reasons))
 
 
@@ -397,7 +397,6 @@ def signal_key(kind, number):
 def importance_block(kind, item, score, reasons):
     icon = "🔀" if kind == "pr" else "🐛"
     noun = "PR" if kind == "pr" else "Issue"
-    labels = label_names(item)
     lines = [
         "**{0} 重要{1}早期信号 #{2}** · 评分 {3}".format(icon, noun, item["number"], score),
         "",
@@ -405,10 +404,8 @@ def importance_block(kind, item, score, reasons):
         "",
         SUMMARY_MARKER,
         "",
-        "判断依据：{0}".format("、".join(reasons) if reasons else "自定义阈值"),
+        rendered_signals(item, reasons or ["Custom threshold"]),
     ]
-    if labels:
-        lines.extend(["", "标签：`{0}`".format("` `".join(labels[:8]))])
     lines.extend(["", "[🔗 查看{0}]({1})".format(noun, item.get("html_url", ""))])
     return "\n".join(lines)
 
@@ -422,11 +419,21 @@ def release_block(release):
     )
 
 
-def rendered_labels(item, pinned=False):
-    labels = label_names(item)
-    if pinned and "pinned" not in [label.lower() for label in labels]:
-        labels.insert(0, "pinned")
-    return "标签：`{0}`".format("` `".join(labels[:8])) if labels else ""
+def rendered_signals(item, reasons=None, pinned=False, limit=8):
+    values = (["pinned"] if pinned else []) + list(reasons or []) + label_names(item)
+    unique = []
+    seen = set()
+    for value in values:
+        normalized = value.strip().lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique.append(value.strip())
+    if not unique:
+        return ""
+    visible = unique[:limit]
+    if len(unique) > limit:
+        visible.append("+{0} more".format(len(unique) - limit))
+    return "🏷️ **Signals:** " + " · ".join(visible)
 
 
 def pr_outcome_block(pr, branches, watched_early, pinned=False):
@@ -443,7 +450,7 @@ def pr_outcome_block(pr, branches, watched_early, pinned=False):
         heading = "**⛔ 已关注的重要 PR 关闭但未合入 #{0}**".format(number)
     else:
         return ""
-    labels = rendered_labels(pr, pinned=pinned)
+    labels = rendered_signals(pr, pinned=pinned)
     labels_line = "\n\n" + labels if labels else ""
     return "{0}\n\n📌 **{1}**\n\n{2}{3}\n\n[🔗 查看 PR]({4})".format(
         heading, pr.get("title", ""), SUMMARY_MARKER, labels_line,
@@ -453,7 +460,7 @@ def pr_outcome_block(pr, branches, watched_early, pinned=False):
 
 def pinned_update_block(pr, commit_messages, force_pushed=False):
     detail = "（可能包含 rebase / force-push）" if force_pushed else ""
-    labels = rendered_labels(pr, pinned=True)
+    labels = rendered_signals(pr, pinned=True)
     labels_line = "\n\n" + labels if labels else ""
     return (
         "**📌 已关注 PR 更新 #{0}** · {1} 条新 commit {2}\n\n"
@@ -498,7 +505,7 @@ def issue_outcome_block(issue, previous, pinned=False):
     if old_state == new_state:
         return ""
     heading = "✅ 已关注的重要 Issue 已关闭" if new_state == "closed" else "♻️ 已关注的重要 Issue 重新打开"
-    labels = rendered_labels(issue, pinned=pinned)
+    labels = rendered_signals(issue, pinned=pinned)
     labels_line = "\n\n" + labels if labels else ""
     return "**{0} #{1}**\n\n📌 **{2}**\n\n{3}{4}\n\n[🔗 查看 Issue]({5})".format(
         heading, issue["number"], issue.get("title", ""), SUMMARY_MARKER,
@@ -534,7 +541,7 @@ def issue_update_context(repo, issue, previous):
 
 def pinned_issue_update_block(issue, new_comment_count):
     detail = " · {0} 条新评论".format(new_comment_count) if new_comment_count else ""
-    labels = rendered_labels(issue, pinned=True)
+    labels = rendered_signals(issue, pinned=True)
     labels_line = "\n\n" + labels if labels else ""
     return (
         "**📌 已关注 Issue 更新 #{0}**{1}\n\n"

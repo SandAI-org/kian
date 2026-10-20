@@ -19,7 +19,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             "labels": [],
         }, "issue")
         self.assertGreaterEqual(score, 8)
-        self.assertIn("安全", reasons)
+        self.assertIn("Security", reasons)
 
     def test_draft_pr_is_penalized(self):
         base = {
@@ -107,7 +107,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
 
     def test_card_adds_chinese_summary_for_each_event(self):
         blocks = [{
-            "markdown": "**PR #1**\n\nTitle\n\n@@KIAN_CHINESE_SUMMARY@@\n\n判断依据：性能",
+            "markdown": "**PR #1**\n\nTitle\n\n@@KIAN_CHINESE_SUMMARY@@\n\n🏷️ **Signals:** Performance",
             "summary_key": "pr:1",
             "summary_kind": "pr",
             "title": "Optimize matmul",
@@ -121,7 +121,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertIn("优化 CUDA 矩阵乘性能", rendered[0])
         self.assertNotIn("@@KIAN_CHINESE_SUMMARY@@", rendered[0])
         self.assertLess(rendered[0].index("Title"), rendered[0].index("中文摘要"))
-        self.assertLess(rendered[0].index("中文摘要"), rendered[0].index("判断依据"))
+        self.assertLess(rendered[0].index("中文摘要"), rendered[0].index("Signals"))
 
     def test_open_pr_event_exposes_pin_action(self):
         block = monitor.event_block("body", {
@@ -147,14 +147,29 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             actions = monitor.pin_actions([block])
         self.assertEqual(actions[0]["value"]["kind"], "issue")
 
+    def test_signals_merge_reasons_and_labels_without_inline_code(self):
+        line = monitor.rendered_signals({
+            "labels": [
+                {"name": "needs reproduction"}, {"name": "module: crash"},
+                {"name": "module: cuda"}, {"name": "triaged"},
+            ],
+        }, ["Correctness / regression", "Bug / crash"], pinned=True)
+        self.assertEqual(
+            line,
+            "🏷️ **Signals:** pinned · Correctness / regression · Bug / crash · "
+            "needs reproduction · module: crash · module: cuda · triaged",
+        )
+        self.assertNotIn("`", line)
+        self.assertNotIn("标签", line)
+
     def test_pinned_update_and_outcome_show_synthetic_label(self):
         pr = {
             "number": 123, "title": "Important change", "labels": [],
             "html_url": "https://example/pr/123", "base": {"ref": "main"},
             "merged_at": "2026-10-20T01:00:00Z",
         }
-        self.assertIn("标签：`pinned`", monitor.pinned_update_block(pr, ["new commit"]))
-        self.assertIn("标签：`pinned`", monitor.pr_outcome_block(
+        self.assertIn("🏷️ **Signals:** pinned", monitor.pinned_update_block(pr, ["new commit"]))
+        self.assertIn("🏷️ **Signals:** pinned", monitor.pr_outcome_block(
             pr, ["main"], watched_early=True, pinned=True,
         ))
 
@@ -219,7 +234,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             )
         self.assertEqual(len(blocks), 1)
         self.assertIn("已关注 PR 更新", blocks[0]["markdown"])
-        self.assertIn("标签：`pinned`", blocks[0]["markdown"])
+        self.assertIn("🏷️ **Signals:** pinned", blocks[0]["markdown"])
         self.assertEqual(state["signals"]["pr:123"]["head_sha"], "new")
 
     def test_pinned_issue_comment_creates_follow_up_even_below_threshold(self):
@@ -258,7 +273,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertIn("已关注 Issue 更新", blocks[0]["markdown"])
         self.assertIn("1 条新评论", blocks[0]["markdown"])
-        self.assertIn("标签：`pinned`", blocks[0]["markdown"])
+        self.assertIn("🏷️ **Signals:** pinned", blocks[0]["markdown"])
         self.assertIn("reproduced", blocks[0]["body"])
         self.assertEqual(state["signals"]["issue:321"]["comments"], 2)
 
