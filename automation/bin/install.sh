@@ -17,6 +17,7 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 PYTHON_BIN="$(command -v python3 || true)"
 NODE_BIN="$(command -v node || true)"
+RUNTIME_PATH="$(dirname "$NODE_BIN"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 [[ -n "$PYTHON_BIN" ]] || { echo "ERROR: python3 is required" >&2; exit 1; }
 [[ -n "$NODE_BIN" ]] || { echo "ERROR: node is required" >&2; exit 1; }
@@ -109,6 +110,7 @@ render() {
     -e "s|__RUNTIME_ROOT__|$RUNTIME_ROOT|g" \
     -e "s|__PYTHON__|$PYTHON_BIN|g" \
     -e "s|__NODE__|$NODE_BIN|g" \
+    -e "s|__PATH__|$RUNTIME_PATH|g" \
     "$template" > "$output"
   if [[ "$service" == "realtime" ]]; then
     /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.realtime.interval_seconds 300)" "$output"
