@@ -65,6 +65,47 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         }, ["main"], watched_early=False)
         self.assertEqual(block, "")
 
+    def test_custom_text_filter_excludes_amd_and_xpu_work(self):
+        config = {
+            "exclude": {
+                "text_patterns": [r"\b(?:amd|rocm|hip|xpu)\b"],
+            },
+        }
+        excluded, reason = monitor.custom_exclusion(config, {
+            "title": "[AMD] Compute the HIP pointer-range bit natively",
+            "body": "",
+            "labels": [],
+        })
+        self.assertTrue(excluded)
+        self.assertTrue(reason.startswith("text:"))
+
+    def test_path_filter_defaults_to_all_files(self):
+        config = {"exclude": {"path_patterns": [r"(^|/)xpu(/|$)"]}}
+        item = {"title": "Refactor backend", "body": "", "labels": []}
+        excluded, _ = monitor.custom_exclusion(
+            config, item, ["torch/xpu/device.py", "test/xpu/test_device.py"]
+        )
+        self.assertTrue(excluded)
+        excluded, _ = monitor.custom_exclusion(
+            config, item, ["torch/xpu/device.py", "torch/core.py"]
+        )
+        self.assertFalse(excluded)
+
+    def test_card_adds_chinese_summary_for_each_event(self):
+        blocks = [{
+            "markdown": "**PR #1**",
+            "summary_key": "pr:1",
+            "summary_kind": "pr",
+            "title": "Optimize matmul",
+            "body": "Improve CUDA performance",
+        }]
+        with patch.object(
+            monitor, "copilot_chinese_summaries", return_value={"pr:1": "优化 CUDA 矩阵乘性能。"}
+        ):
+            rendered = monitor.add_chinese_summaries(blocks)
+        self.assertIn("中文摘要", rendered[0])
+        self.assertIn("优化 CUDA 矩阵乘性能", rendered[0])
+
     def test_bootstrap_builds_baseline_without_notifications(self):
         responses = {
             "": {"default_branch": "main"},

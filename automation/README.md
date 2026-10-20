@@ -12,6 +12,8 @@ The installer stages Python runtime scripts under the private `~/.config/kian-au
 
 Per-repository `level` is adjustable: `detailed` uses a default PR/Issue threshold of 4, `balanced` uses 7, and `essential` disables early signals while retaining releases and integration-branch merges. `thresholds.pr` and `thresholds.issue` override either value. Once an early signal is reported, its merge/close or Issue state outcome remains tracked even if the level is later reduced. State lives in `state/public-watch-state.json`.
 
+Per-repository `exclude` rules accept regular expressions in `text_patterns`, `label_patterns`, and `path_patterns`. Path filtering defaults to `path_match: "all"`, so a PR is excluded by paths only when every changed file belongs to an excluded backend; set it to `any` for aggressive filtering. Custom exclusions apply to early signals and integration-branch merges, but never suppress releases.
+
 ## Private/runtime boundary
 
 The repository contains code, templates, and placeholder-only examples. The default private home is `~/.config/kian-automation` (override with `KIAN_AUTOMATION_HOME`):

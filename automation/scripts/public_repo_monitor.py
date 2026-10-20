@@ -6,6 +6,8 @@ import html
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -18,6 +20,7 @@ from automation_common import STATE_DIR, load_config
 
 WATCH = {}
 GITHUB = {}
+SUMMARIZATION = {}
 STATE_FILE = STATE_DIR / "public-watch-state.json"
 LOCK_FILE = STATE_DIR / "public-watch.lock"
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -30,10 +33,11 @@ LEVEL_THRESHOLDS = {
 
 
 def configure(config=None):
-    global WATCH, GITHUB
+    global WATCH, GITHUB, SUMMARIZATION
     config = config or load_config()
     WATCH = config.get("public_watch", {})
     GITHUB = config.get("github", {})
+    SUMMARIZATION = config.get("summarization", {})
 
 
 def send_card(title, body, template):
@@ -201,6 +205,128 @@ def compact_body(value, limit=280):
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def custom_exclusion(repo_config, item, file_paths=None):
+    rules = repo_config.get("exclude", {})
+    searchable = "\n".join([
+        str(item.get("title", "")),
+        str(item.get("body", "") or ""),
+    ])
+    for pattern in rules.get("text_patterns", []):
+        if re.search(pattern, searchable, re.I):
+            return True, "text:" + pattern
+    labels = "\n".join(label_names(item))
+    for pattern in rules.get("label_patterns", []):
+        if re.search(pattern, labels, re.I):
+            return True, "label:" + pattern
+    path_patterns = rules.get("path_patterns", [])
+    if path_patterns and file_paths is not None:
+        matches = [
+            any(re.search(pattern, path, re.I) for pattern in path_patterns)
+            for path in file_paths
+        ]
+        mode = rules.get("path_match", "all")
+        if matches and ((mode == "any" and any(matches)) or (mode != "any" and all(matches))):
+            return True, "paths:" + mode
+    return False, ""
+
+
+def pr_file_paths(repo, number):
+    paths = []
+    page = 1
+    while True:
+        batch = github_get(repo, "/pulls/{0}/files".format(number), {
+            "per_page": 100, "page": page,
+        })
+        if not isinstance(batch, list):
+            break
+        paths.extend(item.get("filename", "") for item in batch if item.get("filename"))
+        if len(batch) < 100:
+            break
+        page += 1
+    return paths
+
+
+def excluded_event(repo_config, repo, item, kind):
+    excluded, reason = custom_exclusion(repo_config, item)
+    if excluded or kind != "pr" or not repo_config.get("exclude", {}).get("path_patterns"):
+        return excluded, reason
+    return custom_exclusion(repo_config, item, pr_file_paths(repo, item["number"]))
+
+
+def event_block(markdown, item, kind, identity):
+    return {
+        "markdown": markdown,
+        "summary_key": "{0}:{1}".format(kind, identity),
+        "summary_kind": kind,
+        "title": str(item.get("title") or item.get("name") or item.get("tag_name") or ""),
+        "body": str(item.get("body") or ""),
+    }
+
+
+def copilot_chinese_summaries(blocks):
+    if not blocks:
+        return {}
+    configured = str(SUMMARIZATION.get("command", "copilot"))
+    command = shutil.which(configured) or (configured if os.path.isfile(configured) else "")
+    if not command:
+        raise RuntimeError("Copilot CLI is unavailable")
+    payload = [
+        {
+            "key": block["summary_key"],
+            "kind": block["summary_kind"],
+            "title": block["title"][:300],
+            "body": compact_body(block["body"], 1200),
+        }
+        for block in blocks
+    ]
+    prompt = """请为下面的 GitHub 公共仓库事件生成中文摘要。要求：
+1. 每项用 1-2 句中文，不超过 90 个汉字；说明改了什么、为什么重要或解决什么问题。
+2. 不要只翻译标题；结合正文，但不要臆测正文没有的信息。
+3. 保留 CUDA、FP8、API 等技术名词。不要 Markdown、不要 emoji。
+4. 只输出一个 JSON object，key 必须与输入 key 完全一致，value 为摘要字符串。
+
+输入：
+""" + json.dumps(payload, ensure_ascii=False)
+    environment = os.environ.copy()
+    for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+        environment.pop(name, None)
+    result = subprocess.run(
+        [
+            command, "-p", prompt, "--silent", "--no-color", "--no-auto-update",
+            "--disable-builtin-mcps", "--available-tools=", "--no-custom-instructions",
+            "--no-ask-user", "--model", str(SUMMARIZATION.get("model", "auto")),
+        ],
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        raise RuntimeError(detail[0] if detail else "Copilot CLI failed")
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", result.stdout.strip(), flags=re.I)
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Copilot CLI returned a non-object summary")
+    return {str(key): str(value).strip() for key, value in parsed.items() if str(value).strip()}
+
+
+def add_chinese_summaries(blocks):
+    try:
+        summaries = copilot_chinese_summaries(blocks)
+    except Exception as cause:
+        print("[warn] Chinese summary failed: {0}".format(cause), file=sys.stderr)
+        summaries = {}
+    rendered = []
+    for block in blocks:
+        summary = summaries.get(block["summary_key"])
+        if not summary:
+            summary = "中文摘要暂时生成失败，请通过原始标题和链接查看详情。"
+        rendered.append(block["markdown"] + "\n\n📝 **中文摘要：** " + summary)
+    return rendered
+
+
 def integration_branches(repo_config, metadata):
     configured = repo_config.get("integration_branches")
     if configured:
@@ -307,7 +433,9 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
         if release.get("draft") or not published:
             continue
         if not bootstrap and published > last_check:
-            blocks.append(release_block(release))
+            blocks.append(event_block(
+                release_block(release), release, "release", release.get("tag_name", published)
+            ))
 
     closed_prs = github_get(repo, "/pulls", {
         "state": "closed", "sort": "updated", "direction": "desc", "per_page": 100,
@@ -319,9 +447,14 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
         previous = signals.get(key, {})
         event_time = pr.get("merged_at") or pr.get("closed_at") or ""
         if not bootstrap and event_time > last_check:
-            block = pr_outcome_block(pr, branches, previous.get("notified", False))
+            is_excluded, reason = excluded_event(repo_config, repo, pr, "pr")
+            block = "" if is_excluded else pr_outcome_block(
+                pr, branches, previous.get("notified", False)
+            )
             if block:
-                blocks.append(block)
+                blocks.append(event_block(block, pr, "pr", pr["number"]))
+            elif is_excluded:
+                print("[filter] {0} PR #{1} excluded by {2}".format(repo, pr["number"], reason))
         remember_signal(signals, key, pr, previous.get("score", 0), previous.get("notified", False))
 
     open_prs = github_get(repo, "/pulls", {
@@ -338,7 +471,14 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             and score >= pr_threshold and not previous.get("notified", False)
         )
         if should_notify:
-            blocks.append(importance_block("pr", pr, score, reasons))
+            is_excluded, reason = excluded_event(repo_config, repo, pr, "pr")
+            if is_excluded:
+                should_notify = False
+                print("[filter] {0} PR #{1} excluded by {2}".format(repo, pr["number"], reason))
+            else:
+                blocks.append(event_block(
+                    importance_block("pr", pr, score, reasons), pr, "pr", pr["number"]
+                ))
         remember_signal(signals, key, pr, score, previous.get("notified", False) or should_notify)
 
     issues = github_get(repo, "/issues", {
@@ -353,7 +493,12 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
         changed = issue.get("updated_at", "") > last_check
         outcome = "" if bootstrap or not changed else issue_outcome_block(issue, previous)
         if outcome:
-            blocks.append(outcome)
+            is_excluded, reason = custom_exclusion(repo_config, issue)
+            if is_excluded:
+                outcome = ""
+                print("[filter] {0} Issue #{1} excluded by {2}".format(repo, issue["number"], reason))
+            else:
+                blocks.append(event_block(outcome, issue, "issue", issue["number"]))
         score, reasons = importance(issue, "issue")
         should_notify = (
             not bootstrap and changed and issue.get("state") == "open"
@@ -361,7 +506,14 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             and not previous.get("notified", False)
         )
         if should_notify:
-            blocks.append(importance_block("issue", issue, score, reasons))
+            is_excluded, reason = custom_exclusion(repo_config, issue)
+            if is_excluded:
+                should_notify = False
+                print("[filter] {0} Issue #{1} excluded by {2}".format(repo, issue["number"], reason))
+            else:
+                blocks.append(event_block(
+                    importance_block("issue", issue, score, reasons), issue, "issue", issue["number"]
+                ))
         remember_signal(
             signals, key, issue, score,
             previous.get("notified", False) or should_notify,
@@ -382,7 +534,8 @@ def render_card(repo_config, repo_state, blocks):
     intro = "**📦 {0}** · 监控级别 `{1}` · 主开发分支 `{2}`".format(
         repo_config["repo"], level, branches
     )
-    return intro + "\n\n---\n\n" + "\n\n---\n\n".join(blocks)
+    rendered_blocks = add_chinese_summaries(blocks)
+    return intro + "\n\n---\n\n" + "\n\n---\n\n".join(rendered_blocks)
 
 
 def run():
