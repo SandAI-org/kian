@@ -6,6 +6,12 @@ Acknowledgement-required recurring reminders live in the private `config.json` u
 
 The installer stages Python runtime scripts under the private `~/.config/kian-automation/runtime/` directory, and LaunchAgents execute that copy to avoid macOS background-access restrictions on folders such as `Documents`. Kian remains the source of truth, and each install refreshes the runtime copy.
 
+### Important public-repository updates
+
+`public_watch.repositories` observes public repositories that you do not maintain. It is isolated from the full-fidelity owned-repository monitor and silently creates a baseline on first run instead of replaying history. Releases and PRs merged into `integration_branches` are always reported; without an override, the GitHub `default_branch` is used. Early important PR/Issue signals are scored from security, correctness/regression, breaking API, performance, hardware/compiler semantics, GitHub labels, maintainer authorship, discussion, and reaction activity.
+
+Per-repository `level` is adjustable: `detailed` uses a default PR/Issue threshold of 4, `balanced` uses 7, and `essential` disables early signals while retaining releases and integration-branch merges. `thresholds.pr` and `thresholds.issue` override either value. Once an early signal is reported, its merge/close or Issue state outcome remains tracked even if the level is later reduced. State lives in `state/public-watch-state.json`.
+
 ## Private/runtime boundary
 
 The repository contains code, templates, and placeholder-only examples. The default private home is `~/.config/kian-automation` (override with `KIAN_AUTOMATION_HOME`):

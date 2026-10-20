@@ -6,6 +6,12 @@
 
 安装器会把 Python 运行脚本同步到私有目录 `~/.config/kian-automation/runtime/`，LaunchAgent 从这里执行，以避开 macOS 对 `Documents` 等用户目录的后台访问限制。代码仍以 Kian 仓库为唯一来源，每次安装都会刷新运行副本。
 
+### Public 仓库重要更新
+
+`public_watch.repositories` 用于观察不由自己维护的公开仓库。它与自有仓库全量监控隔离，首次启动只建立当前基线，不倒灌历史消息。此后始终推送 Release 和合入 `integration_branches` 的 PR；未显式配置主开发分支时跟随 GitHub `default_branch`。重要 PR/Issue 结合安全、正确性/回归、破坏性 API、性能、核心硬件/编译器关键词，GitHub 标签、维护者身份、讨论与 reaction 热度评分。
+
+每个仓库的 `level` 可随时调整：`detailed` 的 PR/Issue 默认阈值为 4，`balanced` 为 7，`essential` 禁用早期信号，只保留发版和主开发分支合入。`thresholds.pr` / `thresholds.issue` 可以覆盖单库阈值。已经推送过的早期信号会继续跟踪合入、关闭或 Issue 状态变化，即使之后下调监控等级。状态保存在 `state/public-watch-state.json`。
+
 ## 私有数据边界
 
 仓库仅保存代码、模板和占位符示例。默认私有目录为 `~/.config/kian-automation`，可用 `KIAN_AUTOMATION_HOME` 覆盖：

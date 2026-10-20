@@ -75,6 +75,7 @@ required = {
   "daily": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "github.repos", "github.tokens"],
   "qr": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "qr_publish.reminder_title", "qr_publish.reminder_body"],
   "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
+  "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "public_watch.repositories"],
 }[service]
 
 def get(path):
@@ -122,6 +123,8 @@ render() {
     /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Minute $(read_config services.qr.minute 0)" "$output"
   elif [[ "$service" == "reminders" ]]; then
     /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.reminders.poll_interval_seconds 60)" "$output"
+  elif [[ "$service" == "public_watch" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.public_watch.interval_seconds 900)" "$output"
   fi
   chmod 600 "$output"
   plutil -lint "$output" >/dev/null
@@ -141,13 +144,14 @@ legacy_label() {
 remove_legacy_service() {
   local label plist
   label="$(legacy_label "$1")"
+  [[ -n "$label" ]] || return 0
   plist="$LAUNCH_AGENTS/$label.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   rm -f "$plist"
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr reminders; do
+for service in bridge realtime daily qr reminders public_watch; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

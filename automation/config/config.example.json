@@ -4,7 +4,8 @@
     "realtime": { "enabled": true, "interval_seconds": 300 },
     "daily": { "enabled": true, "hour": 10, "minute": 0 },
     "qr": { "enabled": false, "hour": 12, "minute": 0 },
-    "reminders": { "enabled": false, "poll_interval_seconds": 60 }
+    "reminders": { "enabled": false, "poll_interval_seconds": 60 },
+    "public_watch": { "enabled": false, "interval_seconds": 900 }
   },
   "feishu": {
     "app_id": "REPLACE_WITH_FEISHU_APP_ID",
@@ -30,6 +31,20 @@
       "example-owner": "REPLACE_WITH_GITHUB_TOKEN"
     },
     "repos": ["example-owner/example-repo"]
+  },
+  "public_watch": {
+    "token_from_owner": "example-owner",
+    "repositories": [
+      {
+        "repo": "pytorch/pytorch",
+        "level": "detailed"
+      },
+      {
+        "repo": "NVIDIA/Megatron-LM",
+        "level": "detailed",
+        "integration_branches": ["dev"]
+      }
+    ]
   },
   "pr_manager": {
     "special_layout_repo": "example-owner/example-repo",
