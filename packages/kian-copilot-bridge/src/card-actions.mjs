@@ -101,3 +101,35 @@ export const disableCardAction = (card, target) => {
   matches[0].button.type = 'default';
   return { card: clonedCard, changed: true, candidates: [] };
 };
+
+export const disableReminderAction = (card, target) => {
+  const clonedCard = normalizeCardNode(card);
+  let match = null;
+  let count = 0;
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (value.tag === 'button' && value.disabled !== true) {
+      let actionValue = value.value;
+      if (typeof actionValue === 'string') {
+        try { actionValue = JSON.parse(actionValue); } catch { actionValue = null; }
+      }
+      if (actionValue?.action === 'ack_reminder'
+        && actionValue.reminder_id === target.reminderId
+        && actionValue.occurrence === target.occurrence) {
+        match = value;
+        count += 1;
+      }
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(clonedCard);
+  if (count !== 1 || !match) return { card, changed: false };
+  match.disabled = true;
+  match.type = 'default';
+  match.text = { tag: 'plain_text', content: target.completedText };
+  return { card: clonedCard, changed: true };
+};

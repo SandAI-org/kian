@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { disableCardAction } from '../src/card-actions.mjs';
+import { disableCardAction, disableReminderAction } from '../src/card-actions.mjs';
 
 const card = {
   config: { wide_screen_mode: true },
@@ -199,4 +199,43 @@ test('leaves the card unchanged when no action matches', () => {
 
   assert.equal(result.changed, false);
   assert.deepEqual(result.card, card);
+});
+
+test('disables and relabels the acknowledged reminder button', () => {
+  const reminderCard = {
+    elements: [{
+      tag: 'action',
+      actions: [{
+        tag: 'button',
+        type: 'primary',
+        text: { tag: 'plain_text', content: '已服用' },
+        value: { action: 'ack_reminder', reminder_id: 'supplement', occurrence: '2026-10-20' },
+      }],
+    }],
+  };
+  const result = disableReminderAction(reminderCard, {
+    reminderId: 'supplement',
+    occurrence: '2026-10-20',
+    completedText: '今日已服用 ✓',
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.card.elements[0].actions[0].disabled, true);
+  assert.equal(result.card.elements[0].actions[0].type, 'default');
+  assert.equal(result.card.elements[0].actions[0].text.content, '今日已服用 ✓');
+});
+
+test('does not disable a reminder button from another occurrence', () => {
+  const reminderCard = {
+    elements: [[{
+      tag: 'button',
+      text: '已服用',
+      value: JSON.stringify({ action: 'ack_reminder', reminder_id: 'supplement', occurrence: '2026-10-19' }),
+    }]],
+  };
+  const result = disableReminderAction(reminderCard, {
+    reminderId: 'supplement',
+    occurrence: '2026-10-20',
+    completedText: '今日已服用 ✓',
+  });
+  assert.equal(result.changed, false);
 });

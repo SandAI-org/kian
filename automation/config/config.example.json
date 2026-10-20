@@ -3,13 +3,27 @@
     "bridge": { "enabled": true },
     "realtime": { "enabled": true, "interval_seconds": 300 },
     "daily": { "enabled": true, "hour": 10, "minute": 0 },
-    "qr": { "enabled": false, "hour": 12, "minute": 0 }
+    "qr": { "enabled": false, "hour": 12, "minute": 0 },
+    "reminders": { "enabled": false, "poll_interval_seconds": 60 }
   },
   "feishu": {
     "app_id": "REPLACE_WITH_FEISHU_APP_ID",
     "app_secret": "REPLACE_WITH_FEISHU_APP_SECRET",
     "open_id": "REPLACE_WITH_FEISHU_OPEN_ID",
     "allowed_users": ["REPLACE_WITH_ALLOWED_OPEN_ID"]
+  },
+  "reminders": {
+    "supplement": {
+      "enabled": true,
+      "schedule": { "hour": 13, "minute": 0 },
+      "title": "💊 补品提醒",
+      "body": "别忘了今天的补品哦：\n\n🔸 复合维生素\n🔸 鱼油\n🔸 维生素C咀嚼片",
+      "confirmation_required": true,
+      "confirm_button_text": "已服用",
+      "confirmed_button_text": "今日已服用 ✓",
+      "confirmed_toast": "已记录今日服用，不再重复提醒",
+      "repeat_interval_seconds": 300
+    }
   },
   "github": {
     "tokens": {

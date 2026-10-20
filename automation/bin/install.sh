@@ -12,6 +12,7 @@ AUTOMATION_HOME="${KIAN_AUTOMATION_HOME:-$HOME/.config/kian-automation}"
 CONFIG_DIR="$AUTOMATION_HOME/config"
 STATE_DIR="$AUTOMATION_HOME/state"
 LOG_DIR="$AUTOMATION_HOME/logs"
+RUNTIME_ROOT="$AUTOMATION_HOME/runtime"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 PYTHON_BIN="$(command -v python3 || true)"
@@ -20,8 +21,9 @@ NODE_BIN="$(command -v node || true)"
 [[ -n "$PYTHON_BIN" ]] || { echo "ERROR: python3 is required" >&2; exit 1; }
 [[ -n "$NODE_BIN" ]] || { echo "ERROR: node is required" >&2; exit 1; }
 
-mkdir -p "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR" "$LAUNCH_AGENTS"
-chmod 700 "$AUTOMATION_HOME" "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR"
+mkdir -p "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR" "$RUNTIME_ROOT/automation/scripts" "$LAUNCH_AGENTS"
+chmod 700 "$AUTOMATION_HOME" "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR" "$RUNTIME_ROOT"
+rsync -a "$REPO_ROOT/automation/scripts/" "$RUNTIME_ROOT/automation/scripts/"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   cp "$REPO_ROOT/automation/config/config.example.json" "$CONFIG_FILE"
   echo "Created private configuration: $CONFIG_FILE"
@@ -71,6 +73,7 @@ required = {
   "realtime": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "github.repos", "github.tokens"],
   "daily": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "github.repos", "github.tokens"],
   "qr": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "qr_publish.reminder_title", "qr_publish.reminder_body"],
+  "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
 }[service]
 
 def get(path):
@@ -103,6 +106,7 @@ render() {
   sed \
     -e "s|__REPO_ROOT__|$REPO_ROOT|g" \
     -e "s|__AUTOMATION_HOME__|$AUTOMATION_HOME|g" \
+    -e "s|__RUNTIME_ROOT__|$RUNTIME_ROOT|g" \
     -e "s|__PYTHON__|$PYTHON_BIN|g" \
     -e "s|__NODE__|$NODE_BIN|g" \
     "$template" > "$output"
@@ -114,6 +118,8 @@ render() {
   elif [[ "$service" == "qr" ]]; then
     /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Hour $(read_config services.qr.hour 12)" "$output"
     /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Minute $(read_config services.qr.minute 0)" "$output"
+  elif [[ "$service" == "reminders" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.reminders.poll_interval_seconds 60)" "$output"
   fi
   chmod 600 "$output"
   plutil -lint "$output" >/dev/null
@@ -126,6 +132,7 @@ legacy_label() {
     realtime) echo "com.kian.github-monitor" ;;
     daily) echo "com.kian.github-monitor-daily" ;;
     qr) echo "com.kian.reminder-qr" ;;
+    reminders) echo "com.kian.reminder-supplement" ;;
   esac
 }
 
@@ -138,7 +145,7 @@ remove_legacy_service() {
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr; do
+for service in bridge realtime daily qr reminders; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

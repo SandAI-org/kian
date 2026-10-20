@@ -2,6 +2,10 @@
 
 本目录打包 GitHub 到飞书监控、PR 描述管理、提醒、文件传输、二维码发布、飞书桥接及 macOS `launchd` 集成，Git 中不保存私有运行数据。
 
+需确认的定期提醒配置在私有 `config.json` 的 `reminders` 中。每个提醒可以独立设置日程、确认按钮文案和重复间隔；到点后会持续发送，直到授权用户点击按钮。确认状态按提醒 ID 和日期保存在 `state/ack-reminders/`，因此旧卡片不会误确认新一天。`services.reminders.poll_interval_seconds` 控制调度检查频率，单个提醒的 `repeat_interval_seconds` 控制未确认时的催办频率。
+
+安装器会把 Python 运行脚本同步到私有目录 `~/.config/kian-automation/runtime/`，LaunchAgent 从这里执行，以避开 macOS 对 `Documents` 等用户目录的后台访问限制。代码仍以 Kian 仓库为唯一来源，每次安装都会刷新运行副本。
+
 ## 私有数据边界
 
 仓库仅保存代码、模板和占位符示例。默认私有目录为 `~/.config/kian-automation`，可用 `KIAN_AUTOMATION_HOME` 覆盖：

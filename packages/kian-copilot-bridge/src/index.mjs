@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as Lark from '@larksuiteoapi/node-sdk';
-import { disableCardAction } from './card-actions.mjs';
+import { disableCardAction, disableReminderAction } from './card-actions.mjs';
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(process.env.KIAN_REPO_ROOT || path.join(packageDir, '../..'));
@@ -16,6 +16,7 @@ const configPath = path.join(automationHome, 'config/config.json');
 const stateDir = path.join(automationHome, 'state');
 const prManagerPath = path.join(repoRoot, 'automation/scripts/pr_desc_manager.py');
 const connectionAlertStatePath = path.join(stateDir, 'connection-state.json');
+const ackReminderStateDir = path.join(stateDir, 'ack-reminders');
 const pythonBin = process.env.KIAN_PYTHON || 'python3';
 const logPrefix = '[kian-copilot-bridge]';
 const seen = new Map();
@@ -191,6 +192,18 @@ const parseCardCommand = (data) => {
   return { command: '', repo: '', mode: 'default' };
 };
 
+const parseReminderAction = (data) => {
+  let value = data?.action?.value ?? data?.event?.action?.value ?? data?.value;
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  if (!value || value.action !== 'ack_reminder') return null;
+  const reminderId = typeof value.reminder_id === 'string' ? value.reminder_id.trim() : '';
+  const occurrence = typeof value.occurrence === 'string' ? value.occurrence.trim() : '';
+  if (!/^[A-Za-z0-9._-]+$/.test(reminderId) || !/^\d{4}-\d{2}-\d{2}$/.test(occurrence)) return null;
+  return { reminderId, occurrence };
+};
+
 const pruneRecentCommands = () => {
   const now = Date.now();
   for (const [key, at] of recentCommands) {
@@ -278,6 +291,34 @@ const disableCompletedCardAction = async ({ appId, appSecret, messageId, command
   }
   await updateInteractiveCard({ appId, appSecret, messageId, card });
   log('disabled completed card action', command, mode);
+};
+
+const acknowledgeReminder = async ({
+  appId, appSecret, messageId, reminderId, occurrence, userId, completedText,
+}) => {
+  await fs.mkdir(ackReminderStateDir, { recursive: true, mode: 0o700 });
+  const reminderStatePath = path.join(ackReminderStateDir, `${reminderId}.json`);
+  let state = {};
+  try { state = await readJson(reminderStatePath); } catch (cause) {
+    if (cause?.code !== 'ENOENT') error('failed to read reminder state', reminderId, cause);
+  }
+  state.acknowledged_occurrence = occurrence;
+  state.acknowledged_at = new Date().toISOString();
+  state.acknowledged_by = userId;
+  const temporaryPath = `${reminderStatePath}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  await fs.rename(temporaryPath, reminderStatePath);
+
+  if (messageId) {
+    const originalCard = await readInteractiveCard({ appId, appSecret, messageId });
+    const result = disableReminderAction(originalCard, { reminderId, occurrence, completedText });
+    if (result.changed) {
+      await updateInteractiveCard({ appId, appSecret, messageId, card: result.card });
+    } else {
+      log('cannot disable reminder action: unique matching button not found', reminderId, occurrence);
+    }
+  }
+  log('acknowledged reminder', reminderId, occurrence);
 };
 
 const main = async () => {
@@ -445,11 +486,38 @@ const main = async () => {
       wsLastSignalAt = Date.now();
       wsLastUnackedPingAt = 0;
       void markConnectionHealthy('event').catch(error);
-      const { command, repo, mode } = parseCardCommand(data);
       const event = data?.event || data;
       const userId = event?.open_id || event?.operator?.open_id || '';
       const chatId = event?.open_chat_id || event?.context?.open_chat_id || '';
       const messageId = event?.open_message_id || event?.context?.open_message_id || '';
+      const reminderAction = parseReminderAction(data);
+      if (reminderAction) {
+        if (!userId) return { toast: { type: 'error', content: '无法识别操作用户' } };
+        if (allowedUsers.size && !allowedUsers.has(userId)) {
+          return { toast: { type: 'error', content: '当前用户无权确认此提醒' } };
+        }
+        const eventKey = `reminder:${messageId}:${userId}:${reminderAction.reminderId}:${reminderAction.occurrence}`;
+        if (!markSeen(eventKey)) {
+          return { toast: { type: 'info', content: '该提醒已经确认' } };
+        }
+        const reminderConfig = config.reminders?.[reminderAction.reminderId] ?? {};
+        const completedText = String(reminderConfig.confirmed_button_text || '已确认 ✓');
+        try {
+          await acknowledgeReminder({
+            appId,
+            appSecret,
+            messageId,
+            userId,
+            completedText,
+            ...reminderAction,
+          });
+          return { toast: { type: 'success', content: String(reminderConfig.confirmed_toast || '已确认，不再重复提醒') } };
+        } catch (cause) {
+          error('failed to acknowledge reminder', reminderAction.reminderId, cause);
+          return { toast: { type: 'error', content: '确认失败，请稍后重试' } };
+        }
+      }
+      const { command, repo, mode } = parseCardCommand(data);
       log('received card action', {
         command: /^(?:desc|up)\d+$/i.test(command) ? command : 'invalid',
         repo: Boolean(repo),

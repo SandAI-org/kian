@@ -25,12 +25,15 @@ def feishu_token():
         return json.load(resp)["tenant_access_token"]
 
 
-def send(title, body_md):
+def send(title, body_md, actions=None):
     token = feishu_token()
+    elements = [{"tag": "markdown", "content": body_md}]
+    if actions:
+        elements.append({"tag": "action", "actions": actions})
     card = {
         "config": {"wide_screen_mode": True},
         "header": {"title": {"tag": "plain_text", "content": title}, "template": "green"},
-        "elements": [{"tag": "markdown", "content": body_md}],
+        "elements": elements,
     }
     payload = json.dumps({
         "receive_id": FEISHU["open_id"],

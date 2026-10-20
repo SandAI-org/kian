@@ -2,6 +2,10 @@
 
 This directory packages the GitHub-to-Feishu monitor, PR description manager, reminders, file transfer helper, QR publisher, Feishu bridge, and macOS `launchd` integration without storing private runtime data in Git.
 
+Acknowledgement-required recurring reminders live in the private `config.json` under `reminders`. Each reminder has its own schedule, confirmation label, and repeat interval. Once due, it repeats until an authorized user clicks its card button. State is keyed by reminder ID and occurrence date under `state/ack-reminders/`, so an old card cannot acknowledge a newer occurrence. `services.reminders.poll_interval_seconds` controls scheduler checks; each reminder's `repeat_interval_seconds` controls nag frequency.
+
+The installer stages Python runtime scripts under the private `~/.config/kian-automation/runtime/` directory, and LaunchAgents execute that copy to avoid macOS background-access restrictions on folders such as `Documents`. Kian remains the source of truth, and each install refreshes the runtime copy.
+
 ## Private/runtime boundary
 
 The repository contains code, templates, and placeholder-only examples. The default private home is `~/.config/kian-automation` (override with `KIAN_AUTOMATION_HOME`):

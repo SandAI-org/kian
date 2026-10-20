@@ -32,7 +32,7 @@ for directory in state logs; do
   [[ -d "$AUTOMATION_HOME/$directory" ]] && pass "$directory directory exists" || fail "$directory directory missing"
 done
 
-for service in bridge realtime daily qr; do
+for service in bridge realtime daily qr reminders; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   if [[ -f "$plist" ]]; then
     plutil -lint "$plist" >/dev/null 2>&1 && pass "com.kian.$service plist valid" || fail "com.kian.$service plist invalid"
@@ -46,7 +46,7 @@ for service in bridge realtime daily qr; do
   fi
 done
 
-for label in com.kian.copilot-bridge com.kian.github-monitor com.kian.github-monitor-daily com.kian.reminder-qr; do
+for label in com.kian.copilot-bridge com.kian.github-monitor com.kian.github-monitor-daily com.kian.reminder-qr com.kian.reminder-supplement; do
   plist="$LAUNCH_AGENTS/$label.plist"
   if [[ -f "$plist" ]] || launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
     fail "legacy $label is still installed; rerun automation/bin/install.sh to prevent duplicate service execution"
