@@ -207,13 +207,18 @@ def compact_body(value, limit=280):
 
 def custom_exclusion(repo_config, item, file_paths=None):
     rules = repo_config.get("exclude", {})
-    searchable = "\n".join([
-        str(item.get("title", "")),
-        str(item.get("body", "") or ""),
-    ])
+    title = str(item.get("title", ""))
+    body = str(item.get("body", "") or "")
+    searchable = title + "\n" + body
     for pattern in rules.get("text_patterns", []):
         if re.search(pattern, searchable, re.I):
             return True, "text:" + pattern
+    for pattern in rules.get("title_patterns", []):
+        if re.search(pattern, title, re.I):
+            return True, "title:" + pattern
+    for pattern in rules.get("body_patterns", []):
+        if re.search(pattern, body, re.I):
+            return True, "body:" + pattern
     labels = "\n".join(label_names(item))
     for pattern in rules.get("label_patterns", []):
         if re.search(pattern, labels, re.I):
@@ -263,6 +268,14 @@ def event_block(markdown, item, kind, identity):
     }
 
 
+def summary_body(value):
+    body = value or ""
+    # ghstack appends a machine-generated stack inventory that is useful on
+    # GitHub but noisy and misleading as summary input.
+    body = re.sub(r"\n+Stack from\s+(?:\[)?ghstack\b[\s\S]*$", "", body, flags=re.I)
+    return compact_body(body, 1200)
+
+
 def copilot_chinese_summaries(blocks):
     if not blocks:
         return {}
@@ -275,7 +288,7 @@ def copilot_chinese_summaries(blocks):
             "key": block["summary_key"],
             "kind": block["summary_kind"],
             "title": block["title"][:300],
-            "body": compact_body(block["body"], 1200),
+            "body": summary_body(block["body"]),
         }
         for block in blocks
     ]
@@ -341,33 +354,20 @@ def signal_key(kind, number):
 def importance_block(kind, item, score, reasons):
     icon = "🔀" if kind == "pr" else "🐛"
     noun = "PR" if kind == "pr" else "Issue"
-    labels = label_names(item)
     lines = [
         "**{0} 重要{1}早期信号 #{2}** · 评分 {3}".format(icon, noun, item["number"], score),
         "",
-        "📌 **{0}**".format(item.get("title", "")),
-        "",
         "判断依据：{0}".format("、".join(reasons) if reasons else "自定义阈值"),
     ]
-    if labels:
-        lines.extend(["", "标签：`{0}`".format("` `".join(labels[:8]))])
-    body = compact_body(item.get("body", ""))
-    if body:
-        lines.extend(["", body])
     lines.extend(["", "[🔗 查看{0}]({1})".format(noun, item.get("html_url", ""))])
     return "\n".join(lines)
 
 
 def release_block(release):
-    title = release.get("name") or release.get("tag_name") or "未命名版本"
     badge = "（预发布）" if release.get("prerelease") else ""
-    body = compact_body(release.get("body", ""))
-    result = "**🚀 新版本 {0} {1}**\n\n📌 **{2}**".format(
-        release.get("tag_name", ""), badge, title
+    return "**🚀 新版本 {0} {1}**\n\n[🔗 查看 Release]({2})".format(
+        release.get("tag_name", ""), badge, release.get("html_url", "")
     )
-    if body:
-        result += "\n\n" + body
-    return result + "\n\n[🔗 查看 Release]({0})".format(release.get("html_url", ""))
 
 
 def pr_outcome_block(pr, branches, watched_early):
@@ -384,9 +384,7 @@ def pr_outcome_block(pr, branches, watched_early):
         heading = "**⛔ 已关注的重要 PR 关闭但未合入 #{0}**".format(number)
     else:
         return ""
-    return "{0}\n\n📌 **{1}**\n\n[🔗 查看 PR]({2})".format(
-        heading, pr.get("title", ""), pr.get("html_url", "")
-    )
+    return "{0}\n\n[🔗 查看 PR]({1})".format(heading, pr.get("html_url", ""))
 
 
 def issue_outcome_block(issue, previous):
@@ -397,8 +395,8 @@ def issue_outcome_block(issue, previous):
     if old_state == new_state:
         return ""
     heading = "✅ 已关注的重要 Issue 已关闭" if new_state == "closed" else "♻️ 已关注的重要 Issue 重新打开"
-    return "**{0} #{1}**\n\n📌 **{2}**\n\n[🔗 查看 Issue]({3})".format(
-        heading, issue["number"], issue.get("title", ""), issue.get("html_url", "")
+    return "**{0} #{1}**\n\n[🔗 查看 Issue]({2})".format(
+        heading, issue["number"], issue.get("html_url", "")
     )
 
 

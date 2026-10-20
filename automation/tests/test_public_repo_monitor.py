@@ -91,6 +91,19 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         )
         self.assertFalse(excluded)
 
+    def test_title_filter_ignores_backend_mentioned_only_in_body(self):
+        config = {"exclude": {"title_patterns": [r"\b(?:rocm|hip|xpu)\b"]}}
+        excluded, _ = monitor.custom_exclusion(config, {
+            "title": "[FSDP2] Separate collective copy preparation from execution",
+            "body": "ROCm TransformerEngine is one compatibility scenario.",
+            "labels": [],
+        })
+        self.assertFalse(excluded)
+
+    def test_ghstack_inventory_is_removed_from_summary_input(self):
+        body = "Useful explanation.\n\nStack from ghstack:\n* #123\n* #124"
+        self.assertEqual(monitor.summary_body(body), "Useful explanation.")
+
     def test_card_adds_chinese_summary_for_each_event(self):
         blocks = [{
             "markdown": "**PR #1**",

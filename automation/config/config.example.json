@@ -39,7 +39,7 @@
         "repo": "pytorch/pytorch",
         "level": "balanced",
         "exclude": {
-          "text_patterns": ["\\b(?:amd|rocm|hip|xpu)\\b"],
+          "title_patterns": ["\\b(?:amd|rocm|hip|xpu)\\b"],
           "label_patterns": ["amd|rocm|hip|xpu"],
           "path_patterns": ["(^|/)(?:amd|rocm|hip|xpu)(?:/|$)"],
           "path_match": "all"
