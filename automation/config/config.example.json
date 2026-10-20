@@ -5,7 +5,7 @@
     "daily": { "enabled": true, "hour": 10, "minute": 0 },
     "qr": { "enabled": false, "hour": 12, "minute": 0 },
     "reminders": { "enabled": false, "poll_interval_seconds": 60 },
-    "public_watch": { "enabled": false, "interval_seconds": 900 }
+    "public_watch": { "enabled": false, "interval_seconds": 1800 }
   },
   "feishu": {
     "app_id": "REPLACE_WITH_FEISHU_APP_ID",
