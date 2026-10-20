@@ -162,6 +162,25 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertNotIn("`", line)
         self.assertNotIn("标签", line)
 
+    def test_card_header_uses_plain_english_metadata(self):
+        blocks = [{
+            "markdown": "body",
+            "summary_key": "pr:1",
+            "summary_kind": "pr",
+            "title": "Change",
+            "body": "Details",
+        }]
+        with patch.object(monitor, "add_chinese_summaries", return_value=["body"]):
+            rendered = monitor.render_card(
+                {"repo": "owner/repo", "level": "detailed"},
+                {"integration_branches": ["main"]}, blocks,
+            )
+        self.assertTrue(rendered.startswith(
+            "📦 **owner/repo** · Watch level: Detailed · Integration: main"
+        ))
+        self.assertNotIn("`detailed`", rendered)
+        self.assertNotIn("监控级别", rendered)
+
     def test_pinned_update_and_outcome_show_synthetic_label(self):
         pr = {
             "number": 123, "title": "Important change", "labels": [],

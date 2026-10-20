@@ -733,10 +733,10 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
 
 
 def render_card(repo_config, repo_state, blocks):
-    branches = "`, `".join(repo_state.get("integration_branches", []))
-    level = repo_config.get("level", "balanced")
-    intro = "**📦 {0}** · 监控级别 `{1}` · 主开发分支 `{2}`".format(
-        repo_config["repo"], level, branches
+    branches = " / ".join(repo_state.get("integration_branches", []))
+    level = str(repo_config.get("level", "balanced")).capitalize()
+    intro = "📦 **{0}** · Watch level: {1} · Integration: {2}".format(
+        repo_config["repo"], level, branches,
     )
     rendered_blocks = add_chinese_summaries(blocks)
     return intro + "\n\n---\n\n" + "\n\n---\n\n".join(rendered_blocks)
