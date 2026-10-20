@@ -33,7 +33,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
 
     def test_repository_level_controls_threshold(self):
         self.assertEqual(monitor.threshold({"level": "detailed"}, "pr"), 4)
-        self.assertEqual(monitor.threshold({"level": "balanced"}, "pr"), 7)
+        self.assertEqual(monitor.threshold({"level": "balanced"}, "pr"), 8)
         self.assertIsNone(monitor.threshold({"level": "essential"}, "pr"))
         self.assertEqual(monitor.threshold({
             "level": "essential", "thresholds": {"pr": 9}

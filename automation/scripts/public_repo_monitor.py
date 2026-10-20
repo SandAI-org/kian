@@ -29,7 +29,7 @@ OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 LEVEL_THRESHOLDS = {
     "detailed": {"pr": 4, "issue": 4},
-    "balanced": {"pr": 7, "issue": 7},
+    "balanced": {"pr": 8, "issue": 8},
     "essential": {"pr": None, "issue": None},
 }
 SUMMARY_MARKER = "@@KIAN_CHINESE_SUMMARY@@"
