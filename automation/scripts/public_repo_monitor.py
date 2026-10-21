@@ -920,7 +920,7 @@ def run():
                 body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)
             try:
                 send_card(
-                    "🌐 开源仓库重要更新", body, template="purple", actions=pin_actions(events),
+                    "🌐 开源仓库实时更新", body, template="purple", actions=pin_actions(events),
                 )
             except Exception as cause:
                 print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)

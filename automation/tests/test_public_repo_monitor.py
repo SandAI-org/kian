@@ -310,7 +310,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             monitor.run()
         sender.assert_called_once()
         title, body = sender.call_args.args[:2]
-        self.assertEqual(title, "🌐 开源仓库重要更新")
+        self.assertEqual(title, "🌐 开源仓库实时更新")
         self.assertIn("owner/one", body)
         self.assertIn("owner/two", body)
         self.assertEqual(state["pending_notifications"], [])
