@@ -8,6 +8,7 @@
     "public_watch": {
       "enabled": false,
       "interval_seconds": 3600,
+      "retry_interval_seconds": 300,
       "flush_hour": 10,
       "flush_minute": 30
     }

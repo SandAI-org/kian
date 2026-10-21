@@ -23,6 +23,7 @@ from automation_common import STATE_DIR, load_config
 WATCH = {}
 GITHUB = {}
 SUMMARIZATION = {}
+PUBLIC_SERVICE = {}
 STATE_FILE = STATE_DIR / "public-watch-state.json"
 LOCK_FILE = STATE_DIR / "public-watch.lock"
 PINS_DIR = STATE_DIR / "public-watch-pins"
@@ -37,11 +38,12 @@ SUMMARY_MARKER = "@@KIAN_CHINESE_SUMMARY@@"
 
 
 def configure(config=None):
-    global WATCH, GITHUB, SUMMARIZATION
+    global WATCH, GITHUB, SUMMARIZATION, PUBLIC_SERVICE
     config = config or load_config()
     WATCH = config.get("public_watch", {})
     GITHUB = config.get("github", {})
     SUMMARIZATION = config.get("summarization", {})
+    PUBLIC_SERVICE = config.get("services", {}).get("public_watch", {})
 
 
 def send_card(title, body, template, actions=None):
@@ -90,6 +92,26 @@ def in_quiet_hours(at=None):
     if start <= end:
         return start <= minute < end
     return minute >= start or minute < end
+
+
+def parse_iso(value):
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def scan_is_due(state, at=None):
+    current = at or datetime.now(timezone.utc)
+    last_scan = state.get("last_scan_at")
+    if not last_scan:
+        last_scan = max(
+            (repo.get("last_check", "") for repo in state.get("repos", {}).values()),
+            default="",
+        )
+    previous = parse_iso(last_scan)
+    interval = max(300, int(PUBLIC_SERVICE.get("interval_seconds", 3600)))
+    return previous is None or (current - previous).total_seconds() >= interval
 
 
 def load_state():
@@ -349,7 +371,7 @@ def copilot_chinese_summaries(blocks):
         }
         for block in blocks
     ]
-    prompt = """请为下面的 GitHub 公共仓库事件生成中文摘要。要求：
+    prompt = """请为下面的 GitHub 开源仓库事件生成中文摘要。要求：
 1. 每项用 1-2 句中文，不超过 90 个汉字；说明改了什么、为什么重要或解决什么问题。
 2. 不要只翻译标题；结合正文，但不要臆测正文没有的信息。
 3. 保留 CUDA、FP8、API 等技术名词。不要 Markdown、不要 emoji。
@@ -807,6 +829,22 @@ def pending_events(groups):
     return [event for group in groups for event in group.get("events", [])]
 
 
+def take_pending_batch(groups, limit=25):
+    batch = []
+    remaining = []
+    slots = limit
+    for group in groups:
+        events = group.get("events", [])
+        selected = events[:slots] if slots > 0 else []
+        deferred = events[len(selected):]
+        if selected:
+            batch.append(dict(group, events=selected))
+            slots -= len(selected)
+        if deferred:
+            remaining.append(dict(group, events=deferred))
+    return batch, remaining
+
+
 def pin_actions(blocks):
     actions = []
     seen = set()
@@ -849,46 +887,53 @@ def run():
         repo_states = state.setdefault("repos", {})
         pending = state.setdefault("pending_notifications", [])
         capture_time = now_iso()
+        capture_datetime = parse_iso(capture_time) or datetime.now(timezone.utc)
         bootstrapped = 0
         queued = 0
         delivered = 0
         failures = 0
-        for repo_config in repositories:
-            repo = repo_config["repo"]
-            previous = repo_states.get(repo, {})
-            bootstrap = not bool(previous.get("last_check"))
-            try:
-                blocks, next_state = collect_repo(repo_config, previous, capture_time, bootstrap)
-                if bootstrap:
-                    bootstrapped += 1
-                elif blocks:
-                    pending.append(prepare_notification_group(repo_config, next_state, blocks))
-                    queued += len(blocks)
-                repo_states[repo] = next_state
-                save_state(state)
-            except Exception as cause:
-                failures += 1
-                print("[error] {0}: {1}".format(repo, cause), file=sys.stderr)
-        if pending and not in_quiet_hours():
-            events = pending_events(pending)
-            repositories_count = len({group["repo"] for group in pending})
-            send_card(
-                "🌐 Public 仓库重要更新 · {0} 个仓库 / {1} 项".format(
-                    repositories_count, len(events),
-                ),
-                render_notification_batch(pending),
-                template="purple",
-                actions=pin_actions(events),
-            )
-            for event in events:
-                completion = event.get("complete_pin")
-                if completion:
-                    deactivate_pin(
-                        completion["repo"], completion["number"], completion["outcome"],
-                    )
-            delivered = len(events)
-            pending.clear()
+        if scan_is_due(state, capture_datetime):
+            for repo_config in repositories:
+                repo = repo_config["repo"]
+                previous = repo_states.get(repo, {})
+                bootstrap = not bool(previous.get("last_check"))
+                try:
+                    blocks, next_state = collect_repo(repo_config, previous, capture_time, bootstrap)
+                    if bootstrap:
+                        bootstrapped += 1
+                    elif blocks:
+                        pending.append(prepare_notification_group(repo_config, next_state, blocks))
+                        queued += len(blocks)
+                    repo_states[repo] = next_state
+                    save_state(state)
+                except Exception as cause:
+                    failures += 1
+                    print("[error] {0}: {1}".format(repo, cause), file=sys.stderr)
+            state["last_scan_at"] = capture_time
             save_state(state)
+        if pending and not in_quiet_hours():
+            batch, remaining = take_pending_batch(pending)
+            events = pending_events(batch)
+            body = render_notification_batch(batch)
+            deferred = len(pending_events(remaining))
+            if deferred:
+                body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)
+            try:
+                send_card(
+                    "开源仓库", body, template="purple", actions=pin_actions(events),
+                )
+            except Exception as cause:
+                print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)
+            else:
+                for event in events:
+                    completion = event.get("complete_pin")
+                    if completion:
+                        deactivate_pin(
+                            completion["repo"], completion["number"], completion["outcome"],
+                        )
+                delivered = len(events)
+                pending[:] = remaining
+                save_state(state)
         print(
             "DONE bootstrapped={0} queued={1} delivered={2} pending={3} failures={4}".format(
                 bootstrapped, queued, delivered, len(pending_events(pending)), failures,

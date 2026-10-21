@@ -564,7 +564,7 @@ def realtime():
 
     # 先推送，成功后才推进时间戳；推送失败则不保存，下次重试
     try:
-        feishu_send_card("🔔 仓库实时更新", md, "orange")
+        feishu_send_card("我的仓库", md, "orange")
     except Exception as e:
         print(f"PUSH_FAILED (will retry next run): {e}", file=sys.stderr)
         print("PUSH_FAILED")
@@ -598,7 +598,7 @@ def daily():
         return
     # 推送
     try:
-        feishu_send_card("📦 仓库每日总结", md, "blue")
+        feishu_send_card("我的仓库", md, "blue")
     except Exception as e:
         print(f"DAILY_PUSH_FAILED (will retry): {e}", file=sys.stderr)
         print("DAILY_PUSH_FAILED")

@@ -229,6 +229,27 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertLess(rendered.index("first"), rendered.index("third"))
         self.assertEqual(len(monitor.pending_events(groups)), 3)
 
+    def test_pending_batch_limits_one_card_and_preserves_remainder(self):
+        groups = [{
+            "repo": "owner/repo", "events": [
+                {"markdown": "event-{0}".format(index)} for index in range(30)
+            ],
+        }]
+        batch, remaining = monitor.take_pending_batch(groups, limit=25)
+        self.assertEqual(len(monitor.pending_events(batch)), 25)
+        self.assertEqual(len(monitor.pending_events(remaining)), 5)
+        self.assertEqual(remaining[0]["events"][0]["markdown"], "event-25")
+
+    def test_scan_interval_is_hourly_while_retry_runs_can_be_frequent(self):
+        state = {"last_scan_at": "2026-10-21T02:00:00Z"}
+        with patch.object(monitor, "PUBLIC_SERVICE", {"interval_seconds": 3600}):
+            self.assertFalse(monitor.scan_is_due(
+                state, datetime(2026, 10, 21, 2, 59, tzinfo=timezone.utc)
+            ))
+            self.assertTrue(monitor.scan_is_due(
+                state, datetime(2026, 10, 21, 3, 0, tzinfo=timezone.utc)
+            ))
+
     def test_quiet_run_persists_events_without_sending(self):
         state = {"repos": {"owner/repo": {"last_check": "old"}}}
         block = {
@@ -289,10 +310,34 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             monitor.run()
         sender.assert_called_once()
         title, body = sender.call_args.args[:2]
-        self.assertIn("2 个仓库 / 2 项", title)
+        self.assertEqual(title, "开源仓库")
         self.assertIn("owner/one", body)
         self.assertIn("owner/two", body)
         self.assertEqual(state["pending_notifications"], [])
+
+    def test_failed_delivery_keeps_queue_for_retry(self):
+        state = {
+            "repos": {"owner/repo": {"last_check": "2026-10-21T02:00:00Z"}},
+            "last_scan_at": "2026-10-21T02:00:00Z",
+            "pending_notifications": [{
+                "repo": "owner/repo", "level": "balanced",
+                "integration_branches": ["main"],
+                "events": [{"markdown": "queued event"}],
+            }],
+        }
+        sender = MagicMock(side_effect=RuntimeError("offline"))
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            monitor, "LOCK_FILE", Path(directory) / "watch.lock",
+        ), patch.object(monitor, "configure"), patch.object(
+            monitor, "WATCH", {"repositories": [{"repo": "owner/repo"}]},
+        ), patch.object(monitor, "load_state", return_value=state), patch.object(
+            monitor, "save_state",
+        ), patch.object(monitor, "scan_is_due", return_value=False), patch.object(
+            monitor, "in_quiet_hours", return_value=False,
+        ), patch.object(monitor, "send_card", sender):
+            monitor.run()
+        sender.assert_called_once()
+        self.assertEqual(len(monitor.pending_events(state["pending_notifications"])), 1)
 
     def test_pinned_update_and_outcome_show_synthetic_label(self):
         pr = {
