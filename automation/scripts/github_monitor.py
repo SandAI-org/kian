@@ -371,18 +371,15 @@ def realtime():
 
     try:
       for repo in REPOS:
+        pending_issue_comments = {}
+
         # New issue comments
         for c in gh_get(repo, "/issues/comments", {"sort": "created", "direction": "desc", "since": last_check, "per_page": "30"}):
             if isinstance(c, dict) and c.get("created_at", "") > last_check:
                 num = c["issue_url"].split("/")[-1]
                 user = c["user"]["login"]
                 summary = llm_summarize(c.get("body", ""), "评论")
-                block = (
-                    f"**💬 评论** on #{num} · 👤 {user}\n\n"
-                    f"{summary}\n\n"
-                    f"[🔗 查看评论]({c.get('html_url', '')})"
-                )
-                all_updates.append((repo, block))
+                pending_issue_comments.setdefault(str(num), []).append((user, summary, c.get("html_url", "")))
 
         # New PR review comments
         for c in gh_get(repo, "/pulls/comments", {"sort": "created", "direction": "desc", "since": last_check, "per_page": "30"}):
@@ -496,6 +493,8 @@ def realtime():
                     f"👤 由 {pr.get('user',{}).get('login','')} 提交\n\n"
                     f"[🔗 查看 PR]({pr.get('html_url', '')})"
                 )
+                for user, summary, url in pending_issue_comments.pop(str(num), []):
+                    block += f"\n\n**💬 同轮相关评论** · 👤 {user}\n\n{summary}\n\n[🔗 查看评论]({url})"
                 all_updates.append((repo, block))
             # 关闭但未合并
             elif closed_at and closed_at > last_check and not merged_at:
@@ -504,10 +503,20 @@ def realtime():
                     f"📌 **{title}**\n\n"
                     f"[🔗 查看 PR]({pr.get('html_url', '')})"
                 )
+                for user, summary, url in pending_issue_comments.pop(str(num), []):
+                    block += f"\n\n**💬 关闭说明** · 👤 {user}\n\n{summary}\n\n[🔗 查看评论]({url})"
                 all_updates.append((repo, block))
             # closed PR 按 updated 降序，一旦遇到早于 last_check 的就可提前停
             elif pr.get("updated_at", "") <= last_check:
                 break
+
+        for num, comments in pending_issue_comments.items():
+            for user, summary, url in comments:
+                all_updates.append((repo, (
+                    f"**💬 评论** on #{num} · 👤 {user}\n\n"
+                    f"{summary}\n\n"
+                    f"[🔗 查看评论]({url})"
+                )))
 
         # Issue 状态变化：关闭 / 重新打开（含新建 issue）
         for iss in gh_get(repo, "/issues", {"state": "all", "sort": "updated", "direction": "desc", "per_page": "20"}):

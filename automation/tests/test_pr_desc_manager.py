@@ -25,6 +25,56 @@ monitor_spec.loader.exec_module(monitor)
 
 
 class PrDescriptionRewriteTest(unittest.TestCase):
+    def test_realtime_merges_pr_close_comment_into_close_event(self):
+        last_check = "2026-10-21T09:00:00Z"
+        comment = {
+            "created_at": "2026-10-21T09:01:00Z",
+            "issue_url": "https://api.github.com/repos/example/repo/issues/49",
+            "html_url": "https://github.com/example/repo/pull/49#issuecomment-1",
+            "user": {"login": "alice"},
+            "body": "Closing because the work was split.",
+        }
+        closed_pr = {
+            "number": 49,
+            "title": "Split this work",
+            "user": {"login": "alice"},
+            "html_url": "https://github.com/example/repo/pull/49",
+            "merged_at": None,
+            "closed_at": "2026-10-21T09:02:00Z",
+            "updated_at": "2026-10-21T09:02:00Z",
+        }
+
+        def github_response(repo, endpoint, params=None):
+            if endpoint == "/issues/comments":
+                return [comment]
+            if endpoint == "/pulls/comments":
+                return []
+            if endpoint == "/pulls" and params["state"] == "open":
+                return []
+            if endpoint == "/pulls" and params["state"] == "closed":
+                return [closed_pr]
+            if endpoint == "/issues":
+                return []
+            self.fail(f"Unexpected GitHub request: {endpoint} {params}")
+
+        with mock.patch.object(monitor, "REPOS", ["example/repo"]), mock.patch.object(
+            monitor, "load_state", return_value={"last_check": last_check, "pr_heads": {}}
+        ), mock.patch.object(monitor, "save_state"), mock.patch.object(
+            monitor, "cleanup_managed"
+        ), mock.patch.object(monitor, "unmanage_pr"), mock.patch.object(
+            monitor, "gh_get", side_effect=github_response
+        ), mock.patch.object(monitor, "llm_summarize", return_value="• 拆分为后续 PR"), mock.patch.object(
+            monitor, "feishu_send_card"
+        ) as sender:
+            monitor.realtime()
+
+        sender.assert_called_once()
+        body = sender.call_args.args[1]
+        self.assertEqual(body.count("PR 已关闭 #49"), 1)
+        self.assertNotIn("**💬 评论** on #49", body)
+        self.assertIn("**💬 关闭说明** · 👤 alice", body)
+        self.assertIn("https://github.com/example/repo/pull/49#issuecomment-1", body)
+
     def test_cleanup_preserves_entry_added_while_checking_closed_prs(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "managed-prs.json"
