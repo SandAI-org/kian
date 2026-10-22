@@ -25,6 +25,18 @@ monitor_spec.loader.exec_module(monitor)
 
 
 class PrDescriptionRewriteTest(unittest.TestCase):
+    def test_realtime_skips_a_concurrent_monitor_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = str(Path(directory) / "github-monitor-state.json")
+            with mock.patch.object(monitor, "STATE_FILE", state_file), mock.patch.object(
+                monitor, "_realtime"
+            ) as realtime_pass, mock.patch.object(
+                monitor.fcntl, "flock", side_effect=BlockingIOError
+            ):
+                monitor.realtime()
+
+        realtime_pass.assert_not_called()
+
     def test_realtime_merges_pr_close_comment_into_close_event(self):
         last_check = "2026-10-21T09:00:00Z"
         comment = {

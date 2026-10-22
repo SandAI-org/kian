@@ -357,6 +357,23 @@ def cleanup_managed():
 
 
 def realtime():
+    """Run one realtime pass, skipping rather than duplicating an overlap.
+
+    Both launchd reloads and a slow network/LLM call can overlap with a manual
+    invocation.  Two workers that read the same checkpoint can otherwise send
+    the same new-PR card before either persists its updated timestamp.
+    """
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(f"{STATE_FILE}.realtime.lock", "a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("SKIPPED_CONCURRENT")
+            return
+        _realtime()
+
+
+def _realtime():
     state = load_state()
     last_check = state.get("last_check")
     if not last_check:
