@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic PR description manager for Feishu descN/upN commands."""
+import base64
 import json
 import http.client
 import fcntl
@@ -12,6 +13,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from automation_common import STATE_DIR, load_config
@@ -329,6 +331,102 @@ def pull_request_files(repo, number):
             break
         page += 1
     return files
+
+
+def has_unavailable_line_stats(item):
+    """Whether GitHub omitted a file's per-file line counters.
+
+    GitHub occasionally returns a complete PR file inventory while reporting
+    zero for additions, deletions, and changes on a non-empty text diff.  Do
+    not exclude renames here: a rename may also contain edits.
+    """
+    return not (
+        item.get("additions", 0)
+        or item.get("deletions", 0)
+        or item.get("changes", 0)
+    )
+
+
+def git_blob_bytes(repo, sha):
+    data = request(repo, f"/git/blobs/{sha}")
+    if not isinstance(data, dict) or data.get("encoding") != "base64":
+        raise RuntimeError(f"GitHub 未返回 blob {sha} 的 base64 内容")
+    return base64.b64decode(data.get("content", ""))
+
+
+def numstat_from_blob_bytes(before, after):
+    """Use Git's own diff engine to preserve GitHub-compatible line counts."""
+    with tempfile.TemporaryDirectory(prefix="kian-pr-numstat-") as directory:
+        before_path = os.path.join(directory, "before")
+        after_path = os.path.join(directory, "after")
+        with open(before_path, "wb") as handle:
+            handle.write(before)
+        with open(after_path, "wb") as handle:
+            handle.write(after)
+        result = subprocess.run(
+            ["git", "diff", "--no-index", "--numstat", "--", before_path, after_path],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(f"git diff --numstat 失败: {result.stderr.strip()}")
+    line = result.stdout.strip()
+    if not line:
+        return 0, 0
+    fields = line.split("\t", 2)
+    if len(fields) < 2 or not fields[0].isdigit() or not fields[1].isdigit():
+        raise RuntimeError("二进制文件无法获得精确的逐 scope 行数")
+    return int(fields[0]), int(fields[1])
+
+
+def fill_unavailable_pr_file_stats(repo, pr, files):
+    """Recover omitted GitHub file counters from the base/head blobs.
+
+    This is deliberately a targeted fallback: normal PRs keep the lightweight
+    files API path, while only files whose three counters are all zero require
+    extra requests.  If the base tree is truncated or any blob cannot be read,
+    the caller retains the existing conservative rendering.
+    """
+    missing = [item for item in files if has_unavailable_line_stats(item)]
+    if not missing:
+        return
+    base_sha = pr.get("base", {}).get("sha", "")
+    if not base_sha:
+        raise RuntimeError("PR 缺少 base SHA，无法补全逐文件行数")
+    tree = request(repo, f"/git/trees/{base_sha}?recursive=1")
+    if not isinstance(tree, dict) or tree.get("truncated"):
+        raise RuntimeError("GitHub base tree 不完整，无法补全逐文件行数")
+    base_blobs = {
+        entry.get("path"): entry.get("sha")
+        for entry in tree.get("tree", [])
+        if entry.get("type") == "blob" and entry.get("path") and entry.get("sha")
+    }
+    blob_shas = set()
+    for item in missing:
+        status = item.get("status")
+        filename = item.get("filename", "")
+        previous = item.get("previous_filename") or filename
+        if status != "added":
+            blob_shas.add(base_blobs.get(previous))
+        if status != "removed":
+            blob_shas.add(item.get("sha"))
+    blob_shas.discard(None)
+    with ThreadPoolExecutor(max_workers=min(8, len(blob_shas) or 1)) as executor:
+        futures = {sha: executor.submit(git_blob_bytes, repo, sha) for sha in blob_shas}
+        blobs = {sha: future.result() for sha, future in futures.items()}
+    for item in missing:
+        status = item.get("status")
+        filename = item.get("filename", "")
+        previous = item.get("previous_filename") or filename
+        before_sha = base_blobs.get(previous)
+        after_sha = item.get("sha")
+        before = b"" if status == "added" else blobs[before_sha]
+        after = b"" if status == "removed" else blobs[after_sha]
+        additions, deletions = numstat_from_blob_bytes(before, after)
+        item["additions"] = additions
+        item["deletions"] = deletions
+        item["changes"] = additions + deletions
 
 
 def should_build_from_diff(pr, commits):
@@ -1515,6 +1613,14 @@ def update(command, number, requested_repo=None, mode="default"):
     current_body = pr.get("body") or ""
     current_head_sha = pr.get("head", {}).get("sha", "")
     files = pull_request_files(repo, number)
+    if repo == SPECIAL_LAYOUT_REPO:
+        try:
+            fill_unavailable_pr_file_stats(repo, pr, files)
+        except (RuntimeError, urllib.error.URLError, OSError, subprocess.SubprocessError):
+            # Rendering the total-only fallback is preferable to failing a
+            # description update merely because GitHub withheld one file's
+            # patch/blob metadata.
+            pass
     commits = request(repo, f"/pulls/{number}/commits?per_page=100")
     linked_prs = []
     for linked_number in linked_pr_numbers(commits):

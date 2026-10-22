@@ -235,6 +235,59 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         self.assertIn("**total** 2 files (+20/−4)", line)
         self.assertIn("per-scope line counts unavailable from GitHub", line)
 
+    def test_magicore_scope_recovers_omitted_github_stats_from_blobs(self):
+        files = [
+            {
+                "filename": "apps/large.py",
+                "status": "modified",
+                "sha": "head-apps",
+                "additions": 0,
+                "deletions": 0,
+                "changes": 0,
+            },
+            {
+                "filename": "pkgs/MagiMoE/new_name.py",
+                "previous_filename": "pkgs/MagiMoE/old_name.py",
+                "status": "renamed",
+                "sha": "head-pkgs",
+                "additions": 0,
+                "deletions": 0,
+                "changes": 0,
+            },
+        ]
+        pr = {"base": {"sha": "base"}, "additions": 13, "deletions": 5}
+        tree = {
+            "truncated": False,
+            "tree": [
+                {"path": "apps/large.py", "type": "blob", "sha": "base-apps"},
+                {"path": "pkgs/MagiMoE/old_name.py", "type": "blob", "sha": "base-pkgs"},
+            ],
+        }
+
+        with mock.patch.object(manager, "request", return_value=tree), mock.patch.object(
+            manager,
+            "git_blob_bytes",
+            side_effect=lambda _repo, sha: sha.encode(),
+        ), mock.patch.object(
+            manager,
+            "numstat_from_blob_bytes",
+            side_effect=lambda before, after: {
+                (b"base-apps", b"head-apps"): (10, 2),
+                (b"base-pkgs", b"head-pkgs"): (3, 3),
+            }[(before, after)],
+        ):
+            manager.fill_unavailable_pr_file_stats("example/repo", pr, files)
+
+        self.assertEqual(files[0]["additions"], 10)
+        self.assertEqual(files[0]["deletions"], 2)
+        self.assertEqual(files[1]["additions"], 3)
+        self.assertEqual(files[1]["deletions"], 3)
+        self.assertEqual(
+            manager.render_change_scope(files, pr),
+            "> **Change scope:** `apps/` 1 file (+10/−2) · "
+            "`pkgs/` 1 file (+3/−3) · `others` 0 files (+0/−0)",
+        )
+
     def test_standalone_scope_uses_logical_src_tests_and_others_labels(self):
         files = [
             {"filename": "magi_attention/functional.py", "additions": 10, "deletions": 2},
