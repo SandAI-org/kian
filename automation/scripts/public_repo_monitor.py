@@ -256,6 +256,69 @@ def feed_get(url):
     return items
 
 
+def web_page_get(url, limit=8 * 1024 * 1024):
+    request = urllib.request.Request(
+        str(url),
+        headers={
+            "Accept": "text/html, application/xhtml+xml",
+            "User-Agent": "kian-public-repo-monitor",
+        },
+    )
+    try:
+        with OPENER.open(request, timeout=30) as response:
+            payload = response.read(limit + 1)
+            charset = response.headers.get_content_charset() or "utf-8"
+    except Exception as cause:
+        raise RuntimeError("Web page request failed for {0}: {1}".format(url, cause)) from cause
+    if len(payload) > limit:
+        raise RuntimeError("Web page response exceeds {0} bytes: {1}".format(limit, url))
+    return payload.decode(charset, errors="replace")
+
+
+def discover_web_releases(source):
+    index_url = str(source.get("index_url", "")).strip()
+    pattern = str(source.get("link_pattern", "")).strip()
+    if not index_url or not pattern:
+        raise RuntimeError("Web release source requires index_url and link_pattern")
+    document = web_page_get(index_url)
+    releases = []
+    seen = set()
+    for href in re.findall(r"href\s*=\s*[\"']([^\"']+)[\"']", document, flags=re.I):
+        match = re.search(pattern, href, flags=re.I)
+        if not match:
+            continue
+        version = match.groupdict().get("version")
+        if not version and match.groups():
+            version = match.group(1)
+        if not version:
+            version = match.group(0)
+        identifier = str(version).strip()
+        if not identifier or identifier in seen:
+            continue
+        seen.add(identifier)
+        releases.append({
+            "id": identifier,
+            "version": identifier.replace("-", "."),
+            "link": urllib.parse.urljoin(index_url, href),
+        })
+    return releases
+
+
+def release_note_summary(url):
+    document = web_page_get(url)
+    marker = re.search(
+        r"<div\b[^>]*class=[\"'][^\"']*StepModule-body\s+RichTextBody[^\"']*[\"']",
+        document,
+        flags=re.I,
+    )
+    relevant = document[marker.start():] if marker else document
+    text = html_to_text(relevant, 12000)
+    feature_index = text.lower().find("key features and enhancements")
+    if feature_index > 0:
+        text = text[:700] + " " + text[feature_index:feature_index + 3500]
+    return compact_body(text, 4200)
+
+
 def label_names(item):
     result = []
     for label in item.get("labels", []):
@@ -555,6 +618,17 @@ def blog_block(source_name, post):
     )
 
 
+def web_release_block(source_name, release):
+    return (
+        "**📦 {0} 新版本 `{1}`**\n\n"
+        "📌 **{0} {1} Release Notes**\n\n{2}\n\n"
+        "[🔗 查看 Release Notes]({3})"
+    ).format(
+        source_name, release.get("version", ""), SUMMARY_MARKER,
+        release.get("link", ""),
+    )
+
+
 def collect_blog_posts(repo_config, repo_state):
     previous_sources = repo_state.get("blog_feeds", {})
     next_sources = dict(previous_sources)
@@ -596,6 +670,45 @@ def collect_blog_posts(repo_config, repo_state):
             if identifier not in ordered:
                 ordered.append(identifier)
         next_sources[feed_url] = {"seen": ordered[:200]}
+    return blocks, next_sources
+
+
+def collect_web_releases(repo_config, repo_state):
+    previous_sources = repo_state.get("web_releases", {})
+    next_sources = dict(previous_sources)
+    blocks = []
+    for source in repo_config.get("web_releases", []):
+        if not source.get("enabled", True):
+            continue
+        index_url = str(source.get("index_url", "")).strip()
+        releases = discover_web_releases(source)
+        previous = previous_sources.get(index_url)
+        previous_seen = previous.get("seen", []) if isinstance(previous, dict) else []
+        seen = set(previous_seen)
+        if previous is not None:
+            for release in reversed(releases):
+                if release["id"] in seen:
+                    continue
+                body = release_note_summary(release["link"])
+                item = {
+                    "title": "{0} {1}".format(
+                        source.get("name", "Release"), release["version"],
+                    ),
+                    "body": body,
+                    "html_url": release["link"],
+                }
+                identity = hashlib.sha256(
+                    (index_url + "\0" + release["id"]).encode("utf-8")
+                ).hexdigest()[:20]
+                blocks.append(event_block(
+                    web_release_block(source.get("name", "Release"), release),
+                    item, "web_release", identity, repo=repo_config["repo"],
+                ))
+        ordered = []
+        for identifier in [release["id"] for release in releases] + previous_seen:
+            if identifier not in ordered:
+                ordered.append(identifier)
+        next_sources[index_url] = {"seen": ordered[:200]}
     return blocks, next_sources
 
 
@@ -905,6 +1018,8 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
 
     blog_blocks, blog_feeds = collect_blog_posts(repo_config, repo_state)
     blocks.extend(blog_blocks)
+    web_release_blocks, web_releases = collect_web_releases(repo_config, repo_state)
+    blocks.extend(web_release_blocks)
 
     return blocks, {
         "last_check": capture_time,
@@ -913,6 +1028,7 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
         "level": repo_config.get("level", "balanced"),
         "signals": trim_signals(signals),
         "blog_feeds": blog_feeds,
+        "web_releases": web_releases,
     }
 
 

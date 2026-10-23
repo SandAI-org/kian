@@ -94,6 +94,70 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertEqual(blocks, [])
         self.assertEqual(state[feed_url]["seen"][0], "amd-post")
 
+    def test_discovers_versioned_release_links_from_html_index(self):
+        source = {
+            "index_url": "https://docs.example.test/releases/index.html",
+            "link_pattern": r"rel-(?P<version>[0-9]{2}-[0-9]{2})\.html",
+        }
+        document = """
+        <a href="rel-26-10.html#rel-26-10">Release 26.10</a>
+        <a href="rel-26-09.html#rel-26-09">Release 26.09</a>
+        <a href="rel-26-10.html">Duplicate</a>
+        """
+        with patch.object(monitor, "web_page_get", return_value=document):
+            releases = monitor.discover_web_releases(source)
+        self.assertEqual([item["id"] for item in releases], ["26-10", "26-09"])
+        self.assertEqual(releases[0]["version"], "26.10")
+        self.assertEqual(
+            releases[0]["link"],
+            "https://docs.example.test/releases/rel-26-10.html#rel-26-10",
+        )
+
+    def test_new_web_release_builds_baseline_without_replay(self):
+        index_url = "https://docs.example.test/releases/index.html"
+        releases = [{
+            "id": "26-09", "version": "26.09",
+            "link": "https://docs.example.test/releases/rel-26-09.html",
+        }]
+        config = {
+            "repo": "owner/repo",
+            "web_releases": [{"name": "Vendor Runtime", "index_url": index_url}],
+        }
+        with patch.object(monitor, "discover_web_releases", return_value=releases), patch.object(
+            monitor, "release_note_summary",
+        ) as summary:
+            blocks, state = monitor.collect_web_releases(config, {})
+        self.assertEqual(blocks, [])
+        summary.assert_not_called()
+        self.assertEqual(state[index_url]["seen"], ["26-09"])
+
+    def test_new_web_release_fetches_notes_and_creates_release_event(self):
+        index_url = "https://docs.example.test/releases/index.html"
+        releases = [
+            {
+                "id": "26-10", "version": "26.10",
+                "link": "https://docs.example.test/releases/rel-26-10.html",
+            },
+            {
+                "id": "26-09", "version": "26.09",
+                "link": "https://docs.example.test/releases/rel-26-09.html",
+            },
+        ]
+        config = {
+            "repo": "pytorch/pytorch",
+            "web_releases": [{"name": "NVIDIA PyTorch NGC", "index_url": index_url}],
+        }
+        previous = {"web_releases": {index_url: {"seen": ["26-09"]}}}
+        with patch.object(monitor, "discover_web_releases", return_value=releases), patch.object(
+            monitor, "release_note_summary", return_value="PyTorch and CUDA versions.",
+        ):
+            blocks, state = monitor.collect_web_releases(config, previous)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]["summary_kind"], "web_release")
+        self.assertIn("NVIDIA PyTorch NGC 新版本 `26.10`", blocks[0]["markdown"])
+        self.assertEqual(blocks[0]["body"], "PyTorch and CUDA versions.")
+        self.assertEqual(state[index_url]["seen"][:2], ["26-10", "26-09"])
+
     def test_security_signal_is_always_high_importance(self):
         score, reasons = monitor.importance({
             "title": "Fix remote code execution vulnerability",

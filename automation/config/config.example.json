@@ -56,6 +56,13 @@
             "feed_url": "https://pytorch.org/blog/feed/"
           }
         ],
+        "web_releases": [
+          {
+            "name": "NVIDIA PyTorch NGC",
+            "index_url": "https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/index.html",
+            "link_pattern": "rel-(?P<version>[0-9]{2}-[0-9]{2})\\.html"
+          }
+        ],
         "exclude": {
           "title_patterns": ["\\b(?:amd|rocm|hip|xpu)\\b"],
           "label_patterns": ["amd|rocm|hip|xpu"],
