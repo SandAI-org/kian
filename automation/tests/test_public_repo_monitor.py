@@ -124,29 +124,17 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertLess(rendered[0].index("Title"), rendered[0].index("中文摘要"))
         self.assertLess(rendered[0].index("中文摘要"), rendered[0].index("Signals"))
 
-    def test_open_pr_event_exposes_pin_action(self):
+    def test_open_pr_event_has_no_card_action_metadata(self):
         block = monitor.event_block("body", {
             "number": 123, "state": "open", "title": "Important change",
         }, "pr", 123, repo="owner/repo")
-        self.assertEqual(block["pin"], {
-            "repo": "owner/repo", "number": 123, "kind": "pr",
-        })
-        with patch.object(monitor, "load_pin", return_value={}):
-            actions = monitor.pin_actions([block, block])
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0]["value"]["action"], "pin_public_item")
-        self.assertEqual(actions[0]["value"]["kind"], "pr")
+        self.assertNotIn("pin", block)
 
-    def test_open_issue_event_exposes_pin_action(self):
+    def test_open_issue_event_has_no_card_action_metadata(self):
         block = monitor.event_block("body", {
             "number": 321, "state": "open", "title": "Important bug",
         }, "issue", 321, repo="owner/repo")
-        self.assertEqual(block["pin"], {
-            "repo": "owner/repo", "number": 321, "kind": "issue",
-        })
-        with patch.object(monitor, "load_pin", return_value={}):
-            actions = monitor.pin_actions([block])
-        self.assertEqual(actions[0]["value"]["kind"], "issue")
+        self.assertNotIn("pin", block)
 
     def test_signals_merge_reasons_and_labels_without_inline_code(self):
         line = monitor.rendered_signals({
@@ -313,6 +301,7 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertEqual(title, "🌐 开源仓库实时更新")
         self.assertIn("owner/one", body)
         self.assertIn("owner/two", body)
+        self.assertNotIn("actions", sender.call_args.kwargs)
         self.assertEqual(state["pending_notifications"], [])
 
     def test_failed_delivery_keeps_queue_for_retry(self):

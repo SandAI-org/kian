@@ -335,16 +335,13 @@ def excluded_event(repo_config, repo, item, kind):
 
 
 def event_block(markdown, item, kind, identity, repo=""):
-    block = {
+    return {
         "markdown": markdown,
         "summary_key": "{0}:{1}".format(kind, identity),
         "summary_kind": kind,
         "title": str(item.get("title") or item.get("name") or item.get("tag_name") or ""),
         "body": str(item.get("body") or ""),
     }
-    if kind in ("pr", "issue") and repo and item.get("state") == "open":
-        block["pin"] = {"repo": repo, "number": int(item["number"]), "kind": kind}
-    return block
 
 
 def summary_body(value):
@@ -785,7 +782,7 @@ def prepare_notification_group(repo_config, repo_state, blocks):
     events = []
     for block, markdown in zip(blocks, rendered):
         event = {"markdown": markdown}
-        for key in ("pin", "complete_pin"):
+        for key in ("complete_pin",):
             if key in block:
                 event[key] = block[key]
         events.append(event)
@@ -845,31 +842,6 @@ def take_pending_batch(groups, limit=25):
     return batch, remaining
 
 
-def pin_actions(blocks):
-    actions = []
-    seen = set()
-    for block in blocks:
-        pin = block.get("pin")
-        if not pin:
-            continue
-        identity = (pin["repo"], pin["number"], pin["kind"])
-        if identity in seen or pin_is_active(load_pin(pin["repo"], pin["number"]), pin["kind"]):
-            continue
-        seen.add(identity)
-        actions.append({
-            "tag": "button",
-            "type": "primary",
-            "text": {"tag": "plain_text", "content": "📌 持续关注 #{0}".format(pin["number"])},
-            "value": {
-                "action": "pin_public_item",
-                "repo": pin["repo"],
-                "number": pin["number"],
-                "kind": pin["kind"],
-            },
-        })
-    return actions
-
-
 def run():
     configure()
     repositories = [item for item in WATCH.get("repositories", []) if item.get("enabled", True)]
@@ -919,9 +891,7 @@ def run():
             if deferred:
                 body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)
             try:
-                send_card(
-                    "🌐 开源仓库实时更新", body, template="purple", actions=pin_actions(events),
-                )
+                send_card("🌐 开源仓库实时更新", body, template="purple")
             except Exception as cause:
                 print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)
             else:

@@ -12,7 +12,7 @@
 
 每个仓库的 `level` 可随时调整：`detailed` 的 PR/Issue 默认阈值为 4，`balanced` 为 8，`essential` 禁用早期信号，只保留发版和主开发分支合入。`thresholds.pr` / `thresholds.issue` 可以覆盖单库阈值。已经推送过的早期信号会继续跟踪合入、关闭或 Issue 状态变化，即使之后下调监控等级。状态保存在 `state/public-watch-state.json`。
 
-每条仍处于 open 状态的 PR 或 Issue 推送都带有“持续关注”按钮。只有用户主动点击后，PR 的后续 head commit 变化（包括 rebase / force-push），以及 Issue 的新增评论、标题、正文或标签变化才会再次推送；这些卡片的标签会加入合成的 `pinned` 标识。PR 合入/关闭或 Issue 关闭时会发送最终结果并自动结束关注。Pin 状态独立保存在 `state/public-watch-pins/<owner>/<repo>/<number>.json`，因此不会与主监控检查点竞争写入；主动 pin 也会覆盖单库等级与噪声过滤规则。
+开源仓库卡片不再放置管理按钮。用户把 GitHub PR/Issue 链接连同“持续关注”“取消关注”“加入备忘录”或“深度调研”等自然语言指令交给 agent；agent 在 `ai-agent-contexts` 中保存长期条目，并在能够访问 Kian 运行主机时，通过 `automation/scripts/manage_public_watch.py pin|unpin <url>` 同步运行时关注状态。只有明确持续关注的条目才会再次推送：PR 的 head commit 变化（包括 rebase / force-push），以及 Issue 的新增评论、标题、正文或标签变化；这些卡片的标签会加入合成的 `pinned` 标识。PR 合入/关闭或 Issue 关闭时会发送最终结果并自动结束关注。运行时 Pin 状态独立保存在 `state/public-watch-pins/<owner>/<repo>/<number>.json`，主动关注也会覆盖单库等级与噪声过滤规则。
 
 开源仓库监控支持持久化合并投递。北京时间 `00:00–10:29` 发现的事件只写入 `state/public-watch-state.json` 的待发送队列，并由每天 `10:30` 的精确调度统一发送；发送失败时保留队列，每 5 分钟重试一次。真正的 GitHub 扫描仍保持每小时一次。白天每轮扫描产生的多个仓库事件也会合并成一张飞书卡片，同一仓库的多批事件归入同一个分区，减少连续弹窗。为遵守飞书卡片容量限制，极端积压每批最多发送 25 项，每个重试点最多发送一张卡片，其余继续留在队列。
 
