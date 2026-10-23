@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 from automation_common import STATE_DIR, load_config
@@ -180,6 +181,81 @@ def github_get(repo, path, params=None):
         raise RuntimeError("GitHub request failed for {0}{1}: {2}".format(repo, path, cause)) from cause
 
 
+def feed_get(url):
+    request = urllib.request.Request(
+        str(url),
+        headers={
+            "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml",
+            "User-Agent": "kian-public-repo-monitor",
+        },
+    )
+    try:
+        with OPENER.open(request, timeout=30) as response:
+            payload = response.read(4 * 1024 * 1024 + 1)
+    except Exception as cause:
+        raise RuntimeError("Feed request failed for {0}: {1}".format(url, cause)) from cause
+    if len(payload) > 4 * 1024 * 1024:
+        raise RuntimeError("Feed response exceeds 4 MiB: {0}".format(url))
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError as cause:
+        raise RuntimeError("Invalid XML feed at {0}: {1}".format(url, cause)) from cause
+
+    items = []
+    rss_items = root.findall(".//item")
+    if rss_items:
+        content_tag = "{http://purl.org/rss/1.0/modules/content/}encoded"
+        author_tag = "{http://purl.org/dc/elements/1.1/}creator"
+        for node in rss_items:
+            link = (node.findtext("link") or "").strip()
+            identifier = (node.findtext("guid") or link).strip()
+            if not identifier or not link:
+                continue
+            items.append({
+                "id": identifier,
+                "title": (node.findtext("title") or "Untitled post").strip(),
+                "link": link,
+                "published": (node.findtext("pubDate") or "").strip(),
+                "author": (node.findtext(author_tag) or "").strip(),
+                "body": html_to_text(
+                    node.findtext("description") or node.findtext(content_tag) or "",
+                    2400,
+                ),
+            })
+        return items
+
+    atom = "{http://www.w3.org/2005/Atom}"
+    for node in root.findall(".//" + atom + "entry"):
+        link_node = next(
+            (
+                value for value in node.findall(atom + "link")
+                if value.get("rel", "alternate") == "alternate" and value.get("href")
+            ),
+            None,
+        )
+        link = link_node.get("href", "").strip() if link_node is not None else ""
+        identifier = (node.findtext(atom + "id") or link).strip()
+        if not identifier or not link:
+            continue
+        author = node.find(atom + "author")
+        items.append({
+            "id": identifier,
+            "title": (node.findtext(atom + "title") or "Untitled post").strip(),
+            "link": link,
+            "published": (
+                node.findtext(atom + "published") or node.findtext(atom + "updated") or ""
+            ).strip(),
+            "author": (
+                author.findtext(atom + "name") if author is not None else ""
+            ) or "",
+            "body": html_to_text(
+                node.findtext(atom + "summary") or node.findtext(atom + "content") or "",
+                2400,
+            ),
+        })
+    return items
+
+
 def label_names(item):
     result = []
     for label in item.get("labels", []):
@@ -248,6 +324,15 @@ def compact_body(value, limit=280):
     text = re.sub(r"[#>*_`|~-]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def html_to_text(value, limit=280):
+    text = re.sub(
+        r"<script\b[^>]*>.*?</script>|<style\b[^>]*>.*?</style>",
+        " ", value or "", flags=re.I | re.S,
+    )
+    text = re.sub(r"<[^>]+>", " ", text)
+    return compact_body(text, limit)
 
 
 def pin_path(repo, number):
@@ -368,7 +453,7 @@ def copilot_chinese_summaries(blocks):
         }
         for block in blocks
     ]
-    prompt = """请为下面的 GitHub 开源仓库事件生成中文摘要。要求：
+    prompt = """请为下面的开源项目事件（PR、Issue、Release 或 Blog）生成中文摘要。要求：
 1. 每项用 1-2 句中文，不超过 90 个汉字；说明改了什么、为什么重要或解决什么问题。
 2. 不要只翻译标题；结合正文，但不要臆测正文没有的信息。
 3. 保留 CUDA、FP8、API 等技术名词。不要 Markdown、不要 emoji。
@@ -456,6 +541,62 @@ def release_block(release):
         release.get("tag_name", ""), badge, title, SUMMARY_MARKER,
         release.get("html_url", "")
     )
+
+
+def blog_block(source_name, post):
+    author = " · ✍️ {0}".format(post.get("author", "")) if post.get("author") else ""
+    return (
+        "**📰 {0} 新文章**{1}\n\n"
+        "📌 **{2}**\n\n{3}\n\n"
+        "[🔗 阅读原文]({4})"
+    ).format(
+        source_name, author, post.get("title", "Untitled post"), SUMMARY_MARKER,
+        post.get("link", ""),
+    )
+
+
+def collect_blog_posts(repo_config, repo_state):
+    previous_sources = repo_state.get("blog_feeds", {})
+    next_sources = dict(previous_sources)
+    blocks = []
+    for source in repo_config.get("blogs", []):
+        if not source.get("enabled", True):
+            continue
+        feed_url = str(source.get("feed_url", "")).strip()
+        if not feed_url:
+            raise RuntimeError("Blog source for {0} has no feed_url".format(repo_config["repo"]))
+        posts = feed_get(feed_url)
+        previous = previous_sources.get(feed_url)
+        previous_seen = previous.get("seen", []) if isinstance(previous, dict) else []
+        seen = set(previous_seen)
+        if previous is not None:
+            for post in reversed(posts):
+                if post["id"] in seen:
+                    continue
+                identity = hashlib.sha256(
+                    (feed_url + "\0" + post["id"]).encode("utf-8")
+                ).hexdigest()[:20]
+                item = {
+                    "title": post["title"],
+                    "body": post.get("body", ""),
+                    "html_url": post["link"],
+                }
+                excluded, reason = custom_exclusion(repo_config, item)
+                if excluded:
+                    print("[filter] {0} Blog excluded by {1}".format(
+                        repo_config["repo"], reason,
+                    ))
+                    continue
+                blocks.append(event_block(
+                    blog_block(source.get("name", "Blog"), post), item, "blog", identity,
+                    repo=repo_config["repo"],
+                ))
+        ordered = []
+        for identifier in [post["id"] for post in posts] + previous_seen:
+            if identifier not in ordered:
+                ordered.append(identifier)
+        next_sources[feed_url] = {"seen": ordered[:200]}
+    return blocks, next_sources
 
 
 def rendered_signals(item, reasons=None, pinned=False, limit=8):
@@ -762,12 +903,16 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             previous.get("notified", False) or should_notify,
         )
 
+    blog_blocks, blog_feeds = collect_blog_posts(repo_config, repo_state)
+    blocks.extend(blog_blocks)
+
     return blocks, {
         "last_check": capture_time,
         "default_branch": metadata.get("default_branch", ""),
         "integration_branches": branches,
         "level": repo_config.get("level", "balanced"),
         "signals": trim_signals(signals),
+        "blog_feeds": blog_feeds,
     }
 
 

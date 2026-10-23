@@ -13,6 +13,87 @@ import public_repo_monitor as monitor  # noqa: E402
 
 
 class PublicRepoMonitorRulesTest(unittest.TestCase):
+    def test_feed_get_parses_rss_posts_and_strips_html(self):
+        payload = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel><item><title>TorchComms update</title>
+    <link>https://example.test/blog/torchcomms/</link>
+    <guid>post-123</guid><pubDate>Thu, 22 Oct 2026 10:00:00 +0000</pubDate>
+    <dc:creator>PyTorch Team</dc:creator>
+    <description><![CDATA[<p>New <strong>fault tolerance</strong> support.</p>]]></description>
+  </item></channel>
+</rss>"""
+        response = MagicMock()
+        response.read.return_value = payload
+        response.__enter__.return_value = response
+        with patch.object(monitor.OPENER, "open", return_value=response):
+            posts = monitor.feed_get("https://example.test/feed/")
+        self.assertEqual(posts[0]["id"], "post-123")
+        self.assertEqual(posts[0]["author"], "PyTorch Team")
+        self.assertEqual(posts[0]["body"], "New fault tolerance support.")
+
+    def test_new_blog_feed_builds_baseline_without_replaying_posts(self):
+        posts = [{
+            "id": "old-post", "title": "Existing post",
+            "link": "https://example.test/blog/old", "body": "Existing",
+            "author": "", "published": "",
+        }]
+        config = {
+            "repo": "owner/repo",
+            "blogs": [{"name": "Project Blog", "feed_url": "https://example.test/feed/"}],
+        }
+        with patch.object(monitor, "feed_get", return_value=posts):
+            blocks, state = monitor.collect_blog_posts(config, {})
+        self.assertEqual(blocks, [])
+        self.assertEqual(
+            state["https://example.test/feed/"]["seen"], ["old-post"],
+        )
+
+    def test_new_blog_post_is_grouped_as_blog_event(self):
+        posts = [
+            {
+                "id": "new-post", "title": "Modern NCCL backend",
+                "link": "https://example.test/blog/new", "body": "A new backend.",
+                "author": "PyTorch Team", "published": "",
+            },
+            {
+                "id": "old-post", "title": "Existing post",
+                "link": "https://example.test/blog/old", "body": "Existing",
+                "author": "", "published": "",
+            },
+        ]
+        feed_url = "https://example.test/feed/"
+        config = {
+            "repo": "owner/repo",
+            "blogs": [{"name": "Project Blog", "feed_url": feed_url}],
+        }
+        previous = {"blog_feeds": {feed_url: {"seen": ["old-post"]}}}
+        with patch.object(monitor, "feed_get", return_value=posts):
+            blocks, state = monitor.collect_blog_posts(config, previous)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]["summary_kind"], "blog")
+        self.assertIn("Project Blog 新文章", blocks[0]["markdown"])
+        self.assertIn("Modern NCCL backend", blocks[0]["markdown"])
+        self.assertEqual(state[feed_url]["seen"][:2], ["new-post", "old-post"])
+
+    def test_blog_post_honors_repository_title_exclusion(self):
+        post = {
+            "id": "amd-post", "title": "Accelerating PyTorch on AMD GPUs",
+            "link": "https://example.test/blog/amd", "body": "FlyDSL details.",
+            "author": "", "published": "",
+        }
+        feed_url = "https://example.test/feed/"
+        config = {
+            "repo": "pytorch/pytorch",
+            "blogs": [{"name": "PyTorch Blog", "feed_url": feed_url}],
+            "exclude": {"title_patterns": [r"\bamd\b"]},
+        }
+        previous = {"blog_feeds": {feed_url: {"seen": ["old-post"]}}}
+        with patch.object(monitor, "feed_get", return_value=[post]):
+            blocks, state = monitor.collect_blog_posts(config, previous)
+        self.assertEqual(blocks, [])
+        self.assertEqual(state[feed_url]["seen"][0], "amd-post")
+
     def test_security_signal_is_always_high_importance(self):
         score, reasons = monitor.importance({
             "title": "Fix remote code execution vulnerability",

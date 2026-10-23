@@ -50,6 +50,12 @@
       {
         "repo": "pytorch/pytorch",
         "level": "balanced",
+        "blogs": [
+          {
+            "name": "PyTorch Blog",
+            "feed_url": "https://pytorch.org/blog/feed/"
+          }
+        ],
         "exclude": {
           "title_patterns": ["\\b(?:amd|rocm|hip|xpu)\\b"],
           "label_patterns": ["amd|rocm|hip|xpu"],

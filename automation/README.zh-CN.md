@@ -10,6 +10,8 @@
 
 `public_watch.repositories` 用于观察不由自己维护的公开仓库。它与自有仓库全量监控隔离，首次启动只建立当前基线，不倒灌历史消息。此后始终推送 Release 和合入 `integration_branches` 的 PR；未显式配置主开发分支时跟随 GitHub `default_branch`。重要 PR/Issue 结合安全、正确性/回归、破坏性 API、性能、核心硬件/编译器关键词，GitHub 标签、维护者身份、讨论与 reaction 热度评分。
 
+单个仓库还可以配置包含 `name` 和 `feed_url` 的 `blogs`。每个 RSS/Atom feed 独立建立基线，启用时不会倒灌旧文章；后续新文章会作为带中文摘要的 Blog 事件，归入所属仓库的同一持久化飞书批次，并沿用该仓库的标题/正文排除规则。Blog 检查点与 GitHub PR/Issue 状态分开保存，每个 feed 最多保留 200 个已见条目标识。
+
 每个仓库的 `level` 可随时调整：`detailed` 的 PR/Issue 默认阈值为 4，`balanced` 为 8，`essential` 禁用早期信号，只保留发版和主开发分支合入。`thresholds.pr` / `thresholds.issue` 可以覆盖单库阈值。已经推送过的早期信号会继续跟踪合入、关闭或 Issue 状态变化，即使之后下调监控等级。状态保存在 `state/public-watch-state.json`。
 
 开源仓库卡片不再放置管理按钮。用户把 GitHub PR/Issue 链接连同“持续关注”“取消关注”“加入备忘录”或“深度调研”等自然语言指令交给 agent；agent 在 `ai-agent-contexts` 中保存长期条目，并在能够访问 Kian 运行主机时，通过 `automation/scripts/manage_public_watch.py pin|unpin <url>` 同步运行时关注状态。只有明确持续关注的条目才会再次推送：PR 的 head commit 变化（包括 rebase / force-push），以及 Issue 的新增评论、标题、正文或标签变化；这些卡片的标签会加入合成的 `pinned` 标识。PR 合入/关闭或 Issue 关闭时会发送最终结果并自动结束关注。运行时 Pin 状态独立保存在 `state/public-watch-pins/<owner>/<repo>/<number>.json`，主动关注也会覆盖单库等级与噪声过滤规则。
