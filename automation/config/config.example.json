@@ -40,6 +40,14 @@
   },
   "public_watch": {
     "token_from_owner": "example-owner",
+    "sources": [
+      {
+        "id": "anthropic-research",
+        "name": "Anthropic Research",
+        "index_url": "https://www.anthropic.com/research",
+        "link_pattern": "^/research/[^/]+$"
+      }
+    ],
     "quiet_hours": {
       "enabled": true,
       "timezone": "Asia/Shanghai",

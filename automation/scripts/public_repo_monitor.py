@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
@@ -636,10 +637,10 @@ def collect_blog_posts(repo_config, repo_state):
     for source in repo_config.get("blogs", []):
         if not source.get("enabled", True):
             continue
-        feed_url = str(source.get("feed_url", "")).strip()
+        feed_url = str(source.get("feed_url") or source.get("index_url") or "").strip()
         if not feed_url:
             raise RuntimeError("Blog source for {0} has no feed_url".format(repo_config["repo"]))
-        posts = feed_get(feed_url)
+        posts = feed_get(feed_url) if source.get("feed_url") else discover_blog_posts(source)
         previous = previous_sources.get(feed_url)
         previous_seen = previous.get("seen", []) if isinstance(previous, dict) else []
         seen = set(previous_seen)
@@ -647,6 +648,10 @@ def collect_blog_posts(repo_config, repo_state):
             for post in reversed(posts):
                 if post["id"] in seen:
                     continue
+                if source.get("index_url"):
+                    document = web_page_get(post["link"])
+                    main = re.search(r"<(?:article|main)\b[^>]*>(.*?)</(?:article|main)>", document, re.I | re.S)
+                    post = dict(post, body=html_to_text(main.group(1) if main else document, 6000))
                 identity = hashlib.sha256(
                     (feed_url + "\0" + post["id"]).encode("utf-8")
                 ).hexdigest()[:20]
@@ -671,6 +676,56 @@ def collect_blog_posts(repo_config, repo_state):
                 ordered.append(identifier)
         next_sources[feed_url] = {"seen": ordered[:200]}
     return blocks, next_sources
+
+
+class _BlogLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+        self.href = None
+        self.text = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self.href = dict(attrs).get("href")
+            self.text = []
+
+    def handle_data(self, data):
+        if self.href:
+            self.text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a":
+            if self.href:
+                self.links.append((self.href, " ".join(" ".join(self.text).split())))
+            self.href = None
+
+
+def discover_blog_posts(source):
+    index = source["index_url"]
+    pattern = source["link_pattern"]
+    parser = _BlogLinks()
+    parser.feed(web_page_get(index))
+    origin = urllib.parse.urlsplit(index).netloc
+    posts = {}
+    for href, title in parser.links:
+        url = urllib.parse.urlsplit(urllib.parse.urljoin(index, href))
+        if url.scheme != "https" or url.netloc != origin or not re.search(pattern, url.path):
+            continue
+        if not title:
+            continue
+        link = urllib.parse.urlunsplit((url.scheme, url.netloc, url.path.rstrip("/"), "", ""))
+        if link not in posts:
+            posts[link] = {"id": link, "link": link, "title": title, "body": ""}
+    if not posts:
+        raise RuntimeError("Blog index has no matching articles: " + index)
+    return list(posts.values())
+
+
+def collect_source(source, previous, capture_time):
+    config = dict(source, repo="source:" + source["id"], blogs=[source])
+    blocks, feeds = collect_blog_posts(config, previous)
+    return config, blocks, {"last_check": capture_time, "blog_feeds": feeds}
 
 
 def collect_web_releases(repo_config, repo_state):
@@ -1049,6 +1104,7 @@ def prepare_notification_group(repo_config, repo_state, blocks):
         events.append(event)
     return {
         "repo": repo_config["repo"],
+        "source_name": repo_config.get("name", "") if repo_config.get("repo", "").startswith("source:") else "",
         "level": repo_config.get("level", "balanced"),
         "integration_branches": repo_state.get("integration_branches", []),
         "events": events,
@@ -1062,6 +1118,7 @@ def render_notification_batch(groups):
         if repo not in combined:
             combined[repo] = {
                 "repo": repo,
+                "source_name": group.get("source_name", ""),
                 "level": group.get("level", "balanced"),
                 "integration_branches": group.get("integration_branches", []),
                 "events": [],
@@ -1069,7 +1126,7 @@ def render_notification_batch(groups):
         combined[repo]["events"].extend(group.get("events", []))
     sections = []
     for group in combined.values():
-        intro = repo_intro(
+        intro = "📰 **{0}** · Research blog".format(group["source_name"]) if group.get("source_name") else repo_intro(
             group["repo"], group["level"], group.get("integration_branches", []),
         )
         markdown = "\n\n---\n\n".join(event["markdown"] for event in group["events"])
@@ -1106,7 +1163,8 @@ def take_pending_batch(groups, limit=25):
 def run():
     configure()
     repositories = [item for item in WATCH.get("repositories", []) if item.get("enabled", True)]
-    if not repositories:
+    sources = [item for item in WATCH.get("sources", []) if item.get("enabled", True)]
+    if not repositories and not sources:
         print("NO_REPOSITORIES")
         return
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1142,6 +1200,22 @@ def run():
                 except Exception as cause:
                     failures += 1
                     print("[error] {0}: {1}".format(repo, cause), file=sys.stderr)
+            source_states = state.setdefault("sources", {})
+            for source in sources:
+                source_id = source["id"]
+                try:
+                    previous = source_states.get(source_id, {})
+                    config, blocks, next_state = collect_source(source, previous, capture_time)
+                    if not previous.get("last_check"):
+                        bootstrapped += 1
+                    elif blocks:
+                        pending.append(prepare_notification_group(config, next_state, blocks))
+                        queued += len(blocks)
+                    source_states[source_id] = next_state
+                    save_state(state)
+                except Exception as cause:
+                    failures += 1
+                    print("[error] source {0}: {1}".format(source_id, cause), file=sys.stderr)
             state["last_scan_at"] = capture_time
             save_state(state)
         if pending and not in_quiet_hours():
@@ -1152,7 +1226,8 @@ def run():
             if deferred:
                 body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)
             try:
-                send_card("🌐 开源仓库实时更新", body, template="purple")
+                title = "🌐 开源仓库与研究博客实时更新" if any(group.get("source_name") for group in batch) else "🌐 开源仓库实时更新"
+                send_card(title, body, template="purple")
             except Exception as cause:
                 print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)
             else:

@@ -12,6 +12,8 @@
 
 单个仓库还可以配置包含 `name` 和 `feed_url` 的 `blogs`。每个 RSS/Atom feed 独立建立基线，启用时不会倒灌旧文章；后续新文章会作为带中文摘要的 Blog 事件，归入所属仓库的同一持久化飞书批次，并沿用该仓库的标题/正文排除规则。Blog 检查点与 GitHub PR/Issue 状态分开保存，每个 feed 最多保留 200 个已见条目标识。
 
+独立研究博客放在 `public_watch.sources`，包含唯一 `id`、展示 `name`，以及 `feed_url`（RSS/Atom）或 `index_url` + 匹配文章 URL path 的 `link_pattern`。HTML 发现仅接受同站 HTTPS 且带标题的文章链接，去重后读取新文章正文生成摘要；零匹配视为错误，保留旧基线。独立来源共用每小时扫描、夜间静默、持久化合并和失败重试，但检查点单列于 `sources`，卡片显示 Research blog、不伪造 GitHub 分支。所有未被排除的新文章都推送，不套用 PR/Issue 评分等级；仍可配置 `exclude` 标题/正文规则。首次注册只建基线，不倒灌历史；同一已见 URL 的内容修订不重复通知。覆盖范围为所选官方列表/feed，不声称扫描全站历史。以后 OpenAI/DeepMind 等可在核验官方 feed/index 后显式注册为新 source。配置示例注册了 Anthropic Research。
+
 对于没有 feed 的文档站，`web_releases` 可配置 `name`、`index_url` 和包含命名 `version` 分组（或第一个捕获分组）的正则 `link_pattern`。匹配链接会独立建立基线；索引中新出现的版本始终作为 Release 事件推送，并抓取详情页作为中文摘要上下文。它适合挂在仓库下的厂商产物，例如 NVIDIA PyTorch NGC 容器 release notes。
 
 每个仓库的 `level` 可随时调整：`detailed` 的 PR/Issue 默认阈值为 4，`balanced` 为 8，`essential` 禁用早期信号，只保留发版和主开发分支合入。`thresholds.pr` / `thresholds.issue` 可以覆盖单库阈值。已经推送过的早期信号会继续跟踪合入、关闭或 Issue 状态变化，即使之后下调监控等级。状态保存在 `state/public-watch-state.json`。

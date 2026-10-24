@@ -75,7 +75,7 @@ required = {
   "daily": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "github.repos", "github.tokens"],
   "qr": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "qr_publish.reminder_title", "qr_publish.reminder_body"],
   "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
-  "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "public_watch.repositories"],
+  "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
 }[service]
 
 def get(path):
@@ -96,6 +96,11 @@ def unresolved(value):
   return False
 
 missing = [path for path in required if unresolved(get(path))]
+if service == "public_watch" and not any(
+    value and not unresolved(value)
+    for value in (get("public_watch.repositories"), get("public_watch.sources"))
+):
+  missing.append("public_watch.repositories or public_watch.sources")
 if missing:
   print(", ".join(missing))
   raise SystemExit(1)

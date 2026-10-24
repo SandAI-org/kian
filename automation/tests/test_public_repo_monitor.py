@@ -13,6 +13,61 @@ import public_repo_monitor as monitor  # noqa: E402
 
 
 class PublicRepoMonitorRulesTest(unittest.TestCase):
+    def test_html_blog_discovery_deduplicates_and_excludes_navigation(self):
+        source = {"index_url": "https://example.test/research", "link_pattern": r"^/research/[^/]+$"}
+        document = '''<a href="/research/new"><img></a>
+        <a href="/research/new"><strong>New &amp; useful</strong></a>
+        <a href="/research/new?tracking=1">Duplicate</a>
+        <a href="/research/team/alignment">Team</a>
+        <a href="https://evil.test/research/article">Other site</a>'''
+        with patch.object(monitor, "web_page_get", return_value=document):
+            posts = monitor.discover_blog_posts(source)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["title"], "New & useful")
+        self.assertEqual(posts[0]["link"], "https://example.test/research/new")
+        with patch.object(monitor, "web_page_get", return_value="<p>layout changed</p>"):
+            with self.assertRaisesRegex(RuntimeError, "no matching articles"):
+                monitor.discover_blog_posts(source)
+
+    def test_independent_blog_baseline_and_new_article_context(self):
+        source = {"id": "research", "name": "Research", "index_url": "https://example.test/research", "link_pattern": r"^/research/[^/]+$"}
+        post = {"id": "new", "title": "New", "link": "https://example.test/research/new"}
+        with patch.object(monitor, "discover_blog_posts", return_value=[post]), patch.object(
+            monitor, "web_page_get", return_value="<main>Full article context</main>",
+        ) as fetch, patch.object(monitor, "github_get") as github:
+            config, blocks, baseline = monitor.collect_source(source, {}, "first")
+            self.assertEqual(blocks, [])
+            fetch.assert_not_called()
+            previous = {"blog_feeds": {source["index_url"]: {"seen": ["old"]}}}
+            _, blocks, _ = monitor.collect_source(source, previous, "next")
+            self.assertEqual(blocks[0]["body"], "Full article context")
+            self.assertEqual(config["repo"], "source:research")
+            github.assert_not_called()
+
+    def test_source_only_run_queues_and_preserves_delivery_failure(self):
+        source = {"id": "research", "name": "Research", "feed_url": "https://example.test/feed"}
+        state = {"sources": {"research": {"last_check": "old"}}}
+        config = dict(source, repo="source:research")
+        block = {"title": "Article", "body": "Context", "markdown": "Article", "summary_kind": "blog", "summary_key": "blog:1"}
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            monitor, "LOCK_FILE", Path(directory) / "watch.lock",
+        ), patch.object(monitor, "configure"), patch.object(
+            monitor, "WATCH", {"sources": [source]},
+        ), patch.object(monitor, "load_state", return_value=state), patch.object(
+            monitor, "save_state",
+        ), patch.object(monitor, "collect_source", return_value=(config, [block], {"last_check": "new"})), patch.object(
+            monitor, "add_chinese_summaries", return_value=["中文摘要"],
+        ), patch.object(monitor, "in_quiet_hours", return_value=False), patch.object(
+            monitor, "send_card", side_effect=RuntimeError("offline"),
+        ) as sender, patch.object(monitor, "github_get") as github:
+            monitor.run()
+        github.assert_not_called()
+        self.assertEqual(sender.call_args.args[0], "🌐 开源仓库与研究博客实时更新")
+        self.assertIn("Research blog", sender.call_args.args[1])
+        self.assertNotIn("Integration:", sender.call_args.args[1])
+        self.assertEqual(len(monitor.pending_events(state["pending_notifications"])), 1)
+        self.assertEqual(state["sources"]["research"]["last_check"], "new")
+
     def test_feed_get_parses_rss_posts_and_strips_html(self):
         payload = b"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
