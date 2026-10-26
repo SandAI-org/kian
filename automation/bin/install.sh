@@ -76,6 +76,7 @@ required = {
   "qr": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "qr_publish.reminder_title", "qr_publish.reminder_body"],
   "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
   "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
+  "codex_lock_guard": ["codex_lock_guard.targets"],
 }[service]
 
 def get(path):
@@ -158,7 +159,7 @@ remove_legacy_service() {
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr reminders public_watch; do
+for service in bridge realtime daily qr reminders public_watch codex_lock_guard; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

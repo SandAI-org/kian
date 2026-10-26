@@ -98,6 +98,18 @@ For a recurring wheel mirror, configure `wheel_sync.profiles` privately and run 
 
 QR publication is explicit: `python3 automation/scripts/qr_update_publish.py /absolute/path/to/image`. It copies the image, commits if changed, clears proxy variables, pushes the configured branch, marks the reminder complete only after a successful push, and sends a receipt.
 
+### Automatic recovery of stale Codex writer locks (optional)
+
+Enable `services.codex_lock_guard.enabled` in private configuration and list each target's `id`, SSH `host`, optional `container`, remote `codex_home`, `server_root`, and exact `workspaces` allowlist under `codex_lock_guard.targets`. Reinstall to register `com.kian.codex_lock_guard`, which checks every 60 seconds. Addresses and personal paths stay private. The macOS frontend supplies VS Code connection evidence; Linux targets verify locks. SSH uses `BatchMode`; password-only hosts require an existing SSH master, without storing or entering a password.
+
+All gates must pass: local VS Code logs show the old connection is no longer used by any current window and a replacement connection exists; the replacement backend's last resume outcome for the thread is an active-writer conflict without a later success; the exact allowlisted thread lock belongs to an older extension app-server in the same mount namespace; that backend holds only this thread's writer lock; the last turn is finished, its rollout has been unchanged for at least 120 seconds, and no child task is running. Identical evidence must persist across consecutive scans spanning at least 60 seconds. Network/check failures reset confirmation; observation restarts after recovery.
+
+Immediately before acting, the guard rechecks frontend ownership, lock inode, process start identity and task state, then uses a Linux pidfd to send only `SIGTERM` to that backend. It never sends `SIGKILL`, unlinks locks, edits databases/history/plugins, or changes reconnect timeouts. It does not perform global process cleanup. Unknown evidence, active tasks, multi-thread owners, unsupported versions or log formats are skipped. This is conservative recovery, not an upstream lifecycle fix; delayed state and check/action races still carry residual risk, and not every lock can be recovered automatically.
+
+Run `python3 automation/scripts/codex_lock_guard.py` for a preview; `--apply` accumulates observations and releases eligible writers. The first scan never terminates a process. Private audit records live in `logs/codex-lock-guard-audit.jsonl`, with observations in `state/codex-lock-guard.json`. Sleeping Macs, stopped VS Code, and unavailable SSH prevent recovery until checks resume. The guard does not control the Codex UI: if the locked notice remains after release, switch chats and return to retry without closing the window. Diff/Webview hangs are outside its scope.
+
+Disable the private service flag and reinstall, or stop it immediately with `launchctl bootout gui/$(id -u)/com.kian.codex_lock_guard`. A replacement computer needs its own SSH setup and target paths; Linux/Python must support pidfd signaling. Old PIDs and lock observations are never migration authority.
+
 ## Upgrade
 
 Pull the new repository code, review example/schema changes without overwriting the private config, then rerun `automation/bin/install.sh` and `automation/bin/doctor.sh`. The repository can move only if the installer is rerun, because rendered plists contain the repository location. Alternatively set `KIAN_REPO_ROOT` when launching the bridge manually.

@@ -5,6 +5,7 @@
     "daily": { "enabled": true, "hour": 10, "minute": 0 },
     "qr": { "enabled": false, "hour": 12, "minute": 0 },
     "reminders": { "enabled": false, "poll_interval_seconds": 60 },
+    "codex_lock_guard": { "enabled": false },
     "public_watch": {
       "enabled": false,
       "interval_seconds": 3600,
@@ -12,6 +13,20 @@
       "flush_hour": 10,
       "flush_minute": 30
     }
+  },
+  "codex_lock_guard": {
+    "quiet_seconds": 120,
+    "confirmation_seconds": 60,
+    "targets": [
+      {
+        "id": "example-workspaces",
+        "host": "REPLACE_WITH_SSH_ALIAS",
+        "container": "REPLACE_WITH_CONTAINER_NAME",
+        "codex_home": "REPLACE_WITH_REMOTE_CODEX_HOME",
+        "server_root": "REPLACE_WITH_REMOTE_VSCODE_SERVER_ROOT",
+        "workspaces": ["REPLACE_WITH_EXACT_REMOTE_WORKSPACE"]
+      }
+    ]
   },
   "feishu": {
     "app_id": "REPLACE_WITH_FEISHU_APP_ID",

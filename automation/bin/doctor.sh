@@ -32,7 +32,7 @@ for directory in state logs; do
   [[ -d "$AUTOMATION_HOME/$directory" ]] && pass "$directory directory exists" || fail "$directory directory missing"
 done
 
-for service in bridge realtime daily qr reminders public_watch; do
+for service in bridge realtime daily qr reminders public_watch codex_lock_guard; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   if [[ -f "$plist" ]]; then
     plutil -lint "$plist" >/dev/null 2>&1 && pass "com.kian.$service plist valid" || fail "com.kian.$service plist invalid"

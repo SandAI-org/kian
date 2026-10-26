@@ -92,6 +92,18 @@ PR 描述默认生成精简、聚焦结果且不限制数量的要点。每条�
 
 远程 VS Code workspace 正在卡顿时，运行 `python3 automation/scripts/diagnose_vscode_remote.py --host <ssh-alias> --workspace <path>`；Dev Container 额外传 `--container <名称>`。工具会在一个预热后的 SSH 会话内测量数据往返延迟，并采集远端 CPU/内存/pressure、VS Code server 与扩展进程、近期异常日志，以及共享存储元数据和一个自动删除的 8 MiB 读写/fsync 探针。输出会按证据排列根因；没有指标越过阈值时会明确报告无法归因，而不是猜测。
 
+### 自动释放 Codex 遗留写锁（可选）
+
+在私有配置中启用 `services.codex_lock_guard.enabled`，并在 `codex_lock_guard.targets` 中逐项配置 `id`、SSH `host`、可选 `container`、远端 `codex_home`、`server_root` 和精确的 `workspaces` 路径白名单。重新安装后，`com.kian.codex_lock_guard` 每 60 秒检查一次。目标地址和个人路径只放私有配置。macOS 负责读取本机 VS Code 日志，Linux 远端负责核对锁；SSH 必须能以 `BatchMode` 登录，密码连接只复用已有的 SSH master，不存储或输入密码。
+
+守护程序要求全部满足以下条件：当前 Mac 的 VS Code 日志能证明旧连接已不被任何当前窗口使用，而同目标的新连接仍在使用；新后端最后一次恢复该会话失败原因为 `active writer`，且之后没有恢复成功；白名单中的精确会话锁由同一 mount namespace 的旧 extension app-server 持有；旧后端只持有这一条会话锁；会话数据库报告最后一轮已结束，rollout 至少 120 秒无变化，且没有运行中的子任务。相同证据需跨至少 60 秒的连续扫描保持一致。断网或检查失败会重置确认，恢复后重新观察。
+
+真正操作前重新读取当前窗口连接、锁 inode、进程启动标识和任务状态，通过 Linux pidfd 只发送 `SIGTERM` 给旧后端，避免 PID 复用；不发送 `SIGKILL`，不删除锁文件，不修改数据库、聊天历史、插件或连接超时。现有后端和其他 workspace 不会因一次全局清理而被结束。缺少证据、仍执行中、多条锁共用同一后端、版本或日志格式不支持时跳过。这是保守的恢复措施，仍有状态滞后和检查/操作之间的竞态风险，不能保证零误判或覆盖所有锁定。
+
+运行 `python3 automation/scripts/codex_lock_guard.py` 仅预览；带 `--apply` 才会积累连续观测并执行合格的释放。首次扫描不会结束进程。记录位于私有 `logs/codex-lock-guard-audit.jsonl`，连续观测位于 `state/codex-lock-guard.json`。Mac 睡眠、VS Code 未运行或 SSH 不可用时无法清理，恢复后重新检查。释放占用不会强制控制 Codex UI；若插件保留锁定提示，切到另一条聊天再切回即可重试，无需关窗口。该服务不处理 Diff/Webview 卡死。
+
+停用时将私有开关设为 `false` 并重跑安装器，或运行 `launchctl bootout gui/$(id -u)/com.kian.codex_lock_guard` 立即停止。新电脑仍需配置 SSH、目标路径，并安装支持 pidfd 的 Linux/Python 环境；不会将本机的旧 PID 或锁状态迁移为终止依据。
+
 套件也包含 Dev Container 会话迁移。Copilot 使用 `automation/scripts/migrate_vscode_copilot_sessions_macos.py` 在 Mac 本机按工作目录逐个合并；必须精确指定 SSH 主机和工作目录，并且只能在 VS Code 完全退出后写入。Codex 使用 `automation/scripts/migrate_codex_sessions_between_containers.sh` 在远端 Docker 宿主机按容器对迁移一次；目标必须为空，非空时安全拒绝。完整恢复步骤和安全边界见仓库根目录的 `automation.md`。
 
 常规 wheel 镜像同步需在私有 `wheel_sync.profiles` 中定义 profile，然后运行 `python3 automation/scripts/sync_wheels.py <profile>`。每个配置的 dist 目录必须恰好包含一个 wheel，该文件直接视为当前稳定包，并与按 dist 顺序配置的 `expected_distributions` 一一对应。不再维护开发 profile 或版本锁定。正式传输前会比较源 wheel 与每个目标同名文件的 SHA-256，未变化的包不会下载、清理或上传；只有变化的 wheel 才暂存一次并更新需要更新的目标，因此同版本同文件名的重新构建也能正确识别。新 wheel 上传并校验成功后，才会清理该目标中同 distribution 的其他版本。
