@@ -179,11 +179,17 @@ def idle_children(pid):
     return True
 
 
-def candidates(request):
+def candidates(request, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+
+    def skipped(reason):
+        diagnostics[reason] = diagnostics.get(reason, 0) + 1
+
     home = Path(request["codex_home"])
     server = Path(request["server_root"])
     links = request["connections"]
     if not links["active"] or not links["replaced"]:
+        skipped("no_replaced_connection")
         return []
     backends = {}
     namespace = os.readlink(PROC / "self/ns/mnt")
@@ -205,17 +211,28 @@ def candidates(request):
     for current in backends.values():
         if current["connection"] not in links["active"]:
             continue
-        for thread in latest_conflicts(tail(Path(current["log"]))):
+        try:
+            conflicts = latest_conflicts(tail(Path(current["log"])))
+        except OSError:
+            skipped("current_backend_log_gone")
+            continue
+        for thread in conflicts:
             try:
                 path = locks / (thread + ".lock")
                 owner, device, inode = lock_owner(path)
                 previous = backends.get(owner)
                 if not previous or owner == current["pid"]:
+                    skipped("owner_not_a_replaced_backend")
                     continue
-                if int(previous["start"]) >= int(current["start"]) or not idle_children(owner):
+                if int(previous["start"]) >= int(current["start"]):
+                    skipped("owner_not_older_than_current")
+                    continue
+                if not idle_children(owner):
+                    skipped("running_child_task")
                     continue
                 replacements = links["replaced"].get(previous["connection"], [])
                 if current["connection"] not in replacements or previous["connection"] in links["active"]:
+                    skipped("old_connection_not_confirmed_replaced")
                     continue
                 # Killing one backend must not interrupt another thread it owns.
                 owned = []
@@ -228,19 +245,28 @@ def candidates(request):
                     except ValueError:
                         continue
                 if owned != [thread]:
+                    skipped("backend_owns_other_threads")
                     continue
                 idle = idle_thread(home, thread, request["workspaces"], request["quiet_seconds"])
                 key = f"{owner}:{previous['start']}:{device}:{inode}:{thread}:{current['pid']}:{current['start']}"
                 results.append({"key": key, "thread": thread, "old": previous,
                                 "current": current, "device": device, "inode": inode, **idle})
-            except (OSError, ValueError, sqlite3.Error):
+            except FileNotFoundError:
+                skipped("writer_or_session_file_gone_retry_chat")
+                continue
+            except ValueError as exc:
+                skipped(str(exc))
+                continue
+            except (OSError, sqlite3.Error):
+                skipped("cannot_verify_lock_or_session")
                 continue
     return results
 
 
 def remote_main(request):
     approved = {item["key"]: item for item in request.get("approved", [])}
-    found = candidates(request)
+    diagnostics = {}
+    found = candidates(request, diagnostics)
     actions = []
     if approved:
         if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
@@ -248,7 +274,11 @@ def remote_main(request):
         for item in found:
             if approved.get(item["key"]) != item:
                 continue
-            fd = os.pidfd_open(item["old"]["pid"])
+            try:
+                fd = os.pidfd_open(item["old"]["pid"])
+            except ProcessLookupError:
+                diagnostics["old_process_already_exited"] = diagnostics.get("old_process_already_exited", 0) + 1
+                continue
             try:
                 # Recheck all gates after opening a PID-stable process handle.
                 fresh = {c["key"]: c for c in candidates(request)}
@@ -259,7 +289,7 @@ def remote_main(request):
                                 "signal": "SIGTERM", "result": "signal_sent"})
             finally:
                 os.close(fd)
-    return {"candidates": found, "actions": actions}
+    return {"candidates": found, "actions": actions, "skips": diagnostics}
 
 
 def remote_call(target, request):
@@ -272,7 +302,8 @@ def remote_call(target, request):
     result = subprocess.run(command, input=Path(__file__).read_text(), text=True,
                             capture_output=True, timeout=30)
     if result.returncode:
-        raise RuntimeError(f"remote check exited {result.returncode}")
+        kind = "ssh_unavailable" if result.returncode == 255 else "remote_check_failed"
+        raise RuntimeError(f"{kind}: exit={result.returncode}")
     lines = [line for line in result.stdout.splitlines() if line.startswith('{"candidates":')]
     if len(lines) != 1:
         raise RuntimeError("invalid remote response")
@@ -354,9 +385,12 @@ def run_local(apply):
                             if key.startswith(label + ":") and observations[key]["candidate"]["thread"] == action["thread"]:
                                 del observations[key]
             record = {"time": now, "target": label, "mode": "apply" if apply else "dry_run",
-                      "candidates": len(result["candidates"]), "actions": actions}
+                      "candidates": len(result["candidates"]), "actions": actions,
+                      "waiting_confirmation": sum(k.startswith(label + ":") for k in observations),
+                      "skips": result.get("skips", {}), "ui_retry_may_be_needed": bool(actions)}
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
-            record = {"time": now, "target": label, "error": type(exc).__name__}
+            detail = "ssh_timeout" if isinstance(exc, subprocess.TimeoutExpired) else str(exc)[:200]
+            record = {"time": now, "target": label, "error": type(exc).__name__, "detail": detail}
         with log_path.open("a") as handle:
             handle.write(json.dumps(record) + "\n")
         print(json.dumps(record), flush=True)

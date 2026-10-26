@@ -100,7 +100,9 @@ PR 描述默认生成精简、聚焦结果且不限制数量的要点。每条�
 
 真正操作前重新读取当前窗口连接、锁 inode、进程启动标识和任务状态，通过 Linux pidfd 只发送 `SIGTERM` 给旧后端，避免 PID 复用；不发送 `SIGKILL`，不删除锁文件，不修改数据库、聊天历史、插件或连接超时。现有后端和其他 workspace 不会因一次全局清理而被结束。缺少证据、仍执行中、多条锁共用同一后端、版本或日志格式不支持时跳过。这是保守的恢复措施，仍有状态滞后和检查/操作之间的竞态风险，不能保证零误判或覆盖所有锁定。
 
-运行 `python3 automation/scripts/codex_lock_guard.py` 仅预览；带 `--apply` 才会积累连续观测并执行合格的释放。首次扫描不会结束进程。记录位于私有 `logs/codex-lock-guard-audit.jsonl`，连续观测位于 `state/codex-lock-guard.json`。Mac 睡眠、VS Code 未运行或 SSH 不可用时无法清理，恢复后重新检查。释放占用不会强制控制 Codex UI；若插件保留锁定提示，切到另一条聊天再切回即可重试，无需关窗口。该服务不处理 Diff/Webview 卡死。
+运行 `python3 automation/scripts/codex_lock_guard.py` 仅预览；带 `--apply` 才会积累连续观测并执行合格的释放。首次扫描不会结束进程。记录位于私有 `logs/codex-lock-guard-audit.jsonl`，连续观测位于 `state/codex-lock-guard.json`。审计中的 `skips` 说明跳过原因，`waiting_confirmation` 表示仍在等待连续确认的候选数；SSH 错误保留退出码或超时分类，不输出 SSH 凭据。旧进程或锁已被 VS Code 自行释放也会单独标记。Mac 睡眠、VS Code 未运行或 SSH 不可用时无法清理，恢复后重新检查。
+
+此服务只自动释放锁，不是无人操作的完整 UI 恢复。Codex 在第一次恢复失败后可能停止重试；即使服务随后释放锁，锁定提示也可能一直保留。需在释放后切到另一条聊天再切回，无需关窗口。`ui_retry_may_be_needed` 提示本轮发出释放信号后可能需要这一操作，不能以 `actions` 为空直接判定没有锁定或 UI 已恢复。运行中会话、观测等待、SSH 中断均可能延长恢复时间；不保证重连后立即可用。该服务不处理 Diff/Webview 卡死。
 
 停用时将私有开关设为 `false` 并重跑安装器，或运行 `launchctl bootout gui/$(id -u)/com.kian.codex_lock_guard` 立即停止。新电脑仍需配置 SSH、目标路径，并安装支持 pidfd 的 Linux/Python 环境；不会将本机的旧 PID 或锁状态迁移为终止依据。
 

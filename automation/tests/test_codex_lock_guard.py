@@ -82,7 +82,9 @@ class CodexLockGuardTests(unittest.TestCase):
                 self.assertEqual(guard.candidates(active), [])
                 with sqlite3.connect(home / "thread_history_1.sqlite") as db:
                     db.execute("UPDATE thread_turns SET status='inProgress'")
-                self.assertEqual(guard.candidates(request), [])
+                diagnostics = {}
+                self.assertEqual(guard.candidates(request, diagnostics), [])
+                self.assertEqual(diagnostics, {"thread active or unknown": 1})
                 with sqlite3.connect(home / "thread_history_1.sqlite") as db:
                     db.execute("UPDATE thread_turns SET status='completed'")
                 (proc / "10/ns/mnt").unlink()
@@ -201,6 +203,24 @@ class CodexLockGuardTests(unittest.TestCase):
              patch.object(guard.signal, "pidfd_send_signal", create=True) as send, \
              patch.object(guard.os, "close"):
             self.assertEqual(guard.remote_main({"approved": [item]})["actions"], [])
+            send.assert_not_called()
+
+    def test_writer_released_by_server_is_reported_as_ui_retry_not_silent_zero(self):
+        with tempfile.TemporaryDirectory() as d:
+            proc, home, request = self.make_remote_fixture(Path(d))
+            (home / "thread-writer-locks" / (TID + ".lock")).unlink()
+            with patch.object(guard, "PROC", proc):
+                result = guard.remote_main(request)
+            self.assertEqual(result["candidates"], [])
+            self.assertEqual(result["skips"], {"writer_or_session_file_gone_retry_chat": 1})
+
+    def test_disappearing_old_process_does_not_abort_entire_recovery_batch(self):
+        item = {"key": "k", "old": {"pid": 10}, "thread": TID}
+        with patch.object(guard, "candidates", return_value=[item]), \
+             patch.object(guard.os, "pidfd_open", side_effect=ProcessLookupError, create=True), \
+             patch.object(guard.signal, "pidfd_send_signal", create=True) as send:
+            result = guard.remote_main({"approved": [item]})
+            self.assertEqual(result["skips"], {"old_process_already_exited": 1})
             send.assert_not_called()
 
 
