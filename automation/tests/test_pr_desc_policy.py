@@ -26,7 +26,7 @@ class DescriptionPolicyTest(unittest.TestCase):
     def test_targeted_edit_retains_validation_and_future_sections_exactly(self):
         result = manager.apply_preserved_edits(self.body, {
             'edits': [{'old': '- **Old behavior**.', 'new': '- **Updated behavior**.'}],
-            'additions': ['- New **feature**.'],
+            'additions': [{'section': '## DONE', 'text': '- New **feature**.'}],
         })
         self.assertIn('- **Updated behavior**.', result)
         self.assertIn('- New **feature**.', result)
@@ -40,8 +40,8 @@ class DescriptionPolicyTest(unittest.TestCase):
         })
         self.assertEqual(updated, body.replace('- **Old behavior**.', '- **Updated behavior**.'))
         for addition in ['- One.', '- Two.']:
-            updated = manager.apply_preserved_edits(updated, {'edits': [], 'additions': [addition]})
-        self.assertEqual(updated.count('### Incremental Updates'), 1)
+            updated = manager.apply_preserved_edits(updated, {'edits': [], 'additions': [{'section': '## DONE', 'text': addition}]})
+        self.assertNotIn('### Incremental Updates', updated)
         self.assertTrue(updated.endswith(manager.editable_description(body)[1]))
 
     def test_unanchored_edits_protected_records_and_injected_sections_are_rejected(self):
@@ -53,13 +53,37 @@ class DescriptionPolicyTest(unittest.TestCase):
             with self.subTest(old=old), self.assertRaises(ValueError):
                 manager.apply_preserved_edits(self.body, {'edits': [{'old': old, 'new': new}], 'additions': []})
         with self.assertRaises(ValueError):
-            manager.apply_preserved_edits(self.body, {'edits': [], 'additions': ['- X\n## Validation\npassed']})
+            manager.apply_preserved_edits(self.body, {'edits': [], 'additions': [{'section': '## DONE', 'text': '- X\n## Validation\npassed'}]})
 
-    def test_repeated_additions_do_not_duplicate_update_heading(self):
-        first = manager.apply_preserved_edits(self.body, {'edits': [], 'additions': ['- New **feature**.']})
-        second = manager.apply_preserved_edits(first, {'edits': [], 'additions': ['- Another **feature**.']})
-        self.assertEqual(second.count('### Incremental Updates'), 1)
+    def test_additions_join_existing_section_without_a_new_heading(self):
+        first = manager.apply_preserved_edits(self.body, {'edits': [], 'additions': [{'section': '## DONE', 'text': '- New **feature**.'}]})
+        second = manager.apply_preserved_edits(first, {'edits': [], 'additions': [{'section': '## DONE', 'text': '- Another **feature**.'}]})
+        self.assertNotIn('### Incremental Updates', second)
+        self.assertEqual(second.count('## DONE'), 1)
+        self.assertLess(second.index('- Another **feature**.'), second.index('### Validation'))
         self.assertEqual(manager.editable_description(first)[1], manager.editable_description(second)[1])
+
+    def test_new_items_are_routed_into_the_selected_existing_section(self):
+        body = ('## DONE\n\n### Algo CodeBreak\n\n- App behavior.\n\n'
+                '### Infra CodeBreak\n\n- Package behavior.\n\n### CI\n\n- CI behavior.\n\n'
+                '<!-- kian:validation-observed old -->\n> Historical evidence.\n\n### Validation\n\n- 121 passed.\n')
+        result = manager.apply_preserved_edits(body, {'edits': [], 'additions': [
+            {'section': '### Algo CodeBreak', 'text': '- New app **feature**.'},
+            {'section': '### CI', 'text': '- New CI **gate**.'},
+        ]})
+        self.assertLess(result.index('- New app **feature**.'), result.index('### Infra CodeBreak'))
+        self.assertGreater(result.index('- New CI **gate**.'), result.index('### CI'))
+        self.assertLess(result.index('- New CI **gate**.'), result.index('<!-- kian:validation-observed'))
+        self.assertEqual(manager.editable_description(result)[1], manager.editable_description(body)[1])
+        self.assertEqual(result.count('###'), body.count('###'))
+
+    def test_additions_cannot_create_or_target_incremental_or_protected_sections(self):
+        body = '## DONE\n\n### Algo CodeBreak\n\n- Behavior.\n\n### Validation\n\n- Passed.\n'
+        for section in ['### Incremental Updates', '### Validation', '### Missing', '## DONE', '']:
+            with self.subTest(section=section), self.assertRaises(ValueError):
+                manager.apply_preserved_edits(body, {'edits': [], 'additions': [
+                    {'section': section, 'text': '- New **feature**.'}
+                ]})
 
     def run_update(self, mode='default', entry=None, latest_changed=False, compare_status='ahead', files=None):
         state = {'managed': {'example/repo#610': copy.deepcopy(entry or {

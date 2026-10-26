@@ -1647,7 +1647,7 @@ def _set_description_policy(number, requested_repo, policy):
 def editable_description(body):
     # Everything from validation/coverage/future work onward remains byte-for-byte intact.
     protected = re.search(
-        r"^#{1,6}\s+.*(?:validat|test|coverage|TODO|End2End|alignment|验证|测试|覆盖|后续|未来).*$",
+        r"^#{1,6}\s+.*(?:validat|test|coverage|TODO|End2End|alignment|验证|测试|覆盖|后续|未来).*$|^<!-- kian:validation-observed [^\n]*",
         body, re.M | re.I,
     )
     return (body[:protected.start()], body[protected.start():]) if protected else (body, "")
@@ -1674,15 +1674,33 @@ def apply_preserved_edits(body, result):
         replacements[old] = new
     for old, new in replacements.items():
         prefix = prefix.replace(old, new, 1)
+    newline = "\r\n" if "\r\n" in body else "\n"
     for addition in result["additions"]:
-        if (not isinstance(addition, str) or not addition.startswith("- ")
-                or "\n" in addition or len(addition) > 4000):
+        if not isinstance(addition, dict) or set(addition) != {"section", "text"}:
+            raise ValueError("新增条目必须指定原有章节 section 与单行 bullet text")
+        section, text = addition["section"], addition["text"]
+        if (not isinstance(section, str) or not isinstance(text, str) or not text.startswith("- ")
+                or "\n" in text or "\r" in text or len(text) > 4000):
             raise ValueError("新增条目必须是单行 Markdown bullet")
-    additions = list(dict.fromkeys(item for item in result["additions"] if item not in body))
-    if additions:
-        newline = "\r\n" if "\r\n" in body else "\n"
-        separator = newline if re.search(r"^### Incremental Updates\r?$", prefix, re.M) else newline * 2 + "### Incremental Updates" + newline * 2
-        prefix = prefix.rstrip() + separator + newline.join(additions) + newline * 2
+        headings = list(re.finditer(r"^(#{1,6})[ \t]+[^\r\n]*(?:\r?\n|$)", prefix, re.M))
+        if not section and not headings:
+            end = len(prefix)
+        else:
+            matches = [i for i, heading in enumerate(headings) if heading.group(0).strip() == section]
+            if len(matches) != 1 or re.search(r"incremental|updates since|增量", section, re.I):
+                raise ValueError("新增条目必须归入唯一的原有业务章节，禁止增量专区")
+            index = matches[0]
+            depth = len(headings[index].group(1))
+            end = len(prefix)
+            for heading in headings[index + 1:]:
+                if len(heading.group(1)) > depth:
+                    raise ValueError("请选择原有具体子章节，而非包含子章节的父章节")
+                end = heading.start()
+                break
+        if text not in prefix:
+            content = prefix[:end].rstrip()
+            separator = newline if content.splitlines() and content.splitlines()[-1].startswith("- ") else newline * 2
+            prefix = content + separator + text + newline * 2 + prefix[end:]
     return prefix + protected
 
 
@@ -1692,11 +1710,12 @@ def preserve_description(pr, body, files, baseline, repo):
     editable, protected = editable_description(body)
     prompt = f"""Update a human-authored GitHub PR description with minimal, evidence-based edits.
 The human description is authoritative for intent, structure, emphasis and reported validation.
-Return JSON only: {{"edits":[{{"old":"exact existing paragraph or content line","new":"updated paragraph"}}],"additions":["- New **outcome**."]}}.
-- Edit only paragraphs whose claims are changed or invalidated by the supplied diff; otherwise preserve verbatim.
+Return JSON only: {{"edits":[{{"old":"exact existing paragraph or content line","new":"updated paragraph"}}],"additions":[{{"section":"### Existing section","text":"- New **outcome**."}}]}}.
+- Update the existing item in place whenever the diff extends, refines, or supersedes that same feature or test contract; otherwise preserve it verbatim.
 - old must be an exact complete blank-line-separated paragraph or complete content line in EDITABLE CONTENT. Do not edit headings, tables or blockquotes.
 - No stylistic rewrite, translation, compression, deletion, or moving unrelated content. Update superseded behavior in place instead of adding contradictory claims.
-- additions are concise English Markdown bullets for genuinely new changes not already covered. Use backticks for identifiers and bold for key outcomes. Do not duplicate existing items.
+- additions are only for independent changes deserving a separate item: choose the exact existing leaf section heading in EDITABLE CONTENT and supply one concise English bullet in text. Use an empty section only if there are no headings. Use backticks for identifiers and bold for key outcomes. Do not duplicate existing items.
+- Integrate new items into the existing thematic sections. NEVER create an Incremental Updates, Updates since, changelog, or other incremental-only section. Prefer edits over additions when an existing item already covers the subject.
 - Do not infer that any tests were rerun, update test counts, or assert new validation. Protected records are historical evidence, not proof for new commits.
 - Preserve provenance URLs. If the diff is already described, return empty edits/additions.
 - Change scope statistics are managed separately. Do not produce them.
