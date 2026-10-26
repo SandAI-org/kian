@@ -516,9 +516,13 @@ class PrDescriptionRewriteTest(unittest.TestCase):
         def request(repo, endpoint, method="GET", payload=None):
             if method == "PATCH":
                 return {"number": 123, "body": payload["body"]}
+            if endpoint == "/pulls/123":
+                return {"body": "## DONE\n", "head": {"sha": "abc"}}
             return []
 
-        with mock.patch.object(manager, "find_pr", return_value=("example/repo", {
+        with mock.patch.object(manager, "load_json", return_value={"managed": {"example/repo#123": {
+            "last_body_snapshot": "## DONE\n", "description_policy": "rewrite"
+        }}}), mock.patch.object(manager, "find_pr", return_value=("example/repo", {
             "state": "open", "body": "## DONE\n", "head": {"sha": "abc"}, "title": "Test"
         })), mock.patch.object(manager, "pull_request_files", return_value=[]), mock.patch.object(
             manager, "request", side_effect=request

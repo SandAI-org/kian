@@ -73,6 +73,21 @@ After a standard service is loaded successfully, the installer removes its legac
 The PR manager invokes Copilot CLI non-interactively without tools, repository access, MCP servers, or custom instructions; only the serialized final PR diff is supplied. Because `launchd` does not inherit an interactive shell's `PATH`, the private config should use the CLI's absolute path. On a new Mac or after OAuth expiry, run `copilot login` interactively and rerun the installer. The legacy `openrouter` backend remains available only when its private `api_key` and model are explicitly configured.
 PR descriptions default to concise, outcome-focused bullets without a fixed count. Each bullet covers one coherent, independently understandable change; unrelated changes stay separate rather than being packed together. This standard applies to regular text commands and card buttons; only explicit `full` mode retains additional implementation and validation details.
 
+## PR description policies
+
+The existing `descN` / `upN` commands and card buttons now use a remembered per-PR policy. In automatic mode, an empty description is generated from the final diff. A non-empty description with no matching Kian generation snapshot, or a description edited since that snapshot, enters **preserve** mode; this decision remains sticky. Historical descriptions without reliable records are preserved conservatively. Detection uses local history, not language or writing style; state must be migrated with the automation when moving machines.
+
+Preserve mode uses the diff from the saved head to the current head and makes exact paragraph edits or adds genuinely new bullets. Unrelated paragraphs, validation/coverage records, TODOs, and end-to-end alignment sections remain intact. Change scope is refreshed separately. Historical validation gets a note identifying the head where the description was observed, without claiming that its tests cover new commits. The first run without a saved baseline conservatively reconciles the current PR diff. An unchanged head skips generation. A diverged baseline or possibly truncated compare diff stops without overwriting; ask the agent to inspect and re-establish the baseline. `simple` / `full` buttons do not override a preserve policy.
+
+Tell the service agent “preserve the human description for #610”, “switch #610 to full rewriting”, or “restore automatic detection for #610”. The agent can persist the setting with:
+
+```bash
+python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore preserve
+# Replace preserve with rewrite or auto as needed.
+```
+
+Policy changes do not rewrite GitHub immediately. Subsequent buttons inherit the setting. Explicit `rewrite` opts back into full final-diff generation. Existing records and human edits are not a substitute for checking newly generated claims: paragraph anchors protect unrelated content mechanically, while identifying relevant semantic edits still uses the configured model. The manager rechecks the body/head before writing and serializes local operations per PR; GitHub does not provide an atomic body/head compare-and-swap here.
+
 ## Verify and operate
 
 `doctor.sh` checks macOS, Node/Python, JSON validity, reports unresolved placeholder counts, config permissions, runtime directories, plist validity, launchd registration, and log presence without printing secrets. The installer validates required fields separately for each enabled service.

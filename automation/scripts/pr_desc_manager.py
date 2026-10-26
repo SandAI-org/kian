@@ -862,8 +862,6 @@ def summarize_current_diff(
     """Use the final PR diff to rewrite DONE as a coherent current-state summary."""
     linked_prs = linked_prs or []
     package_syncs = package_syncs or []
-    backend = SUMMARIZATION.get("backend", "openrouter")
-    api_key = SUMMARIZATION.get("api_key")
     schema = (
         '{"algo":["..."],"infra":["..."],"general":["..."]}'
         if special_layout
@@ -916,13 +914,19 @@ PACKAGE SYNC PROVENANCE (exact Infra prefixes are mandatory):
 CURRENT FINAL DIFF:
 {diff_summary_payload(files, special_layout=special_layout)}
 """
+    return generate_description_json(
+        prompt, lambda value: normalize_and_validate_summary(value, linked_prs, package_syncs)
+    )
+
+
+def generate_description_json(prompt, validate, max_tokens=1800):
+    backend = SUMMARIZATION.get("backend", "openrouter")
+    api_key = SUMMARIZATION.get("api_key")
     if backend == "copilot_cli":
         last_error = None
         for attempt in range(3):
             try:
-                return normalize_and_validate_summary(
-                    summarize_with_copilot_cli(prompt), linked_prs, package_syncs
-                )
+                return validate(summarize_with_copilot_cli(prompt))
             except (
                 json.JSONDecodeError,
                 OSError,
@@ -942,7 +946,7 @@ CURRENT FINAL DIFF:
         "model": SUMMARIZATION.get("model", "anthropic/claude-opus-4.6"),
         "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
-        "max_tokens": 1800,
+        "max_tokens": max_tokens,
     }).encode()
     last_error = None
     for attempt in range(3):
@@ -962,7 +966,7 @@ CURRENT FINAL DIFF:
             content = result["choices"][0]["message"]["content"].strip()
             content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.I)
             summary = json.loads(content)
-            return normalize_and_validate_summary(summary, linked_prs, package_syncs)
+            return validate(summary)
         except urllib.error.HTTPError as error:
             if error.code in (401, 403):
                 raise RuntimeError(
@@ -1602,8 +1606,131 @@ def update_append_only_legacy(command, number, requested_repo=None, mode="defaul
     return repo, True, "、".join(added)
 
 
+def resolve_description_policy(entry, body):
+    policy = entry.get("description_policy", "auto")
+    if policy in ("preserve", "rewrite"):
+        return policy
+    if not body.strip():
+        return "rewrite"
+    if entry.get("description_effective_mode") == "preserve":
+        return "preserve"
+    snapshot = entry.get("last_body_snapshot")
+    return "rewrite" if snapshot is not None and body == snapshot else "preserve"
+
+
+def set_description_policy(number, requested_repo, policy):
+    with open(STATE_DIR / f"pr-description-{number}.lock", "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _set_description_policy(number, requested_repo, policy)
+
+
+def _set_description_policy(number, requested_repo, policy):
+    if policy not in ("auto", "preserve", "rewrite"):
+        raise RuntimeError("描述策略仅支持 auto、preserve 或 rewrite")
+    managed = load_json(MANAGED_PATH, {"managed": {}})
+    repo, pr = find_pr(number, managed, requested_repo)
+    key = f"{repo}#{number}"
+    entry = managed.setdefault("managed", {}).setdefault(key, {})
+    entry["description_policy"] = policy
+    entry.pop("description_effective_mode", None)
+    effective = resolve_description_policy(entry, pr.get("body") or "")
+    # Explicit preserve adopts the current description/head as its incremental base.
+    if policy == "preserve":
+        entry["last_head_sha"] = pr["head"]["sha"]
+        entry["last_body_snapshot"] = pr.get("body") or ""
+        entry["validation_observed_head"] = pr["head"]["sha"]
+    entry["description_effective_mode"] = effective
+    save_managed(managed, key)
+    return repo, False, f"已设置 desc 策略: {policy}（当前 {effective}）；未修改 GitHub 描述"
+
+
+def editable_description(body):
+    # Everything from validation/coverage/future work onward remains byte-for-byte intact.
+    protected = re.search(
+        r"^#{1,6}\s+.*(?:validat|test|coverage|TODO|End2End|alignment|验证|测试|覆盖|后续|未来).*$",
+        body, re.M | re.I,
+    )
+    return (body[:protected.start()], body[protected.start():]) if protected else (body, "")
+
+
+def apply_preserved_edits(body, result):
+    if not isinstance(result, dict) or set(result) != {"edits", "additions"}:
+        raise ValueError("保留模式必须返回 edits 和 additions")
+    prefix, protected = editable_description(body)
+    if not isinstance(result["edits"], list) or not isinstance(result["additions"], list):
+        raise ValueError("保留模式 edits/additions 必须是列表")
+    paragraphs = prefix.split("\n\n")
+    replacements = {}
+    for edit in result["edits"]:
+        if not isinstance(edit, dict) or set(edit) != {"old", "new"}:
+            raise ValueError("无效的保留模式编辑")
+        old, new = edit["old"], edit["new"]
+        if (not isinstance(old, str) or not isinstance(new, str) or not old.strip()
+                or not new.strip() or old not in paragraphs or prefix.count(old) != 1
+                or old in replacements or re.search(r"^\s*[#><|]", old, re.M)
+                or re.search(r"^\s*[#><|]", new, re.M) or "\n\n" in new):
+            raise ValueError("编辑必须精确匹配唯一内容段落，禁止修改标题、表格或验证记录")
+        replacements[old] = new
+    prefix = "\n\n".join(replacements.get(part, part) for part in paragraphs)
+    for addition in result["additions"]:
+        if (not isinstance(addition, str) or not addition.startswith("- ")
+                or "\n" in addition or len(addition) > 4000):
+            raise ValueError("新增条目必须是单行 Markdown bullet")
+    additions = list(dict.fromkeys(item for item in result["additions"] if item not in body))
+    if additions:
+        separator = "\n" if "### Incremental Updates\n" in prefix else "\n\n### Incremental Updates\n\n"
+        prefix = prefix.rstrip() + separator + "\n".join(additions) + "\n\n"
+    return prefix + protected
+
+
+def preserve_description(pr, body, files, baseline, repo):
+    if len(body) > 80000:
+        raise RuntimeError("现有描述过长，保留模式停止而不截断；请人工整理")
+    editable, protected = editable_description(body)
+    prompt = f"""Update a human-authored GitHub PR description with minimal, evidence-based edits.
+The human description is authoritative for intent, structure, emphasis and reported validation.
+Return JSON only: {{"edits":[{{"old":"exact existing paragraph","new":"updated paragraph"}}],"additions":["- New **outcome**."]}}.
+- Edit only paragraphs whose claims are changed or invalidated by the supplied diff; otherwise preserve verbatim.
+- old must be an exact complete blank-line-separated paragraph in EDITABLE CONTENT. Do not edit headings, tables or blockquotes.
+- No stylistic rewrite, translation, compression, deletion, or moving unrelated content. Update superseded behavior in place instead of adding contradictory claims.
+- additions are concise English Markdown bullets for genuinely new changes not already covered. Use backticks for identifiers and bold for key outcomes. Do not duplicate existing items.
+- Do not infer that any tests were rerun, update test counts, or assert new validation. Protected records are historical evidence, not proof for new commits.
+- Preserve provenance URLs. If the diff is already described, return empty edits/additions.
+- Change scope statistics are managed separately. Do not produce them.
+PR: {repo}#{pr['number']} {pr.get('title', '')}
+Diff basis: {baseline or 'no saved baseline; current final PR diff, reconcile conservatively'} -> {pr['head']['sha']}
+EDITABLE CONTENT:
+{editable}
+PROTECTED RECORDS (read-only):
+{protected}
+DIFF:
+{diff_summary_payload(files, special_layout=repo == SPECIAL_LAYOUT_REPO)}
+"""
+    return generate_description_json(prompt, lambda value: apply_preserved_edits(body, value), max_tokens=6000)
+
+
+def refresh_change_scope(body, files, repo, pr):
+    scope = (render_change_scope(files, pr) if repo == SPECIAL_LAYOUT_REPO
+             else render_standalone_change_scope(files, repo) if repo in STANDALONE_SOURCE_DIRS else "")
+    if not scope:
+        return body
+    pattern = r"^> \*\*Change scope:\*\*[^\n]*"
+    if re.search(pattern, body, re.M):
+        return re.sub(pattern, lambda match: scope, body, count=1, flags=re.M)
+    done = re.search(r"^## DONE[^\n]*\n", body, re.M)
+    if done:
+        return body[:done.end()] + "\n" + scope + "\n" + body[done.end():]
+    return scope + "\n\n" + body
+
+
 def update(command, number, requested_repo=None, mode="default"):
-    """Rebuild the description from the current final diff for every desc/up."""
+    with open(STATE_DIR / f"pr-description-{number}.lock", "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _update(command, number, requested_repo, mode)
+
+
+def _update(command, number, requested_repo=None, mode="default"):
+    """Update with the remembered policy; explicit rendering modes never override it."""
     managed = load_json(MANAGED_PATH, {"managed": {}})
     repo, pr = find_pr(number, managed, requested_repo)
     if pr.get("state") != "open":
@@ -1612,6 +1739,17 @@ def update(command, number, requested_repo=None, mode="default"):
     key = f"{repo}#{number}"
     current_body = pr.get("body") or ""
     current_head_sha = pr.get("head", {}).get("sha", "")
+    entry = managed.setdefault("managed", {}).setdefault(
+        key, {"added": date.today().isoformat(), "note": pr.get("title", "")}
+    )
+    policy = resolve_description_policy(entry, current_body)
+    baseline = entry.get("last_head_sha")
+    entry["description_effective_mode"] = policy
+    if policy == "preserve" and baseline == current_head_sha:
+        entry["last_body_snapshot"] = current_body
+        entry.setdefault("validation_observed_head", current_head_sha)
+        save_managed(managed, key)
+        return repo, False, "保留人工描述；head 未变化，无需重写"
     files = pull_request_files(repo, number)
     if repo == SPECIAL_LAYOUT_REPO:
         try:
@@ -1631,29 +1769,48 @@ def update(command, number, requested_repo=None, mode="default"):
         except urllib.error.HTTPError as error:
             if error.code != 404:
                 raise
-    summary = summarize_current_diff(
-        pr,
-        files,
-        current_body,
-        repo == SPECIAL_LAYOUT_REPO,
-        linked_prs,
-        mode != "full",
-        package_syncs=(
-            apply_package_sync_overrides(package_sync_records(commits), repo)
-            if repo == SPECIAL_LAYOUT_REPO
-            else []
-        ),
-    )
-    rewritten_done = render_rewritten_done(
-        summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo, pr=pr
-    )
-    body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
-    if mode == "full":
-        body = expand_to_full_body(repo, body, commits)
-
+    if policy == "preserve":
+        incremental_files = files
+        if baseline:
+            comparison = request(repo, f"/compare/{baseline}...{current_head_sha}")
+            if comparison.get("status") not in ("ahead", "identical"):
+                raise RuntimeError("保留模式基线不再是 head 的祖先；请重新确认基线，未覆盖描述")
+            incremental_files = comparison.get("files", [])
+            if len(incremental_files) >= 300:
+                raise RuntimeError("GitHub 增量 diff 可能超过 300 文件限制；未覆盖人工描述")
+        body = preserve_description(pr, current_body, incremental_files, baseline, repo)
+        body = refresh_change_scope(body, files, repo, pr)
+        observed = entry.setdefault("validation_observed_head", baseline or current_head_sha)
+        if observed != current_head_sha and "<!-- kian:validation-observed " not in body:
+            prefix, protected = editable_description(body)
+            if protected:
+                note = (f"<!-- kian:validation-observed {observed} -->\n"
+                        f"> **Validation provenance:** The records below were retained from the description "
+                        f"observed at `{observed[:12]}`; they do not establish validation of later commits.\n\n")
+                body = prefix.rstrip() + "\n\n" + note + protected
+    else:
+        summary = summarize_current_diff(
+            pr,
+            files,
+            current_body,
+            repo == SPECIAL_LAYOUT_REPO,
+            linked_prs,
+            mode != "full",
+            package_syncs=(
+                apply_package_sync_overrides(package_sync_records(commits), repo)
+                if repo == SPECIAL_LAYOUT_REPO
+                else []
+            ),
+        )
+        rewritten_done = render_rewritten_done(
+            summary, repo == SPECIAL_LAYOUT_REPO, files=files, repo=repo, pr=pr
+        )
+        body = rewritten_done if mode == "simple" else replace_done_section(current_body, rewritten_done)
+        if mode == "full":
+            body = expand_to_full_body(repo, body, commits)
     expected_links = [item.get("html_url", "") for item in linked_prs if item.get("html_url")]
     missing_links = [url for url in expected_links if url not in body]
-    if missing_links:
+    if missing_links and policy == "rewrite":
         raise RuntimeError(
             f"整体重构遗漏了关联 PR 来源: {', '.join(missing_links)}；未更新 GitHub"
         )
@@ -1667,6 +1824,9 @@ def update(command, number, requested_repo=None, mode="default"):
         save_managed(managed, key)
         return repo, False, "当前 desc 已与最新最终 diff 一致"
 
+    latest = request(repo, f"/pulls/{number}")
+    if (latest.get("body") or "") != current_body or latest.get("head", {}).get("sha") != current_head_sha:
+        raise RuntimeError("生成期间 PR 描述或 head 已变化；未覆盖，请重试")
     result = request(repo, f"/pulls/{number}", method="PATCH", payload={"body": body})
     if result.get("number") != number:
         raise RuntimeError("GitHub 未返回预期的 PR 更新结果")
@@ -1680,15 +1840,16 @@ def update(command, number, requested_repo=None, mode="default"):
     )
     entry["processed_commits"] = [item.get("sha", "") for item in commits if item.get("sha")]
     save_managed(managed, key)
-    return repo, True, "已基于当前最终 diff 整体重构 desc；仅将显式 sync commit 用作来源元数据"
+    return repo, True, ("已保留人工描述并按增量 diff 更新相关条目" if policy == "preserve" else
+                        "已基于当前最终 diff 整体重构 desc；仅将显式 sync commit 用作来源元数据")
 
 
 def main():
     if len(sys.argv) not in (2, 3, 4):
-        raise RuntimeError("用法: pr_desc_manager.py desc123|up123 [owner/repo] [default|simple|full]")
-    match = re.fullmatch(r"(desc|up)(\d+)", sys.argv[1].strip(), re.I)
+        raise RuntimeError("用法: pr_desc_manager.py desc123|up123 [owner/repo] [default|simple|full] 或 policy123 owner/repo auto|preserve|rewrite")
+    match = re.fullmatch(r"(desc|up|policy)(\d+)", sys.argv[1].strip(), re.I)
     if not match:
-        raise RuntimeError("仅支持 desc<PR号> 或 up<PR号>")
+        raise RuntimeError("仅支持 desc<PR号>、up<PR号> 或 policy<PR号>")
     command, raw_number = match.groups()
     requested_repo = sys.argv[2].strip() if len(sys.argv) == 3 else None
     if len(sys.argv) == 4:
@@ -1696,6 +1857,10 @@ def main():
         mode = sys.argv[3].strip().lower()
     else:
         mode = "default"
+    if command.lower() == "policy":
+        repo, changed, details = set_description_policy(int(raw_number), requested_repo, mode)
+        print(json.dumps({"status": "NO_CHANGE", "repo": repo, "number": int(raw_number), "details": details}, ensure_ascii=False))
+        return
     if mode not in ("default", "simple", "full"):
         raise RuntimeError("描述模式仅支持 default、simple 或 full")
     repo, changed, details = update(command.lower(), int(raw_number), requested_repo, mode)
