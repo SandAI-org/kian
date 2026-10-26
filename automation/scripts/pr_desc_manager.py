@@ -1659,27 +1659,30 @@ def apply_preserved_edits(body, result):
     prefix, protected = editable_description(body)
     if not isinstance(result["edits"], list) or not isinstance(result["additions"], list):
         raise ValueError("保留模式 edits/additions 必须是列表")
-    paragraphs = prefix.split("\n\n")
+    paragraphs = re.split(r"\r?\n\r?\n", prefix)
+    lines = prefix.splitlines()
     replacements = {}
     for edit in result["edits"]:
         if not isinstance(edit, dict) or set(edit) != {"old", "new"}:
             raise ValueError("无效的保留模式编辑")
         old, new = edit["old"], edit["new"]
         if (not isinstance(old, str) or not isinstance(new, str) or not old.strip()
-                or not new.strip() or old not in paragraphs or prefix.count(old) != 1
+                or not new.strip() or (old not in paragraphs and old not in lines) or prefix.count(old) != 1
                 or old in replacements or re.search(r"^\s*[#><|]", old, re.M)
                 or re.search(r"^\s*[#><|]", new, re.M) or "\n\n" in new):
             raise ValueError("编辑必须精确匹配唯一内容段落，禁止修改标题、表格或验证记录")
         replacements[old] = new
-    prefix = "\n\n".join(replacements.get(part, part) for part in paragraphs)
+    for old, new in replacements.items():
+        prefix = prefix.replace(old, new, 1)
     for addition in result["additions"]:
         if (not isinstance(addition, str) or not addition.startswith("- ")
                 or "\n" in addition or len(addition) > 4000):
             raise ValueError("新增条目必须是单行 Markdown bullet")
     additions = list(dict.fromkeys(item for item in result["additions"] if item not in body))
     if additions:
-        separator = "\n" if "### Incremental Updates\n" in prefix else "\n\n### Incremental Updates\n\n"
-        prefix = prefix.rstrip() + separator + "\n".join(additions) + "\n\n"
+        newline = "\r\n" if "\r\n" in body else "\n"
+        separator = newline if re.search(r"^### Incremental Updates\r?$", prefix, re.M) else newline * 2 + "### Incremental Updates" + newline * 2
+        prefix = prefix.rstrip() + separator + newline.join(additions) + newline * 2
     return prefix + protected
 
 
@@ -1689,9 +1692,9 @@ def preserve_description(pr, body, files, baseline, repo):
     editable, protected = editable_description(body)
     prompt = f"""Update a human-authored GitHub PR description with minimal, evidence-based edits.
 The human description is authoritative for intent, structure, emphasis and reported validation.
-Return JSON only: {{"edits":[{{"old":"exact existing paragraph","new":"updated paragraph"}}],"additions":["- New **outcome**."]}}.
+Return JSON only: {{"edits":[{{"old":"exact existing paragraph or content line","new":"updated paragraph"}}],"additions":["- New **outcome**."]}}.
 - Edit only paragraphs whose claims are changed or invalidated by the supplied diff; otherwise preserve verbatim.
-- old must be an exact complete blank-line-separated paragraph in EDITABLE CONTENT. Do not edit headings, tables or blockquotes.
+- old must be an exact complete blank-line-separated paragraph or complete content line in EDITABLE CONTENT. Do not edit headings, tables or blockquotes.
 - No stylistic rewrite, translation, compression, deletion, or moving unrelated content. Update superseded behavior in place instead of adding contradictory claims.
 - additions are concise English Markdown bullets for genuinely new changes not already covered. Use backticks for identifiers and bold for key outcomes. Do not duplicate existing items.
 - Do not infer that any tests were rerun, update test counts, or assert new validation. Protected records are historical evidence, not proof for new commits.

@@ -32,6 +32,18 @@ class DescriptionPolicyTest(unittest.TestCase):
         self.assertIn('- New **feature**.', result)
         self.assertEqual(manager.editable_description(result)[1], manager.editable_description(self.body)[1])
 
+    def test_github_crlf_and_adjacent_bullets_preserve_untouched_bytes(self):
+        body = self.body.replace('- **Old behavior**.', '- **Old behavior**.\n- Keep this bullet exactly.').replace('\n', '\r\n')
+        updated = manager.apply_preserved_edits(body, {
+            'edits': [{'old': '- **Old behavior**.', 'new': '- **Updated behavior**.'}],
+            'additions': [],
+        })
+        self.assertEqual(updated, body.replace('- **Old behavior**.', '- **Updated behavior**.'))
+        for addition in ['- One.', '- Two.']:
+            updated = manager.apply_preserved_edits(updated, {'edits': [], 'additions': [addition]})
+        self.assertEqual(updated.count('### Incremental Updates'), 1)
+        self.assertTrue(updated.endswith(manager.editable_description(body)[1]))
+
     def test_unanchored_edits_protected_records_and_injected_sections_are_rejected(self):
         for old, new in [('| Core | 121 passed |', '| Core | 122 passed |'),
                          ('- Follow up.', '- Removed.'),
