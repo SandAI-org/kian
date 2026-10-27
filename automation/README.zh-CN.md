@@ -94,6 +94,8 @@ PR 描述默认生成精简、聚焦结果且不限制数量的要点。每条�
 
 ### 自动释放 Codex 遗留写锁（可选）
 
+当前使用约定：自动清锁已停用。用户说“清锁”时，agent 执行 `python3 automation/scripts/codex_lock_guard.py --manual --apply`，在自动服务关闭时也能单次运行。并行扫描当前 `codex_activity_monitor.targets` workspace 登记表；未配置该表时才使用旧清锁目标，支持精确的 `thread_workspaces` 映射。仅带 `--manual` 为预览。用即时连续核对代替后台 60 秒确认等待，但保留下述空闲会话、120 秒静默、连接归属、单会话持锁及 pidfd 检查。失联或证据不足时报告并跳过，不强制结束。发出信号、候选消失均不等于界面已恢复，可能仍需切换聊天。命令由 agent 执行，用户无需记忆。
+
 在私有配置中启用 `services.codex_lock_guard.enabled`，并在 `codex_lock_guard.targets` 中逐项配置 `id`、SSH `host`、可选 `container`、远端 `codex_home`、`server_root` 和精确的 `workspaces` 路径白名单。重新安装后，`com.kian.codex_lock_guard` 每 60 秒检查一次。目标地址和个人路径只放私有配置。macOS 负责读取本机 VS Code 日志，Linux 远端负责核对锁；SSH 必须能以 `BatchMode` 登录，密码连接只复用已有的 SSH master，不存储或输入密码。
 
 守护程序要求全部满足以下条件：当前 Mac 的 VS Code 日志能证明旧连接已不被任何当前窗口使用，而同目标的新连接仍在使用；新后端最后一次恢复该会话失败原因为 `active writer`，且之后没有恢复成功；白名单中的精确会话锁由同一 mount namespace 的旧 extension app-server 持有；旧后端只持有这一条会话锁；会话数据库报告最后一轮已结束，rollout 至少 120 秒无变化，且没有运行中的子任务。相同证据需跨至少 60 秒的连续扫描保持一致。断网或检查失败会重置确认，恢复后重新观察。

@@ -24,6 +24,29 @@ TID = "00000000-1111-2222-3333-444444444444"
 
 
 class CodexLockGuardTests(unittest.TestCase):
+    def test_manual_uses_current_workspace_registry_when_service_disabled(self):
+        config = {"services": {"codex_lock_guard": {"enabled": False}},
+                  "codex_activity_monitor": {"targets": [
+                      {"id": "current", "host": "host", "workspaces": ["/new"],
+                       "thread_workspaces": {TID: "/new"}}]},
+                  "codex_lock_guard": {"targets": [{"id": "obsolete"}]}}
+        targets = guard.manual_targets(config)
+        self.assertEqual([t["id"] for t in targets], ["current"])
+        self.assertEqual(targets[0]["thread_workspaces"], {TID: "/new"})
+        self.assertNotIn("server_root", config["codex_activity_monitor"]["targets"][0])
+
+    def test_exact_thread_mapping_does_not_allow_other_threads_or_active_turns(self):
+        with tempfile.TemporaryDirectory() as d:
+            proc, home, request = self.make_remote_fixture(Path(d))
+            request.update(workspaces=["/registered"], thread_workspaces={TID: "/registered"})
+            with patch.object(guard, "PROC", proc):
+                self.assertEqual(len(guard.candidates(request)), 1)
+                wrong = {**request, "thread_workspaces": {"other-thread": "/registered"}}
+                self.assertEqual(guard.candidates(wrong), [])
+                with sqlite3.connect(home / "thread_history_1.sqlite") as db:
+                    db.execute("UPDATE thread_turns SET status='inProgress'")
+                self.assertEqual(guard.candidates(request), [])
+
     def make_remote_fixture(self, root):
         proc, home, server = root / "proc", root / "codex", root / "server"
         home.mkdir()

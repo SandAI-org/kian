@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import json
 import os
@@ -127,10 +128,11 @@ def lock_owner(path):
     return owners[0], stat.st_dev, stat.st_ino
 
 
-def idle_thread(home, thread, workspaces, quiet_seconds):
+def idle_thread(home, thread, workspaces, quiet_seconds, thread_workspaces=None):
     with sqlite3.connect(f"file:{home}/state_5.sqlite?mode=ro", uri=True, timeout=2) as db:
         row = db.execute("SELECT cwd,rollout_path FROM threads WHERE id=?", (thread,)).fetchone()
-    if not row or row[0].rstrip("/") not in workspaces:
+    workspace = (thread_workspaces or {}).get(thread, row[0] if row else None)
+    if not row or workspace.rstrip("/") not in workspaces:
         raise ValueError("thread outside allowlist")
     with sqlite3.connect(f"file:{home}/thread_history_1.sqlite?mode=ro", uri=True, timeout=2) as db:
         turn = db.execute("SELECT status FROM thread_turns WHERE thread_id=? "
@@ -247,7 +249,8 @@ def candidates(request, diagnostics=None):
                 if owned != [thread]:
                     skipped("backend_owns_other_threads")
                     continue
-                idle = idle_thread(home, thread, request["workspaces"], request["quiet_seconds"])
+                idle = idle_thread(home, thread, request["workspaces"], request["quiet_seconds"],
+                                   request.get("thread_workspaces"))
                 key = f"{owner}:{previous['start']}:{device}:{inode}:{thread}:{current['pid']}:{current['start']}"
                 results.append({"key": key, "thread": thread, "old": previous,
                                 "current": current, "device": device, "inode": inode, **idle})
@@ -402,13 +405,77 @@ def run_local(apply):
         temporary.replace(state_path)
 
 
+def manual_targets(config):
+    """Use the maintained workspace registry, with legacy recovery targets as fallback."""
+    targets = config.get("codex_activity_monitor", {}).get("targets")
+    if targets is None:
+        targets = config.get("codex_lock_guard", {}).get("targets", [])
+    return [{"server_root": "/root/.vscode-server", **target} for target in targets]
+
+
+def run_manual(apply):
+    from automation_common import HOME, load_config
+
+    config = load_config()
+    targets = manual_targets(config)
+    log_root = Path.home() / "Library/Application Support/Code/logs"
+    state_path = HOME / "state/codex-lock-guard.json"
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+
+    def frontend():
+        links = local_connections(log_root)
+        frontend_history(links, targets, state.get("_frontend_history", {}), time.time())
+        return links
+
+    connections = frontend()
+
+    def scan(target):
+        key = (target["host"], target.get("container"))
+        links = connections.get(key)
+        record = {"time": time.time(), "target": target["id"],
+                  "mode": "manual_apply" if apply else "manual_preview"}
+        if not links:
+            return {**record, "actions": [], "skips": {"no_live_frontend_evidence": 1}}
+        request = {"codex_home": target["codex_home"], "server_root": target["server_root"],
+                   "workspaces": target["workspaces"], "connections": links,
+                   "thread_workspaces": target.get("thread_workspaces", {}),
+                   "quiet_seconds": max(120, config.get("codex_lock_guard", {}).get("quiet_seconds", 120))}
+        try:
+            result = remote_call(target, request)
+            if apply and result["candidates"]:
+                if frontend().get(key) != links:
+                    return {**record, "actions": [], "skips": {"frontend_changed_retry": 1}}
+                # remote_main rechecks lock, PID, connection and task evidence before SIGTERM.
+                result = remote_call(target, {**request, "approved": result["candidates"]})
+                # A sent signal is not proof of UI recovery; report whether the candidate remains.
+                verification = remote_call(target, request)
+                remaining = {item["key"] for item in verification["candidates"]}
+                for action in result["actions"]:
+                    action["candidate_still_present"] = any(
+                        item["key"] in remaining and item["thread"] == action["thread"]
+                        for item in result["candidates"])
+            return {**record, **result, "ui_retry_may_be_needed": bool(result["actions"])}
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            return {**record, "error": type(exc).__name__, "detail": str(exc)[:200]}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for record in pool.map(scan, targets):
+            with (HOME / "logs/codex-lock-guard-audit.jsonl").open("a") as handle:
+                handle.write(json.dumps(record) + "\n")
+            print(json.dumps(record), flush=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--remote")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--manual", action="store_true",
+                        help="Scan all registered workspaces once, even when the automatic service is disabled")
     arguments = parser.parse_args()
     os.umask(0o077)
     if arguments.remote:
         print(json.dumps(remote_main(json.loads(arguments.remote))))
+    elif arguments.manual:
+        run_manual(arguments.apply)
     else:
         run_local(arguments.apply)
