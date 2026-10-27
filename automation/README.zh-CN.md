@@ -150,3 +150,5 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 使用 `python3 automation/scripts/codex_activity_monitor.py --dry-run` 查看目标与 working 数量，不写通知检查点或发送卡片。日志为 `logs/codex-activity-monitor.log` 和 `.err.log`。关闭服务开关后重装，或执行 `launchctl bootout gui/$(id -u)/com.kian.codex_activity_monitor` 停止。卡片包含 workspace、起止时间、状态、turn ID 和最多 3,000 字的 agent 最终回复，不额外用模型编造成功结论。
 
 每次发送或补发前，监控都会重新读取同一远端会话的用户消息序号；若已出现晚于该条 Agent 回复的用户消息，就丢弃旧待发卡片并保留去重记录，不读取用户回复正文。无法确认时延后发送；已发送消息不自动撤回，跨系统复查与发送也不是原子操作。
+
+已有 Codex 会话的执行 cwd 与 VS Code workspace 根目录不同时，可在目标中配置 `thread_workspaces`，用精确会话 ID 映射到已登记的 workspace 路径；映射目标必须同时位于 `workspaces` 白名单。这样不会把无关执行目录登记为 workspace，也不扩大到该目录下其他会话。采集结果另保留 `session_cwd`，不修改 Codex 会话历史。

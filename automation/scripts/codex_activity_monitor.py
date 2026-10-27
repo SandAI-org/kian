@@ -19,9 +19,12 @@ from zoneinfo import ZoneInfo
 TERMINAL = {'completed', 'failed', 'interrupted'}
 
 
-def collect(home, workspaces, since):
+def collect(home, workspaces, since, thread_workspaces=None):
     """Executed remotely with only SQLite read-only connections, no Codex client."""
     home = Path(home)
+    thread_workspaces = thread_workspaces or {}
+    if any(root not in workspaces for root in thread_workspaces.values()):
+        raise ValueError("Thread workspace binding outside allowlist")
     state = sorted(home.glob('state_*.sqlite'))
     history = sorted(home.glob('thread_history_*.sqlite'))
     if not state or not history:
@@ -34,7 +37,10 @@ def collect(home, workspaces, since):
     with connect(state[-1]) as db, connect(history[-1]) as hist:
         threads = [dict(r) for r in db.execute(
             "SELECT id,name,title,cwd FROM threads WHERE archived=0 AND name LIKE 'Kato %'")
-                   if r['cwd'].rstrip('/') in workspaces]
+                   if r['cwd'].rstrip('/') in workspaces or r['id'] in thread_workspaces]
+        for thread in threads:
+            thread['session_cwd'] = thread['cwd']
+            thread['cwd'] = thread_workspaces.get(thread['id'], thread['cwd'])
         turns = []
         for thread in threads:
             latest_user = hist.execute(
@@ -49,7 +55,8 @@ def collect(home, workspaces, since):
                 'ORDER BY rollout_ordinal',
                 (thread['id'], since, since, 'inProgress')):
                 turn = dict(row)
-                turn.update(thread_id=thread['id'], name=thread['name'], cwd=thread['cwd'])
+                turn.update(thread_id=thread['id'], name=thread['name'], cwd=thread['cwd'],
+                            session_cwd=thread['session_cwd'])
                 turn['summary'] = ''
                 turn['reply_ordinal'] = turn.pop('rollout_end_ordinal')
                 turn['latest_user_ordinal'] = latest_user
@@ -72,7 +79,7 @@ def collect(home, workspaces, since):
 def remote_snapshot(target, since):
     import inspect
     source = 'import json,sqlite3,time\nfrom pathlib import Path\n' + inspect.getsource(collect)
-    args = [target.get('codex_home', '/root/.codex'), target['workspaces'], since]
+    args = [target.get('codex_home', '/root/.codex'), target['workspaces'], since, target.get('thread_workspaces', {})]
     source += '\nprint(json.dumps(collect(*json.loads(' + repr(json.dumps(args)) + ')),ensure_ascii=False))\n'
     command = ['python3', '-']
     if target.get('container'):

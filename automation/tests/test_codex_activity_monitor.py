@@ -148,6 +148,12 @@ class TestReadOnlyCollector(unittest.TestCase):
             snapshot = m.collect(home, ['/work'], 90)
             self.assertEqual([t['id'] for t in snapshot['threads']], ['yes'])
             self.assertEqual(snapshot['turns'][0]['summary'], 'public final')
+            bound = m.collect(home, ['/registered'], 90, {'yes': '/registered'})
+            self.assertEqual([t['id'] for t in bound['threads']], ['yes'])
+            self.assertEqual(bound['turns'][0]['cwd'], '/registered')
+            self.assertEqual(bound['turns'][0]['session_cwd'], '/work')
+            with self.assertRaises(ValueError):
+                m.collect(home, ['/registered'], 90, {'yes': '/outside'})
             self.assertNotIn('private reasoning', json.dumps(snapshot))
             self.assertEqual(before, {p.name: p.read_bytes() for p in home.glob('*.sqlite')})
             self.assertFalse(m.collect(home, ['/work'], 200)['turns'])
