@@ -168,8 +168,17 @@ def stale_before_send(target, pending):
     raise RuntimeError('Cannot confirm pending turn')
 
 
-def deliver(state, persist, sender, is_stale):
+def deliver(state, persist, sender, is_stale, grace_seconds=300, now=None):
+    now = time.time() if now is None else now
     for key, turn in list(state.get('outbox', {}).items()):
+        completed_at = turn.get('completed_at')
+        if completed_at is None:
+            if 'completion_observed_at' not in turn:
+                turn['completion_observed_at'] = now
+                persist()
+            completed_at = turn['completion_observed_at']
+        if now < completed_at + grace_seconds:
+            continue
         try:
             if is_stale(key, turn):
                 del state['outbox'][key]
@@ -220,7 +229,8 @@ def run(config, path, dry_run=False):
         if target_id not in by_id:
             raise RuntimeError('Target disabled or removed')
         return stale_before_send(by_id[target_id], turn)
-    deliver(state, persist, send, is_stale)
+    grace = max(0, int(config['codex_activity_monitor'].get('response_grace_seconds', 300)))
+    deliver(state, persist, send, is_stale, grace_seconds=grace)
 
 
 def main():

@@ -16,6 +16,7 @@
     }
   },
   "codex_activity_monitor": {
+    "response_grace_seconds": 300,
     "targets": [{
       "id": "example-codex",
       "label": "Example workspace",

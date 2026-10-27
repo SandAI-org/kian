@@ -122,6 +122,45 @@ class TestCompletionTransitions(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 m.stale_before_send(self.target, pending)
 
+    def test_waits_five_minutes_from_completion_not_poll_time(self):
+        self.poll([])
+        self.poll([turn('completed', 101)], 200)
+        sender = Mock(return_value={'code': 0})
+        stale = Mock(return_value=False)
+        m.deliver(self.state, Mock(), sender, stale, now=409)
+        sender.assert_not_called()
+        stale.assert_not_called()
+        self.assertEqual(len(self.state['outbox']), 1)
+        m.deliver(self.state, Mock(), sender, stale, now=410)
+        sender.assert_called_once()
+        stale.assert_called_once()
+        self.assertFalse(self.state['outbox'])
+
+    def test_reply_during_grace_suppresses_card_after_restart(self):
+        self.poll([])
+        self.poll([turn('completed', 101)], 120)
+        sender = Mock()
+        m.deliver(self.state, Mock(), sender, Mock(return_value=False), now=200)
+        self.state = json.loads(json.dumps(self.state))
+        m.deliver(self.state, Mock(), sender, Mock(return_value=True), now=410)
+        sender.assert_not_called()
+        self.assertFalse(self.state['outbox'])
+
+    def test_missing_completion_time_starts_a_persisted_grace_period(self):
+        self.poll([])
+        item = turn('interrupted', 101)
+        item['completed_at'] = None
+        self.poll([item], 120)
+        sender, persist = Mock(return_value={'code': 0}), Mock()
+        m.deliver(self.state, persist, sender, Mock(return_value=False), now=200)
+        sender.assert_not_called()
+        persist.assert_called_once()
+        self.state = json.loads(json.dumps(self.state))
+        m.deliver(self.state, Mock(), sender, Mock(return_value=False), now=499)
+        sender.assert_not_called()
+        m.deliver(self.state, Mock(), sender, Mock(return_value=False), now=500)
+        sender.assert_called_once()
+
 
 class TestReadOnlyCollector(unittest.TestCase):
     def test_exact_allowlist_kato_name_and_final_message_only(self):

@@ -151,4 +151,6 @@ Use `python3 automation/scripts/codex_activity_monitor.py --dry-run` to inspect 
 
 Before every send or retry, the monitor reads fresh user-message sequence metadata from that same remote chat. If a user message follows the completed agent reply, the obsolete pending card is dropped and stays deduplicated. It does not read the user reply text. Failed freshness checks defer delivery; already delivered messages are not recalled, and the remote check/send is not atomic.
 
+`codex_activity_monitor.response_grace_seconds` defaults to 300: hold each notification for five minutes from the turn's completion timestamp, then recheck whether the user has replied before sending. With the normal 60-second poll, delivery is usually 5–6 minutes after completion. Waiting cards survive restarts; retrying does not restart the grace period. If the completion timestamp is missing, a persisted first-observation timestamp supplies the grace period instead.
+
 When an existing Codex thread executes outside its VS Code workspace root, an optional target `thread_workspaces` map binds an exact thread ID to its registered workspace path. Every mapped destination must also appear in `workspaces`. This preserves narrow thread selection without treating an unrelated execution directory as a workspace. The collector retains `session_cwd` separately and never modifies Codex history.
