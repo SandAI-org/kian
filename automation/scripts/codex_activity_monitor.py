@@ -172,6 +172,12 @@ def deliver(state, persist, sender, is_stale, grace_seconds=300, now=None):
     now = time.time() if now is None else now
     for key, turn in list(state.get('outbox', {}).items()):
         completed_at = turn.get('completed_at')
+        started_at = turn.get('started_at')
+        if started_at is not None and completed_at is not None and 0 <= completed_at - started_at < 60:
+            del state['outbox'][key]
+            persist()
+            print(f'DROPPED_SHORT_TURN {key}', flush=True)
+            continue
         if completed_at is None:
             if 'completion_observed_at' not in turn:
                 turn['completion_observed_at'] = now

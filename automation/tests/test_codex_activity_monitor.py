@@ -14,7 +14,7 @@ spec.loader.exec_module(m)
 
 def turn(status='inProgress', started=90, ident='one'):
     return dict(thread_id='thread', turn_id=ident, status=status, started_at=started,
-                completed_at=110 if status in m.TERMINAL else None,
+                completed_at=started + 60 if status in m.TERMINAL else None,
                 name='Kato Test Workspace', cwd='/work', summary='Done')
 
 
@@ -32,7 +32,7 @@ class TestCompletionTransitions(unittest.TestCase):
         self.poll([turn('completed')], 120)
         self.assertEqual(len(self.state['outbox']), 1)
 
-    def test_short_turn_between_polls_and_multiple_completions(self):
+    def test_turn_between_polls_and_multiple_completions(self):
         self.poll([])
         self.poll([turn('completed', 101), turn('completed', 102, 'two')], 120)
         self.assertEqual(len(self.state['outbox']), 2)
@@ -127,11 +127,11 @@ class TestCompletionTransitions(unittest.TestCase):
         self.poll([turn('completed', 101)], 200)
         sender = Mock(return_value={'code': 0})
         stale = Mock(return_value=False)
-        m.deliver(self.state, Mock(), sender, stale, now=409)
+        m.deliver(self.state, Mock(), sender, stale, now=460)
         sender.assert_not_called()
         stale.assert_not_called()
         self.assertEqual(len(self.state['outbox']), 1)
-        m.deliver(self.state, Mock(), sender, stale, now=410)
+        m.deliver(self.state, Mock(), sender, stale, now=461)
         sender.assert_called_once()
         stale.assert_called_once()
         self.assertFalse(self.state['outbox'])
@@ -142,7 +142,7 @@ class TestCompletionTransitions(unittest.TestCase):
         sender = Mock()
         m.deliver(self.state, Mock(), sender, Mock(return_value=False), now=200)
         self.state = json.loads(json.dumps(self.state))
-        m.deliver(self.state, Mock(), sender, Mock(return_value=True), now=410)
+        m.deliver(self.state, Mock(), sender, Mock(return_value=True), now=461)
         sender.assert_not_called()
         self.assertFalse(self.state['outbox'])
 
@@ -160,6 +160,35 @@ class TestCompletionTransitions(unittest.TestCase):
         sender.assert_not_called()
         m.deliver(self.state, Mock(), sender, Mock(return_value=False), now=500)
         sender.assert_called_once()
+
+    def test_short_terminal_turns_are_dropped_before_grace_and_retry(self):
+        for status in sorted(m.TERMINAL):
+            with self.subTest(status=status):
+                self.state = {}
+                self.poll([])
+                item = dict(turn(status, 101), completed_at=160.999)
+                self.poll([item], 200)
+                # An existing durable outbox must receive the new policy too.
+                self.state = json.loads(json.dumps(self.state))
+                sender, stale, persist = Mock(), Mock(), Mock()
+                m.deliver(self.state, persist, sender, stale, now=201)
+                sender.assert_not_called()
+                stale.assert_not_called()
+                persist.assert_called_once()
+                self.assertFalse(self.state['outbox'])
+                self.poll([item], 500)
+                self.assertFalse(self.state['outbox'])
+
+    def test_exact_minute_sends_and_missing_or_invalid_duration_is_not_assumed_short(self):
+        for started, completed in [(101, 161), (None, 161), (101, None), (200, 161)]:
+            with self.subTest(started=started, completed=completed):
+                item = dict(turn('completed', 101), started_at=started, completed_at=completed,
+                            completion_observed_at=161, target='test', uuid='stable')
+                state = {'outbox': {'pending': item}}
+                sender = Mock(return_value={'code': 0})
+                m.deliver(state, Mock(), sender, Mock(return_value=False), now=500)
+                sender.assert_called_once()
+                self.assertFalse(state['outbox'])
 
 
 class TestReadOnlyCollector(unittest.TestCase):

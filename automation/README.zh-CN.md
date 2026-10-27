@@ -155,4 +155,6 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 
 `codex_activity_monitor.response_grace_seconds` 默认 300：每轮结束后先留 5 分钟响应时间，再复查用户是否回复，未回复才发卡片。按默认每 60 秒检查，正常约在完成后 5–6 分钟提醒。等待状态可跨重启保留，补发不重新计时；若缺少完成时间，则持久记录首次观察时间作为缓冲期起点。
 
+已知执行时长严格短于 60 秒的轮次不发通知，包括失败、中断以及已排队待重试的卡片。时长使用 `completed_at - started_at`，不计 5 分钟响应缓冲或断网延迟；恰好 60 秒仍可提醒。时间戳缺失或无效时不推断为短任务，沿用原有通知规则。
+
 已有 Codex 会话的执行 cwd 与 VS Code workspace 根目录不同时，可在目标中配置 `thread_workspaces`，用精确会话 ID 映射到已登记的 workspace 路径；映射目标必须同时位于 `workspaces` 白名单。这样不会把无关执行目录登记为 workspace，也不扩大到该目录下其他会话。采集结果另保留 `session_cwd`，不修改 Codex 会话历史。
