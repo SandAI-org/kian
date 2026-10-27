@@ -25,7 +25,7 @@ def feishu_token():
         return json.load(resp)["tenant_access_token"]
 
 
-def send(title, body_md, actions=None, template="green"):
+def send(title, body_md, actions=None, template="green", message_uuid=None):
     token = feishu_token()
     elements = [{"tag": "markdown", "content": body_md}]
     if actions:
@@ -38,11 +38,14 @@ def send(title, body_md, actions=None, template="green"):
         "header": {"title": {"tag": "plain_text", "content": title}, "template": template},
         "elements": elements,
     }
-    payload = json.dumps({
+    message = {
         "receive_id": FEISHU["open_id"],
         "msg_type": "interactive",
         "content": json.dumps(card, ensure_ascii=False),
-    }, ensure_ascii=False).encode()
+    }
+    if message_uuid:
+        message["uuid"] = message_uuid
+    payload = json.dumps(message, ensure_ascii=False).encode()
     req = urllib.request.Request(
         "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
         data=payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})

@@ -77,6 +77,7 @@ required = {
   "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
   "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
   "codex_lock_guard": ["codex_lock_guard.targets"],
+  "codex_activity_monitor": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_activity_monitor.targets"],
 }[service]
 
 def get(path):
@@ -129,6 +130,8 @@ render() {
     /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Minute $(read_config services.qr.minute 0)" "$output"
   elif [[ "$service" == "reminders" ]]; then
     /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.reminders.poll_interval_seconds 60)" "$output"
+  elif [[ "$service" == "codex_activity_monitor" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.codex_activity_monitor.interval_seconds 60)" "$output"
   elif [[ "$service" == "public_watch" ]]; then
     /usr/libexec/PlistBuddy -c "Set :StartInterval $(read_config services.public_watch.retry_interval_seconds 300)" "$output"
     /usr/libexec/PlistBuddy -c "Set :StartCalendarInterval:Hour $(read_config services.public_watch.flush_hour 10)" "$output"
@@ -159,7 +162,7 @@ remove_legacy_service() {
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr reminders public_watch codex_lock_guard; do
+for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

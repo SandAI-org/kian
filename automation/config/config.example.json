@@ -6,6 +6,7 @@
     "qr": { "enabled": false, "hour": 12, "minute": 0 },
     "reminders": { "enabled": false, "poll_interval_seconds": 60 },
     "codex_lock_guard": { "enabled": false },
+    "codex_activity_monitor": { "enabled": false, "interval_seconds": 60 },
     "public_watch": {
       "enabled": false,
       "interval_seconds": 3600,
@@ -13,6 +14,16 @@
       "flush_hour": 10,
       "flush_minute": 30
     }
+  },
+  "codex_activity_monitor": {
+    "targets": [{
+      "id": "example-codex",
+      "label": "Example workspace",
+      "host": "REPLACE_WITH_SSH_ALIAS",
+      "container": "REPLACE_WITH_CONTAINER_NAME",
+      "codex_home": "/root/.codex",
+      "workspaces": ["REPLACE_WITH_EXACT_REMOTE_WORKSPACE"]
+    }]
   },
   "codex_lock_guard": {
     "quiet_seconds": 120,

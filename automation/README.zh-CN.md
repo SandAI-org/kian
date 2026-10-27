@@ -138,3 +138,13 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 ```
 
 切换策略本身不修改 GitHub；之后的按钮沿用设置。显式 rewrite 才恢复以最终 diff 整体生成。精确段落锚点会保护无关内容，但判断哪些语义应更新仍依赖配置的模型。写入前会复查 body/head，本地同一 PR 的操作会串行；GitHub 此接口不提供原子的 body/head 比较并交换，仍存在极小的外部并发窗口。
+
+### Codex workspace 工作结束通知
+
+启用 `services.codex_activity_monitor.enabled`，在 `codex_activity_monitor.targets` 中配置唯一 `id`、显示 `label`、SSH `host`、可选 `container`、`codex_home` 与精确 `workspaces` 白名单。重新安装后注册 `com.kian.codex_activity_monitor`；`services.codex_activity_monitor.interval_seconds` 默认 60 秒。只观察白名单中未归档、名称为 `Kato ...` 的聊天；新增 workspace、机器或容器需登记真实路径。SSH 使用 BatchMode 和已有凭据／control master。
+
+采集器以 SQLite read-only/query-only 方式读取远端 `state_*.sqlite`、`thread_history_*.sqlite`，只取公开最终回复和明确的 turn 状态，不接管会话、不读取 reasoning、不发送指令、不清锁、不终止进程。只有最新一轮可判定为 working，忽略历史遗留的 inProgress。首次成功发现时跳过旧完成记录，并跟踪当前运行轮次；之后也能捕获两次轮询之间开始并结束的短任务。静默或失联不等于结束。completed、failed、interrupted 分别发送飞书卡片；一轮 completed 不保证整个用户目标或后台任务已成功。
+
+持久状态与待发 outbox 位于 `state/codex-activity-monitor.json`，采用进程锁和原子写入。SSH 失败保留检查点；飞书网络或业务 API 失败保留待发消息，后续补发，不依赖出现新任务。target/thread/turn 唯一键避免常规重启重复推送，重试复用固定飞书 UUID（服务端去重窗口为 1 小时）；不能承诺超过该窗口的模糊发送／崩溃也严格 exactly-once。Mac 睡眠、断网或 SSH master 失效会推迟观察和通知，恢复后继续。本类完成通知不做夜间积压。SQLite 格式不兼容会记录 unavailable，绝不当作任务完成。
+
+使用 `python3 automation/scripts/codex_activity_monitor.py --dry-run` 查看目标与 working 数量，不写通知检查点或发送卡片。日志为 `logs/codex-activity-monitor.log` 和 `.err.log`。关闭服务开关后重装，或执行 `launchctl bootout gui/$(id -u)/com.kian.codex_activity_monitor` 停止。卡片包含 workspace、起止时间、状态、turn ID 和最多 3,000 字的 agent 最终回复，不额外用模型编造成功结论。
