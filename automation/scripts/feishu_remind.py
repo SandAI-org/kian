@@ -25,9 +25,9 @@ def feishu_token():
         return json.load(resp)["tenant_access_token"]
 
 
-def send(title, body_md, actions=None, template="green", message_uuid=None):
+def send(title, body_md, actions=None, template="green", message_uuid=None, elements=None):
     token = feishu_token()
-    elements = [{"tag": "markdown", "content": body_md}]
+    elements = list(elements) if elements is not None else [{"tag": "markdown", "content": body_md}]
     if actions:
         elements.extend(
             {"tag": "action", "actions": actions[index:index + 5]}

@@ -53,9 +53,9 @@ class TestCompletionTransitions(unittest.TestCase):
     def test_failure_and_interruption_are_not_success(self):
         self.poll([])
         self.poll([turn('failed', 101), turn('interrupted', 102, 'two')], 120)
-        titles = [m.card(t)[0] for t in self.state['outbox'].values()]
-        self.assertTrue(any('执行失败' in t for t in titles))
-        self.assertTrue(any('已中断' in t for t in titles))
+        cards = [json.dumps(m.card(t), ensure_ascii=False) for t in self.state['outbox'].values()]
+        self.assertTrue(any('执行失败' in c for c in cards))
+        self.assertTrue(any('已中断' in c for c in cards))
 
     def test_unobserved_old_completion_is_not_replayed(self):
         self.poll([])

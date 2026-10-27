@@ -113,13 +113,21 @@ def card(turn):
     def clock(value):
         return datetime.fromtimestamp(value, ZoneInfo('Asia/Shanghai')).strftime('%m-%d %H:%M:%S') if value else '未知'
     summary = turn.get('summary') or '未记录最终回复，请回到对应 workspace 查看。'
-    body = (f"**{turn['name']}**\n{turn['target']}\n\n"
-            f"**状态：** {label}\n**开始：** {clock(turn.get('started_at'))}\n"
-            f"**结束：** {clock(turn.get('completed_at'))}\n\n"
-            f"**Agent 最终回复**\n{summary}\n\n"
-            f"Workspace：{turn['cwd']}\nTurn：{turn['turn_id']}\n"
-            '注：本轮结束不等于全部需求或后台任务都已完成；以上为远程 Agent 的回复。')
-    return f'{icon} Codex 工作通知 · {label}', body
+    context = f"**{turn['target']}**\nWorkspace 路径：{turn['cwd']}"
+    timing = (f"**状态：** {label}\n"
+              f"**开始：** {clock(turn.get('started_at'))}\n"
+              f"**结束：** {clock(turn.get('completed_at'))}（北京时间）")
+    elements = [
+        {"tag": "markdown", "content": context},
+        {"tag": "markdown", "content": timing},
+        {"tag": "hr"},
+        {"tag": "markdown", "content": "**💬 Agent 回复**"},
+        {"tag": "markdown", "content": summary},
+        {"tag": "hr"},
+        {"tag": "note", "elements": [{"tag": "plain_text", "content":
+            f"Turn：{turn['turn_id']}\n以上为远程 Agent 本轮回复；后台任务可能仍在运行。"}]},
+    ]
+    return f"{icon} Codex 工作通知 · {turn['name']}", elements
 
 
 def save(path, state):
@@ -132,8 +140,8 @@ def save(path, state):
 def deliver(state, persist, sender):
     for key, turn in list(state.get('outbox', {}).items()):
         try:
-            title, body = card(turn)
-            response = sender(title, body, template='green' if turn['status'] == 'completed' else 'orange',
+            title, elements = card(turn)
+            response = sender(title, "", elements=elements, template='green' if turn['status'] == 'completed' else 'orange',
                               message_uuid=turn['uuid'])
             if not isinstance(response, dict) or response.get('code') != 0:
                 raise RuntimeError('Feishu rejected card')
