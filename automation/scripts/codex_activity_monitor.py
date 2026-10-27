@@ -37,9 +37,12 @@ def collect(home, workspaces, since):
                    if r['cwd'].rstrip('/') in workspaces]
         turns = []
         for thread in threads:
+            latest_user = hist.execute(
+                "SELECT MAX(rollout_ordinal) FROM thread_items WHERE thread_id=? "
+                "AND item_type='userMessage'", (thread['id'],)).fetchone()[0]
             for row in hist.execute(
-                'SELECT turn_id,status,started_at,completed_at,error_json,final_agent_item_id '
-                'FROM thread_turns WHERE thread_id=? AND '
+                'SELECT turn_id,status,started_at,completed_at,error_json,final_agent_item_id,'
+                'rollout_end_ordinal FROM thread_turns WHERE thread_id=? AND '
                 '(started_at>=? OR completed_at>=? OR status=?) AND '
                 "(status!='inProgress' OR rollout_ordinal=(SELECT MAX(t.rollout_ordinal) "
                 'FROM thread_turns t WHERE t.thread_id=thread_turns.thread_id)) '
@@ -48,11 +51,14 @@ def collect(home, workspaces, since):
                 turn = dict(row)
                 turn.update(thread_id=thread['id'], name=thread['name'], cwd=thread['cwd'])
                 turn['summary'] = ''
+                turn['reply_ordinal'] = turn.pop('rollout_end_ordinal')
+                turn['latest_user_ordinal'] = latest_user
                 if turn['final_agent_item_id']:
-                    item = hist.execute('SELECT item_json FROM thread_items '
+                    item = hist.execute('SELECT item_json,rollout_ordinal FROM thread_items '
                                         'WHERE thread_id=? AND item_id=?',
                                         (thread['id'], turn['final_agent_item_id'])).fetchone()
                     if item:
+                        turn['reply_ordinal'] = item[1]
                         content = json.loads(item[0])
                         if content.get('type') == 'agentMessage':
                             turn['summary'] = content.get('text', '')[:3000]
@@ -137,9 +143,32 @@ def save(path, state):
     os.replace(temp, path)
 
 
-def deliver(state, persist, sender):
+def acknowledged(turn):
+    reply = turn.get('reply_ordinal')
+    user = turn.get('latest_user_ordinal')
+    return reply is not None and user is not None and user > reply
+
+
+def stale_before_send(target, pending):
+    snapshot = remote_snapshot(target, pending.get('started_at') or 0)
+    for turn in snapshot['turns']:
+        if (turn['thread_id'], turn['turn_id']) == (pending['thread_id'], pending['turn_id']):
+            if turn['status'] not in TERMINAL:
+                raise RuntimeError('Turn no longer terminal')
+            if turn.get('reply_ordinal') is None:
+                raise RuntimeError('Cannot confirm reply position')
+            return acknowledged(turn)
+    raise RuntimeError('Cannot confirm pending turn')
+
+
+def deliver(state, persist, sender, is_stale):
     for key, turn in list(state.get('outbox', {}).items()):
         try:
+            if is_stale(key, turn):
+                del state['outbox'][key]
+                persist()
+                print(f'DROPPED_ACKNOWLEDGED {key}', flush=True)
+                continue
             title, elements = card(turn)
             response = sender(title, "", elements=elements, template='green' if turn['status'] == 'completed' else 'orange',
                               message_uuid=turn['uuid'])
@@ -178,7 +207,13 @@ def run(config, path, dry_run=False):
         return
     persist = lambda: save(path, state)
     persist()  # Commit observation and pending notifications before contacting Feishu.
-    deliver(state, persist, send)
+    by_id = {t['id']: t for t in targets}
+    def is_stale(key, turn):
+        target_id = key.split('/')[0]
+        if target_id not in by_id:
+            raise RuntimeError('Target disabled or removed')
+        return stale_before_send(by_id[target_id], turn)
+    deliver(state, persist, send, is_stale)
 
 
 def main():

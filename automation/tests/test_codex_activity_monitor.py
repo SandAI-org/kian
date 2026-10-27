@@ -4,7 +4,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 SCRIPT = Path(__file__).parents[1] / 'scripts' / 'codex_activity_monitor.py'
 spec = importlib.util.spec_from_file_location('codex_activity_monitor', SCRIPT)
@@ -68,19 +68,59 @@ class TestCompletionTransitions(unittest.TestCase):
         before = next(iter(self.state['outbox'].values()))['uuid']
         persist = Mock()
         sender = Mock(side_effect=TimeoutError())
-        m.deliver(self.state, persist, sender)
+        m.deliver(self.state, persist, sender, lambda key, item: False)
         self.assertEqual(len(self.state['outbox']), 1)
         sender.side_effect = None
         sender.return_value = {'code': 123, 'msg': 'rejected'}
-        m.deliver(self.state, persist, sender)
+        m.deliver(self.state, persist, sender, lambda key, item: False)
         self.assertEqual(len(self.state['outbox']), 1)
         sender.return_value = {'code': 0, 'data': {'message_id': 'received'}}
-        m.deliver(self.state, persist, sender)
+        m.deliver(self.state, persist, sender, lambda key, item: False)
         self.assertEqual(sender.call_args.kwargs['message_uuid'], before)
         self.assertFalse(self.state['outbox'])
         persist.assert_called_once()
         self.poll([turn('completed', 101)], 150)
         self.assertFalse(self.state['outbox'])
+
+    def test_acknowledged_pending_card_is_dropped_without_sending(self):
+        self.poll([])
+        self.poll([turn('completed', 101)], 120)
+        sender, persist = Mock(), Mock()
+        m.deliver(self.state, persist, sender, lambda key, item: True)
+        sender.assert_not_called()
+        persist.assert_called_once()
+        self.assertFalse(self.state['outbox'])
+        self.poll([turn('completed', 101)], 140)
+        self.assertFalse(self.state['outbox'])
+
+    def test_reconnect_rechecks_user_reply_before_retry(self):
+        self.poll([])
+        self.poll([turn('completed', 101)], 120)
+        sender = Mock()
+        def unavailable(key, item):
+            raise TimeoutError()
+        m.deliver(self.state, Mock(), sender, unavailable)
+        self.assertEqual(len(self.state['outbox']), 1)
+        sender.assert_not_called()
+        m.deliver(self.state, Mock(), sender, lambda key, item: True)
+        self.assertFalse(self.state['outbox'])
+        sender.assert_not_called()
+
+    def test_only_a_user_message_after_the_reply_acknowledges(self):
+        self.assertFalse(m.acknowledged({'reply_ordinal': 20, 'latest_user_ordinal': 10}))
+        self.assertFalse(m.acknowledged({'reply_ordinal': 20, 'latest_user_ordinal': 20}))
+        self.assertFalse(m.acknowledged({'reply_ordinal': 20, 'latest_user_ordinal': None}))
+        self.assertTrue(m.acknowledged({'reply_ordinal': 20, 'latest_user_ordinal': 21}))
+
+    def test_freshness_reads_remote_reply_not_pending_snapshot(self):
+        pending = turn('completed', 101)
+        fresh = dict(pending, reply_ordinal=10, latest_user_ordinal=11)
+        with patch.object(m, 'remote_snapshot', return_value={'turns': [fresh]}) as query:
+            self.assertTrue(m.stale_before_send(self.target, pending))
+            query.assert_called_once_with(self.target, 101)
+        with patch.object(m, 'remote_snapshot', return_value={'turns': []}):
+            with self.assertRaises(RuntimeError):
+                m.stale_before_send(self.target, pending)
 
 
 class TestReadOnlyCollector(unittest.TestCase):
@@ -94,16 +134,16 @@ class TestReadOnlyCollector(unittest.TestCase):
                     ('other', 'Someone else', 't', '/work', 0),
                     ('wrong', 'Kato Other Workspace', 't', '/work-other', 0)])
             with sqlite3.connect(home / 'thread_history_1.sqlite') as db:
-                db.execute('CREATE TABLE thread_turns(thread_id,turn_id,status,started_at,completed_at,error_json,final_agent_item_id,rollout_ordinal)')
-                db.execute('CREATE TABLE thread_items(thread_id,item_id,item_json)')
-                db.execute('INSERT INTO thread_turns VALUES(?,?,?,?,?,?,?,?)',
-                           ('yes', 'one', 'completed', 100, 110, None, 'final', 1))
-                db.execute('INSERT INTO thread_items VALUES(?,?,?)',
-                           ('yes', 'final', json.dumps(dict(type='agentMessage', text='public final'))))
-                db.execute('INSERT INTO thread_items VALUES(?,?,?)',
-                           ('yes', 'private', json.dumps(dict(type='reasoning', text='private reasoning'))))
-                db.execute('INSERT INTO thread_turns VALUES(?,?,?,?,?,?,?,?)',
-                           ('yes', 'orphan', 'inProgress', 1, None, None, None, 0))
+                db.execute('CREATE TABLE thread_turns(thread_id,turn_id,status,started_at,completed_at,error_json,final_agent_item_id,rollout_ordinal,rollout_end_ordinal)')
+                db.execute('CREATE TABLE thread_items(thread_id,item_id,item_json,rollout_ordinal,item_type)')
+                db.execute('INSERT INTO thread_turns VALUES(?,?,?,?,?,?,?,?,?)',
+                           ('yes', 'one', 'completed', 100, 110, None, 'final', 1, 10))
+                db.execute('INSERT INTO thread_items VALUES(?,?,?,?,?)',
+                           ('yes', 'final', json.dumps(dict(type='agentMessage', text='public final')), 9, 'agentMessage'))
+                db.execute('INSERT INTO thread_items VALUES(?,?,?,?,?)',
+                           ('yes', 'private', json.dumps(dict(type='reasoning', text='private reasoning')), 8, 'reasoning'))
+                db.execute('INSERT INTO thread_turns VALUES(?,?,?,?,?,?,?,?,?)',
+                           ('yes', 'orphan', 'inProgress', 1, None, None, None, 0, None))
             before = {p.name: p.read_bytes() for p in home.glob('*.sqlite')}
             snapshot = m.collect(home, ['/work'], 90)
             self.assertEqual([t['id'] for t in snapshot['threads']], ['yes'])
@@ -111,6 +151,13 @@ class TestReadOnlyCollector(unittest.TestCase):
             self.assertNotIn('private reasoning', json.dumps(snapshot))
             self.assertEqual(before, {p.name: p.read_bytes() for p in home.glob('*.sqlite')})
             self.assertFalse(m.collect(home, ['/work'], 200)['turns'])
+            self.assertFalse(m.acknowledged(snapshot['turns'][0]))
+            with sqlite3.connect(home / 'thread_history_1.sqlite') as db:
+                db.execute('INSERT INTO thread_items VALUES(?,?,?,?,?)',
+                           ('yes', 'next-user', '{"text":"private user reply"}', 11, 'userMessage'))
+            refreshed = m.collect(home, ['/work'], 90)
+            self.assertTrue(m.acknowledged(refreshed['turns'][0]))
+            self.assertNotIn('private user reply', json.dumps(refreshed))
 
 
 if __name__ == '__main__':
