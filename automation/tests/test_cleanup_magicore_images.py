@@ -1,8 +1,10 @@
 import copy
 import contextlib
 import io
+import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -10,6 +12,32 @@ from automation.scripts import cleanup_magicore_images as cleanup
 
 
 class TestMagicoreImageCleanup(unittest.TestCase):
+    def test_verified_alias_resume_does_not_reject_its_old_inventory_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audit = root / 'items/latest'
+            audit.mkdir(parents=True)
+            receipt = {'tag': 'latest', 'new_digest': 'clean-digest', 'verified': True, 'status': 'completed'}
+            (audit / 'receipt.json').write_text(json.dumps(receipt))
+            registry = Mock()
+            registry.manifest.return_value = ({'layers': []}, 'clean-digest')
+            args = SimpleNamespace(state_dir=root, repository='registry/project/image')
+            with patch.object(cleanup, 'Registry', return_value=registry), patch.object(cleanup, 'command') as command:
+                self.assertEqual(cleanup.process_image(args, {'tag': 'latest', 'expected_digest': 'old-digest'}, Mock()), receipt)
+            command.assert_not_called()
+            registry.publish.assert_not_called()
+
+    def test_special_aliases_require_individual_authorization(self):
+        items = [{'tag': '465cdek', 'commit': None}]
+        with self.assertRaisesRegex(ValueError, 'unauthorized'):
+            cleanup.validate_plan(items, [])
+        cleanup.validate_plan(items, ['465cdek'])
+        with self.assertRaisesRegex(ValueError, 'unauthorized'):
+            cleanup.validate_plan([{'tag': 'latest', 'commit': None}], ['465cdek'])
+        with self.assertRaisesRegex(ValueError, 'alias'):
+            cleanup.validate_plan([], ['../escape'])
+        cleanup.validate_plan([{'tag': 'abc1234', 'commit': 'a'*40}], [])
+
     def test_manifest_conversion_preserves_blob_identity_and_input(self):
         manifest = {'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.manifest.v1+json',
                     'config': {'digest': 'sha256:config', 'size': 10, 'mediaType': 'application/vnd.oci.image.config.v1+json'},

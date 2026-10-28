@@ -241,6 +241,15 @@ def verify_remote(source, digest, preview, retained):
         raise ValueError('Published workspace mismatch')
 
 
+def validate_plan(items, aliases):
+    if any(not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}', tag) for tag in aliases):
+        raise ValueError('Invalid explicit alias')
+    if (len({x['tag'] for x in items}) != len(items)
+            or any((not re.fullmatch('[0-9a-f]{7,40}', x['tag']) and x['tag'] not in aliases)
+                   or (x.get('commit') is not None and not re.fullmatch('[0-9a-f]{40}', x['commit'])) for x in items)):
+        raise ValueError('Plan contains invalid or unauthorized tags')
+
+
 def process_image(args, item, stage):
     tag = item['tag']
     audit = args.state_dir / 'items' / tag
@@ -258,6 +267,29 @@ def process_image(args, item, stage):
                 previous.update(status='completed', verified=True, completed_at=datetime.now(timezone.utc).isoformat())
                 write_json(receipt_path, previous)
             return previous
+    if item.get('expected_digest') and item['expected_digest'] != old_digest:
+        raise ValueError('Tag changed since inventory; inspect again')
+    if item.get('reuse_tag'):
+        reused_audit = args.state_dir / 'items' / item['reuse_tag']
+        reused = json.loads((reused_audit / 'receipt.json').read_text())
+        manifest = json.loads((reused_audit / 'publish-manifest.json').read_text())
+        preview = json.loads((reused_audit / 'preview-inspect.json').read_text())
+        if not reused.get('verified') or reused['old_digest'] != old_digest:
+            raise ValueError('Reuse does not match the exact original image')
+        if registry.manifest(item['reuse_tag']) != (manifest, reused['new_digest']):
+            raise ValueError('Verified source tag has changed')
+        write_json(audit / 'preview-inspect.json', preview)
+        write_json(audit / 'publish-manifest.json', manifest)
+        stage('publishing')
+        digest = registry.publish(tag, manifest, old_digest)
+        receipt = {**reused, 'tag': tag, 'status': 'published_unverified', 'verified': False,
+                   'new_digest': digest, 'reused_from': item['reuse_tag']}
+        write_json(receipt_path, receipt)
+        stage('verifying_remote')
+        verify_remote(source, digest, preview, reused['retained'])
+        receipt.update(status='completed', verified=True, completed_at=datetime.now(timezone.utc).isoformat())
+        write_json(receipt_path, receipt)
+        return receipt
     if 'layers' not in source_manifest:
         return {'tag': tag, 'status': 'skipped', 'reason': 'multi-platform manifest requires separate review'}
     stage('pulling')
@@ -272,7 +304,7 @@ def process_image(args, item, stage):
         code = "import subprocess,json;g=['git','-c','safe.directory=/workspace','-C','/workspace'];h,t=subprocess.check_output(g+['show','-s','--format=%H %ct','HEAD'],text=True).split();print(json.dumps({'commit':h,'commit_time':int(t),'tracked_roots':subprocess.check_output(g+['ls-tree','--name-only','HEAD'],text=True).splitlines()}))"
         resolved = json.loads(command(['docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python3',
                                        original['Id'], '-B', '-c', code]))
-        if not resolved['commit'].startswith(tag):
+        if tag not in args.allow_alias and not resolved['commit'].startswith(tag):
             raise ValueError('Unresolved tag does not match image Git HEAD')
         item = {**item, **resolved}
         write_json(audit / 'resolved-commit.json', item)
@@ -339,6 +371,7 @@ def main():
     parser.add_argument('--plan', required=True, type=Path)
     parser.add_argument('--state-dir', required=True, type=Path)
     parser.add_argument('--unresolved', type=Path, help='Commit tags resolved from image Git metadata after dated commits')
+    parser.add_argument('--allow-alias', action='append', default=[], help='Explicitly authorized non-commit tag; repeat per alias')
     parser.add_argument('--containerd-socket', default='/run/containerd/containerd.sock')
     parser.add_argument('--workers', type=int, default=2)
     parser.add_argument('--min-free-gib', type=int, default=200)
@@ -348,10 +381,7 @@ def main():
     items = sorted(json.loads(args.plan.read_text()), key=lambda x: (x['commit_time'], x['tag']))
     if args.unresolved:
         items.extend({'tag': tag, 'commit': None} for tag in json.loads(args.unresolved.read_text()))
-    if (len({x['tag'] for x in items}) != len(items)
-            or any(not re.fullmatch('[0-9a-f]{7,40}', x['tag'])
-                   or (x.get('commit') is not None and not re.fullmatch('[0-9a-f]{40}', x['commit'])) for x in items)):
-        raise ValueError('Plan contains invalid commit tags')
+    validate_plan(items, args.allow_alias)
     if not args.apply:
         print(json.dumps({'planned': len(items), 'oldest_first': [x['tag'] for x in items], 'apply': False}))
         return
@@ -363,7 +393,11 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     mutex = threading.Lock()
     queue = iter(items)
-    state = {'planned': len(items), 'active': {}, 'results': {}, 'paused': False}
+    previous = args.state_dir / 'status.json'
+    results = json.loads(previous.read_text()).get('results', {}) if previous.exists() else {}
+    tags = {x['tag'] for x in items}
+    state = {'planned': len(items), 'active': {}, 'results': {k: v for k, v in results.items() if k in tags}, 'paused': False}
+    write_json(previous, state)
     def update(tag, stage):
         with mutex:
             state['active'][tag] = stage
