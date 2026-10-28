@@ -50,7 +50,7 @@ def window_connections(text):
     return pid, (host, container), active, old
 
 
-def local_connections(log_root):
+def local_connections(log_root, include_history=False):
     processes = subprocess.check_output(["ps", "-axo", "pid=,comm="], text=True)
     live = {int(line.split(None, 1)[0]) for line in processes.splitlines()
             if "Code Helper (Plugin)" in line}
@@ -59,14 +59,17 @@ def local_connections(log_root):
         return {}
     result = {}
     seen = {}
-    for path in max(sessions, key=lambda p: p.name).glob("window*/renderer.log"):
+    latest = max(sessions, key=lambda p: p.name)
+    paths = [path for session in (sessions if include_history else [latest])
+             for path in session.glob("window*/renderer.log")]
+    for path in paths:
         try:
-            parsed = window_connections(tail(path))
+            parsed = window_connections(tail(path, 8 * 1024 * 1024 if include_history else 2 * 1024 * 1024))
             if not parsed:
                 continue
             pid, key, active, old = parsed
             seen.setdefault(key, set()).update(old | {active})
-            if pid not in live:
+            if path.parents[1] != latest or pid not in live:
                 continue
             entry = result.setdefault(key, {"active": set(), "replaced": {}})
             entry["active"].add(active)
@@ -93,7 +96,7 @@ def backend_logs(parent, server_root):
     paths = set()
     for fd in (PROC / str(parent) / "fd").iterdir():
         try:
-            path = Path(os.readlink(fd))
+            path = Path(os.readlink(fd).removesuffix(" (deleted)"))
             if path.name == "Codex.log" and path.is_relative_to(server_root / "data/logs"):
                 paths.add(path)
         except OSError:
@@ -105,6 +108,18 @@ def backend_logs(parent, server_root):
 
 def connection_id(log, parent):
     agent = log.parents[2] / "remoteagent.log"
+    # VS Code may unlink a log directory while its old connection is still alive.
+    handles = []
+    for fd in (PROC / str(parent) / "fd").iterdir():
+        try:
+            if Path(os.readlink(fd).removesuffix(" (deleted)")) == agent:
+                handles.append(fd)
+        except OSError:
+            continue
+    if len(handles) > 1:
+        raise ValueError("ambiguous connection log handle")
+    if handles:
+        agent = handles[0]
     pattern = re.compile(r"\[([0-9a-f]{8})\]\[ExtensionHostConnection\] <" + str(parent)
                          + r"> Launched Extension Host Process")
     matches = pattern.findall(tail(agent, 8 * 1024 * 1024))
@@ -202,11 +217,15 @@ def candidates(request, diagnostics=None):
             identity = process_identity(int(proc.name))
             if identity["namespace"] != namespace:
                 continue
+        except (OSError, ValueError):
+            continue
+        try:
             log = backend_logs(identity["parent"], server)
             connection = connection_id(log, identity["parent"])
             identity.update(connection=connection, log=str(log))
             backends[identity["pid"]] = identity
         except (OSError, ValueError):
+            skipped("backend_log_or_connection_unavailable")
             continue
     locks = home / "thread-writer-locks"
     results = []
@@ -423,7 +442,7 @@ def run_manual(apply):
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
     def frontend():
-        links = local_connections(log_root)
+        links = local_connections(log_root, include_history=True)
         frontend_history(links, targets, state.get("_frontend_history", {}), time.time())
         return links
 

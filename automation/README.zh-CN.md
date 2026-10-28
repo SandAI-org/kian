@@ -94,6 +94,8 @@ PR 描述默认生成精简、聚焦结果且不限制数量的要点。每条�
 
 ### 自动释放 Codex 遗留写锁（可选）
 
+手动清理还会检查保留的旧前端日志会话（每份 renderer 日志最多读取 8 MiB），以找回较早的连接身份；当前活跃归属仍只取最新会话中存活的窗口。Linux 远端日志已被删除时，仍可通过扩展宿主打开的 `/proc/<pid>/fd` 句柄识别和读取。后端日志或连接证据不可读时报告 `backend_log_or_connection_unavailable`，不能静默当成 workspace 正常。
+
 当前使用约定：自动清锁已停用。用户说“清锁”时，agent 执行 `python3 automation/scripts/codex_lock_guard.py --manual --apply`，在自动服务关闭时也能单次运行。并行扫描当前 `codex_activity_monitor.targets` workspace 登记表；未配置该表时才使用旧清锁目标，支持精确的 `thread_workspaces` 映射。仅带 `--manual` 为预览。用即时连续核对代替后台 60 秒确认等待，但保留下述空闲会话、120 秒静默、连接归属、单会话持锁及 pidfd 检查。失联或证据不足时报告并跳过，不强制结束。发出信号、候选消失均不等于界面已恢复，可能仍需切换聊天。命令由 agent 执行，用户无需记忆。
 
 在私有配置中启用 `services.codex_lock_guard.enabled`，并在 `codex_lock_guard.targets` 中逐项配置 `id`、SSH `host`、可选 `container`、远端 `codex_home`、`server_root` 和精确的 `workspaces` 路径白名单。重新安装后，`com.kian.codex_lock_guard` 每 60 秒检查一次。目标地址和个人路径只放私有配置。macOS 负责读取本机 VS Code 日志，Linux 远端负责核对锁；SSH 必须能以 `BatchMode` 登录，密码连接只复用已有的 SSH master，不存储或输入密码。

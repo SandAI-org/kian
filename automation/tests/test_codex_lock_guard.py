@@ -24,6 +24,44 @@ TID = "00000000-1111-2222-3333-444444444444"
 
 
 class CodexLockGuardTests(unittest.TestCase):
+    def test_deleted_log_handles_still_identify_old_connection(self):
+        with tempfile.TemporaryDirectory() as d:
+            proc, home, request = self.make_remote_fixture(Path(d))
+            server = Path(request['server_root'])
+            log = server / 'data/logs/session/old/openai.chatgpt/Codex.log'
+            log.unlink()
+            fd = proc / '11/fd/5'
+            fd.unlink()
+            fd.write_text('old log')
+            agent = proc / '11/fd/6'
+            agent.write_text('[aaaaaaaa][ExtensionHostConnection] <11> Launched Extension Host Process\n')
+            original = os.readlink
+            def readlink(path):
+                if Path(path) == fd:
+                    return str(log) + ' (deleted)'
+                if Path(path) == agent:
+                    return str(server / 'data/logs/session/remoteagent.log') + ' (deleted)'
+                return original(path)
+            with patch.object(guard, 'PROC', proc), patch.object(guard.os, 'readlink', side_effect=readlink):
+                found = guard.candidates(request)
+                self.assertEqual(len(found), 1)
+                self.assertEqual(found[0]['old']['connection'], 'aaaaaaaa')
+
+    def test_manual_history_recovers_connection_outside_normal_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            old = root / '20260101/window1/renderer.log'
+            current = root / '20260102/window1/renderer.log'
+            old.parent.mkdir(parents=True)
+            current.parent.mkdir(parents=True)
+            old.write_text(window_text(1, OLD))
+            current.write_text(window_text(1, OLD) + 'padding\n' * 300000 + window_text(2, NEW))
+            with patch.object(guard.subprocess, 'check_output', return_value='2 Code Helper (Plugin)\n'):
+                self.assertEqual(guard.local_connections(root)[('example-host', 'dev')]['replaced'], {})
+                links = guard.local_connections(root, include_history=True)[('example-host', 'dev')]
+                self.assertEqual(links['active'], ['bbbbbbbb'])
+                self.assertEqual(links['replaced'], {'aaaaaaaa': ['bbbbbbbb']})
+
     def test_manual_uses_current_workspace_registry_when_service_disabled(self):
         config = {"services": {"codex_lock_guard": {"enabled": False}},
                   "codex_activity_monitor": {"targets": [
