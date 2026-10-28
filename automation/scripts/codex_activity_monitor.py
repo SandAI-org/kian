@@ -19,6 +19,13 @@ from zoneinfo import ZoneInfo
 TERMINAL = {'completed', 'failed', 'interrupted'}
 
 
+
+def reply_preview(text):
+    if len(text) <= 600:
+        return text
+    return text[:200] + '\n...\n' + text[-395:]
+
+
 def collect(home, workspaces, since, thread_workspaces=None):
     """Executed remotely with only SQLite read-only connections, no Codex client."""
     home = Path(home)
@@ -68,7 +75,7 @@ def collect(home, workspaces, since, thread_workspaces=None):
                         turn['reply_ordinal'] = item[1]
                         content = json.loads(item[0])
                         if content.get('type') == 'agentMessage':
-                            turn['summary'] = content.get('text', '')[:3000]
+                            turn['summary'] = reply_preview(content.get('text', ''))
                 turn.pop('final_agent_item_id')
                 # Do not ship raw tool output, reasoning, credentials or error payloads.
                 turn['has_error'] = bool(turn.pop('error_json'))
@@ -78,7 +85,7 @@ def collect(home, workspaces, since, thread_workspaces=None):
 
 def remote_snapshot(target, since):
     import inspect
-    source = 'import json,sqlite3,time\nfrom pathlib import Path\n' + inspect.getsource(collect)
+    source = 'import json,sqlite3,time\nfrom pathlib import Path\n' + inspect.getsource(reply_preview) + '\n' + inspect.getsource(collect)
     args = [target.get('codex_home', '/root/.codex'), target['workspaces'], since, target.get('thread_workspaces', {})]
     source += '\nprint(json.dumps(collect(*json.loads(' + repr(json.dumps(args)) + ')),ensure_ascii=False))\n'
     command = ['python3', '-']
@@ -125,7 +132,7 @@ def card(turn):
     icon = {'completed': '✅', 'failed': '❌', 'interrupted': '⏹'}[status]
     def clock(value):
         return datetime.fromtimestamp(value, ZoneInfo('Asia/Shanghai')).strftime('%m-%d %H:%M:%S') if value else '未知'
-    summary = turn.get('summary') or '未记录最终回复，请回到对应 workspace 查看。'
+    summary = reply_preview(turn.get('summary') or '') or '未记录最终回复，请回到对应 workspace 查看。'
     context = f"**{turn['target']}**\nWorkspace 路径：{turn['cwd']}"
     timing = (f"**状态：** {label}\n"
               f"**开始：** {clock(turn.get('started_at'))}\n"
@@ -164,6 +171,7 @@ def stale_before_send(target, pending):
                 raise RuntimeError('Turn no longer terminal')
             if turn.get('reply_ordinal') is None:
                 raise RuntimeError('Cannot confirm reply position')
+            pending['summary'] = turn.get('summary', '')
             return acknowledged(turn)
     raise RuntimeError('Cannot confirm pending turn')
 

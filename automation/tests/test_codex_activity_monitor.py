@@ -26,6 +26,25 @@ class TestCompletionTransitions(unittest.TestCase):
     def poll(self, turns, now=100):
         m.ingest(self.state, self.target, dict(turns=turns, observed_at=now))
 
+    def test_reply_preview_keeps_short_text_and_prefers_long_reply_tail(self):
+        for text in ['', '简短回复', '字' * 600]:
+            self.assertEqual(m.reply_preview(text), text)
+        text = '开' * 200 + '中' * 1000 + '尾' * 395
+        preview = m.reply_preview(text)
+        self.assertEqual(preview, '开' * 200 + '\n...\n' + '尾' * 395)
+        self.assertEqual(len(preview), 600)
+        self.assertEqual(m.reply_preview(preview), preview)
+        item = dict(turn('completed'), target='Test', summary=text)
+        _, elements = m.card(item)
+        self.assertIn({'tag': 'markdown', 'content': preview}, elements)
+
+    def test_send_refresh_recovers_tail_from_fresh_remote_reply(self):
+        pending = dict(turn('completed'), reply_ordinal=20, summary='legacy prefix')
+        fresh = dict(pending, latest_user_ordinal=10, summary='fresh head ... fresh tail')
+        with patch.object(m, 'remote_snapshot', return_value={'turns': [fresh]}):
+            self.assertFalse(m.stale_before_send(self.target, pending))
+        self.assertEqual(pending['summary'], fresh['summary'])
+
     def test_initial_history_suppressed_but_running_turn_is_tracked(self):
         self.poll([turn('completed', ident='old'), turn()])
         self.assertFalse(self.state.get('outbox'))

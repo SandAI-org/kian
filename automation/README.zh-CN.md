@@ -171,7 +171,7 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 
 持久状态与待发 outbox 位于 `state/codex-activity-monitor.json`，采用进程锁和原子写入。SSH 失败保留检查点；飞书网络或业务 API 失败保留待发消息，后续补发，不依赖出现新任务。target/thread/turn 唯一键避免常规重启重复推送，重试复用固定飞书 UUID（服务端去重窗口为 1 小时）；不能承诺超过该窗口的模糊发送／崩溃也严格 exactly-once。Mac 睡眠、断网或 SSH master 失效会推迟观察和通知，恢复后继续。本类完成通知不做夜间积压。SQLite 格式不兼容会记录 unavailable，绝不当作任务完成。
 
-使用 `python3 automation/scripts/codex_activity_monitor.py --dry-run` 查看目标与 working 数量，不写通知检查点或发送卡片。日志为 `logs/codex-activity-monitor.log` 和 `.err.log`。关闭服务开关后重装，或执行 `launchctl bootout gui/$(id -u)/com.kian.codex_activity_monitor` 停止。卡片包含 workspace、起止时间、状态、turn ID 和最多 3,000 字的 agent 最终回复，不额外用模型编造成功结论。
+使用 `python3 automation/scripts/codex_activity_monitor.py --dry-run` 查看目标与 working 数量，不写通知检查点或发送卡片。日志为 `logs/codex-activity-monitor.log` 和 `.err.log`。关闭服务开关后重装，或执行 `launchctl bootout gui/$(id -u)/com.kian.codex_activity_monitor` 停止。卡片包含 workspace、起止时间、状态、turn ID 和最多 600 字符的 agent 最终回复（长回复保留头部 200、尾部 395 字符，中间用 `\n...\n` 省略），不额外用模型编造成功结论。
 
 每次发送或补发前，监控都会重新读取同一远端会话的用户消息序号；若已出现晚于该条 Agent 回复的用户消息，就丢弃旧待发卡片并保留去重记录，不读取用户回复正文。无法确认时延后发送；已发送消息不自动撤回，跨系统复查与发送也不是原子操作。
 
