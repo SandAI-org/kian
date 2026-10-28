@@ -2,6 +2,10 @@
 
 ## 按需清理 Magicore 镜像
 
+固定入口 `http://127.0.0.1:8767/` 现在是统一的“后台任务”页面，`/images` 保留镜像批次详情。每次调用 `file_transfer.py` CLI 都会自动在私有 `state/background-tasks/<uuid>.json` 登记任务。下载、上传和远端到远端中转同步展示阶段、重试、字节数、rsync 速度/预计时间及校验结果。单文件必须大小/SHA-256 校验通过才完成；目录只声明 rsync 检查，不宣称做过整树 SHA-256。目录百分比标注为当前文件，不编造总体进度。页面优先展示进行中任务，支持完成/异常筛选，每 5 秒刷新，可见最近 100 条记录；进度进程消失或 PID 被复用时显示“状态待确认”，不冒充成功，底层命令仍可能运行。记录原子写入、权限 600。
+
+其他由本地 agent 编排的长任务可以直接复用 `background_tasks.BackgroundTask`：进入上下文自动登记，使用 `task.update(stage="running", progress_percent=25)` 更新；执行并验证成功后退出才记录完成，异常记录失败/中断。没有可靠总量时只更新阶段，不虚构百分比。独立远端任务需要像镜像批次一样的只读状态适配，不能从 Mac 进程退出推断远端任务完成。部署沿用已有 `image_cleanup_dashboard` 服务/配置名，不配置远端 host/state_dir 也能展示本地任务。以后 agent 发起文件传输应走自动登记的入口，其他长任务显式接入这个公共接口；用户只需固定链接，不需要每次要求建页或记命令。
+
 需要可点击的实时进度页时，启用 `services.image_cleanup_dashboard.enabled`，配置 `image_cleanup_dashboard.host`、远端 `state_dir`，可选本地 `port`（8767）、`poll_seconds`（15）、`language`（`zh`/`en`）。常驻 LaunchAgent `com.kian.image_cleanup_dashboard` 提供 `http://127.0.0.1:8767/`，安装、doctor、卸载均包含该服务。只读 SSH 采集经过筛选的进度、当前阶段、最近完成项、异常及时间戳；连接失败保留上次快照并明确显示离线。页面每 10 秒刷新，不提供修改批次的接口，且仅绑定 Mac loopback。Mac 睡眠/断网会使页面不可访问或数据变旧，H200 后台清理仍继续；手机上的 localhost 不能访问这台 Mac 的页面。
 
 `automation/scripts/cleanup_magicore_images.py` 在明确选定的 Docker 宿主机上运行，参数为 `--repository <registry/project/image> --plan <私有计划.json> --state-dir <私有状态目录>`；不带 `--apply` 仅显示从旧到新的计划。每项包含十六进制 `tag`、完整 `commit`、整数 `commit_time` 和对应 Git 的 `tracked_roots`。`--unresolved <私有tags.json>` 把暂未解析的 commit tags 放在已知日期项之后，从拉取镜像内核对 Git HEAD 与根目录清单，且 HEAD 必须匹配 tag；非 commit 别名不纳入。仅在用户授权覆盖后使用 `--workers 2 --apply`。

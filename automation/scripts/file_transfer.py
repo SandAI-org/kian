@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -24,8 +25,10 @@ from pathlib import Path, PurePosixPath
 
 try:
     from .automation_common import load_config
+    from .background_tasks import BackgroundTask
 except ImportError:
     from automation_common import load_config
+    from background_tasks import BackgroundTask
 
 TRANSFER_CONFIG = load_config().get("file_transfer", {})
 DOWNLOADS = Path(TRANSFER_CONFIG.get("downloads", "~/Downloads")).expanduser()
@@ -81,16 +84,48 @@ def parse_endpoint(value: str, *, local_default_downloads: bool) -> Endpoint:
     return Endpoint(None, str(path))
 
 
-def run(command: list[str]) -> None:
+def parse_progress(line: str):
+    match = re.match(r"^\s*([\d,]+)\s+(\d+)%\s+([\d.]+\s*[kMGT]?B/s)\s+(\d+:\d+:\d+)", line)
+    if not match:
+        return None
+    return dict(bytes_done=int(match[1].replace(',', '')), transfer_percent=int(match[2]),
+                speed=match[3], eta=match[4])
+
+
+def run(command: list[str], progress=None) -> None:
     print("+", " ".join(shlex.quote(part) for part in command), flush=True)
     last_error = None
     for attempt in range(3):
         try:
-            subprocess.run(command, check=True)
+            if progress is None:
+                subprocess.run(command, check=True)
+            else:
+                progress.update(stage='transferring', attempt=attempt + 1)
+                with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                      text=True, bufsize=1) as child:
+                    try:
+                        for line in child.stdout:
+                            print(line, end='', flush=True)
+                            values = parse_progress(line)
+                            if values:
+                                progress.update(force=False, **values)
+                        if child.wait():
+                            raise subprocess.CalledProcessError(child.returncode, command)
+                    except BaseException:
+                        if child.poll() is None:
+                            child.terminate()
+                            try:
+                                child.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                child.kill()
+                                child.wait()
+                        raise
             return
         except subprocess.CalledProcessError as error:
             last_error = error
             if attempt < 2:
+                if progress:
+                    progress.update(stage='retrying', attempt=attempt + 2)
                 print(f"RETRY {attempt + 2}/3 after transfer connection failure", flush=True)
                 time.sleep(2 * (attempt + 1))
     raise last_error or RuntimeError("command failed")
@@ -123,7 +158,7 @@ def ensure_target(endpoint: Endpoint, into_dir: bool) -> None:
         Path(target_dir).mkdir(parents=True, exist_ok=True)
 
 
-def rsync(source: Endpoint, destination: Endpoint, into_dir: bool, source_is_file: bool) -> None:
+def rsync(source: Endpoint, destination: Endpoint, into_dir: bool, source_is_file: bool, progress=None) -> None:
     source_value = source.rsync_value()
     # For an exact directory destination, copy the directory contents rather
     # than nesting the source basename again when the destination exists.
@@ -133,7 +168,7 @@ def rsync(source: Endpoint, destination: Endpoint, into_dir: bool, source_is_fil
     if into_dir and not target.endswith("/"):
         target += "/"
     dest = Endpoint(destination.host, target)
-    run(["rsync", "-ah", "--partial", "--progress", "-e", "ssh", source_value, dest.rsync_value()])
+    run(["rsync", "-ah", "--partial", "--progress", "-e", "ssh", source_value, dest.rsync_value()], progress)
 
 
 def local_sha256(path: Path) -> str:
@@ -151,7 +186,7 @@ def target_file(source: Endpoint, destination: Endpoint, into_dir: bool) -> Endp
     return Endpoint(destination.host, str(PurePosixPath(destination.path) / name))
 
 
-def verify_file(source: Endpoint, destination: Endpoint, into_dir: bool) -> None:
+def verify_file(source: Endpoint, destination: Endpoint, into_dir: bool):
     src = source
     dst = target_file(source, destination, into_dir)
     if src.remote:
@@ -167,6 +202,7 @@ def verify_file(source: Endpoint, destination: Endpoint, into_dir: bool) -> None
     if src_meta[:2] != dst_meta[:2]:
         raise RuntimeError(f"Verification failed: source={src_meta[:2]}, destination={dst_meta[:2]}")
     print(f"TRANSFER_VERIFIED size={dst_meta[0]} sha256={dst_meta[1]}")
+    return {'verification': 'sha256', 'size': int(dst_meta[0]), 'sha256': dst_meta[1]}
 
 
 def is_file(endpoint: Endpoint) -> bool:
@@ -175,27 +211,44 @@ def is_file(endpoint: Endpoint) -> bool:
     return Path(endpoint.path).is_file()
 
 
-def direct_transfer(source: Endpoint, destination: Endpoint, into_dir: bool) -> None:
+def direct_transfer(source: Endpoint, destination: Endpoint, into_dir: bool, progress=None):
+    if progress:
+        progress.update(stage='preparing', transfer_percent=None, bytes_done=0, speed=None, eta=None)
     ensure_target(destination, into_dir)
     source_is_file = is_file(source)
-    rsync(source, destination, into_dir, source_is_file)
+    if progress:
+        size = (int(ssh(source.host, f"stat -c '%s' {shlex.quote(source.path)}")) if source.remote
+                else Path(source.path).stat().st_size) if source_is_file else None
+        progress.update(total_bytes=size, source_is_file=source_is_file)
+    rsync(source, destination, into_dir, source_is_file, progress)
     if source_is_file:
-        verify_file(source, destination, into_dir)
+        if progress:
+            progress.update(stage='verifying', transfer_percent=100)
+        result = verify_file(source, destination, into_dir)
     else:
         print("TRANSFER_COMPLETE directory transferred with rsync item checks")
+        result = {'verification': 'rsync_checks'}
+    if progress:
+        progress.update(**result)
+    return result
 
 
-def transfer(source: Endpoint, destination: Endpoint, into_dir: bool) -> None:
+def transfer(source: Endpoint, destination: Endpoint, into_dir: bool, progress=None):
     if not (source.remote and destination.remote):
-        direct_transfer(source, destination, into_dir)
-        return
+        if progress:
+            progress.update(phase_index=1, phase_total=1)
+        return direct_transfer(source, destination, into_dir, progress)
     basename = PurePosixPath(source.path.rstrip("/")).name
     with tempfile.TemporaryDirectory(prefix="kian-transfer-") as temp_dir:
         staging = Endpoint(None, str(Path(temp_dir) / basename))
         print(f"STAGE 1/2: {source.host} -> local temporary storage")
-        direct_transfer(source, staging, False)
+        if progress:
+            progress.update(phase_index=1, phase_total=2, phase='download_to_staging')
+        direct_transfer(source, staging, False, progress)
         print(f"STAGE 2/2: local temporary storage -> {destination.host}")
-        direct_transfer(staging, destination, into_dir)
+        if progress:
+            progress.update(phase_index=2, phase_total=2, phase='upload_from_staging')
+        return direct_transfer(staging, destination, into_dir, progress)
 
 
 def main() -> None:
@@ -206,11 +259,15 @@ def main() -> None:
     args = parser.parse_args()
     source = parse_endpoint(args.source, local_default_downloads=True)
     destination = parse_endpoint(args.destination, local_default_downloads=True)
-    if not source.remote and not Path(source.path).exists():
-        raise FileNotFoundError(source.path)
-    print(f"SOURCE:      {source.rsync_value()}")
-    print(f"DESTINATION: {destination.rsync_value()}")
-    transfer(source, destination, args.into_dir)
+    direction = 'sync' if source.remote and destination.remote else 'download' if source.remote else 'upload' if destination.remote else 'copy'
+    title = PurePosixPath(source.path.rstrip('/')).name if args.into_dir else PurePosixPath(destination.path.rstrip('/')).name
+    with BackgroundTask(title, 'file_transfer', direction=direction,
+                        source=source.rsync_value(), destination=destination.rsync_value()) as progress:
+        if not source.remote and not Path(source.path).exists():
+            raise FileNotFoundError(source.path)
+        print(f"SOURCE:      {source.rsync_value()}")
+        print(f"DESTINATION: {destination.rsync_value()}")
+        transfer(source, destination, args.into_dir, progress)
 
 
 if __name__ == "__main__":

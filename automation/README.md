@@ -30,6 +30,20 @@ Per-repository `exclude` rules accept regular expressions in `title_patterns`, `
 
 ### On-demand Magicore image cleanup
 
+The fixed progress entrance `http://127.0.0.1:8767/` is the shared **Background tasks** page; `/images` retains the detailed image-cleanup view. Every `file_transfer.py` CLI invocation automatically creates a private task record under `state/background-tasks/<uuid>.json`. Downloads, uploads and staged remote-to-remote sync show phases, retries, byte counts, rsync speed/ETA and verification results. A single file is completed only after size/SHA-256 verification; a directory reports rsync checks, not an unperformed whole-tree SHA-256. Directory rsync percentages refer to the current file, never fabricated aggregate progress. The page shows active jobs first, filters completed/issues, keeps up to the latest 100 records visible and refreshes every five seconds. If its progress process disappears or its PID is reused, the displayed state becomes unconfirmed rather than success; the underlying command may still be running. Records are written atomically with mode 600.
+
+Other locally orchestrated long operations can use the same agent-only interface, without another dashboard or port:
+
+```python
+from background_tasks import BackgroundTask
+
+with BackgroundTask("Describe the operation", "operation-kind") as task:
+    task.update(stage="running", progress_percent=25)
+    # Perform the operation and validate its result before leaving the context.
+```
+
+An exception records failure/interruption. Do not invent a percentage when the operation has no measurable total; publish its stage instead. Remote independent workers need a read-only status adapter, like the image batch, because a Mac process exiting does not establish remote task completion. The existing `image_cleanup_dashboard` service/config name is retained for deployment; it can serve local tasks without a remote host/state directory. Future agent-started transfers use this automatic entry point; other long tasks should explicitly use the shared progress interface. The user only needs the fixed link.
+
 For a clickable live view, enable `services.image_cleanup_dashboard.enabled` and configure `image_cleanup_dashboard.host`, remote `state_dir`, optional local `port` (8767), `poll_seconds` (15), and `language` (`zh` or `en`). The persistent `com.kian.image_cleanup_dashboard` LaunchAgent serves `http://127.0.0.1:8767/`; install, doctor and uninstall include it. It polls sanitized status over read-only SSH and shows progress, active stages, recent completions, issues and observation times. Connection failures retain the last snapshot with an offline warning. The page refreshes every ten seconds; it cannot mutate the batch and binds only to Mac loopback. Mac sleep/offline makes the page unavailable or stale, while the detached H200 batch continues. A phone cannot access its own localhost to reach this Mac service.
 
 `automation/scripts/cleanup_magicore_images.py` runs on the explicitly selected Docker host. Supply `--repository <registry/project/image> --plan <private-plan.json> --state-dir <private-state-dir>`; without `--apply` it only shows the ordered plan. Entries contain hexadecimal `tag`, full `commit`, integer `commit_time`, and the corresponding Git `tracked_roots`. `--unresolved <private-tags.json>` appends unresolved commit tags after dated entries and resolves their exact Git HEAD and tracked roots from the pulled image, requiring the HEAD to match the tag. Non-commit aliases are not included. Use `--workers 2 --apply` only after publication is authorized.

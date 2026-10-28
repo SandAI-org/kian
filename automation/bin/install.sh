@@ -77,7 +77,7 @@ required = {
   "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
   "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
   "codex_lock_guard": ["codex_lock_guard.targets"],
-  "image_cleanup_dashboard": ["image_cleanup_dashboard.host", "image_cleanup_dashboard.state_dir"],
+  "image_cleanup_dashboard": [],
   "codex_activity_monitor": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_activity_monitor.targets"],
 }[service]
 

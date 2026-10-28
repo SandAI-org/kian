@@ -7,6 +7,11 @@ import subprocess
 import threading
 import time
 
+try:
+    from .background_tasks import read_tasks
+except ImportError:
+    from background_tasks import read_tasks
+
 
 REMOTE = '''import json,pathlib,collections,datetime,shutil
 p=pathlib.Path(STATE_DIR)
@@ -59,13 +64,33 @@ $('refresh').addEventListener('click',refresh);refresh();setInterval(refresh,100
 </script></html>'''
 
 
+TASK_HTML = HTML[:HTML.index('<main>')].replace('<title>Magicore</title>', '<title>Kian</title>') + r'''
+<style>.task{padding:22px;background:var(--panel);border-radius:12px;margin:16px 0}.task h2{margin:0;font-size:18px;overflow-wrap:anywhere}.task .track{height:10px}.task details{margin-top:14px}.task summary{cursor:pointer}.task pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px system-ui;color:var(--muted)}nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}nav button[aria-pressed="true"]{border-color:var(--accent)}.indeterminate{width:35%!important;opacity:.5}.task .meta{margin-top:8px}</style>
+<main><header><div><h1 id="title"></h1><p id="subtitle"></p></div><button id="refresh" type="button"></button></header><p id="connection" role="status" aria-live="polite"></p><nav id="filters"></nav><div id="tasks"></div><p id="note" class="meta"></p></main>
+<script>
+const language='__LANGUAGE__';
+const texts={zh:{title:'后台任务',subtitle:'固定进度入口 · 下载 / 上传 / 同步 / 镜像清理',refresh:'刷新',all:'全部',active:'进行中',completed:'已完成',issues:'异常',loading:'读取中…',online:'自动刷新中',offline:'远端镜像进度暂不可用，保留上次数据',empty:'暂无任务',details:'任务详情',source:'来源',destination:'目标',checksum:'SHA-256',dircheck:'目录已通过 rsync 检查',verified:'大小与 SHA-256 校验通过',speed:'速度',eta:'当前段预计剩余',phase:'阶段',currentFile:'当前文件',observed:'更新',images:'Magicore 镜像清理',imageDetails:'查看镜像清理详情',unknown:'进度待采集',note:'页面每 5 秒刷新。文件传输自动登记；校验结束后才标记完成。此入口在电脑本地，电脑休眠时暂不可用。',stages:{preparing:'准备中',transferring:'传输中',verifying:'传输完成，校验中',retrying:'断线重试中',running:'执行中',completed:'已完成',failed:'失败',interrupted:'已中断',paused:'已暂停',unknown:'状态待确认',stopped:'进程已停止',ended:'已结束，存在异常'}},en:{title:'Background tasks',subtitle:'Downloads / uploads / sync / image cleanup',refresh:'Refresh',all:'All',active:'Active',completed:'Completed',issues:'Issues',loading:'Loading…',online:'Auto-refreshing',offline:'Remote image status unavailable; retaining the last snapshot',empty:'No tasks',details:'Details',source:'Source',destination:'Destination',checksum:'SHA-256',dircheck:'Directory transferred with rsync checks',verified:'Size and SHA-256 verified',speed:'Speed',eta:'Current phase ETA',phase:'Phase',currentFile:'Current file',observed:'Updated',images:'Magicore image cleanup',imageDetails:'View image cleanup details',unknown:'Progress pending',note:'Refreshes every 5 seconds. Transfers register automatically and complete only after verification. This local page is unavailable while the Mac sleeps.',stages:{preparing:'Preparing',transferring:'Transferring',verifying:'Transfer finished; verifying',retrying:'Retrying connection',running:'Running',completed:'Completed',failed:'Failed',interrupted:'Interrupted',paused:'Paused',unknown:'Status unconfirmed',stopped:'Worker stopped',ended:'Finished with issues'}}};
+const t=texts[language]||texts.zh,$=id=>document.getElementById(id);let selected='all',latest=null;
+document.title=t.title;document.documentElement.lang=language==='en'?'en':'zh-CN';for(const id of ['title','subtitle','refresh','note'])$(id).textContent=t[id];$('connection').textContent=t.loading;
+for(const key of ['all','active','completed','issues']){const b=document.createElement('button');b.textContent=t[key];b.dataset.filter=key;b.setAttribute('aria-pressed',key===selected);b.onclick=()=>{selected=key;for(const x of $('filters').children)x.setAttribute('aria-pressed',x===b);render()};$('filters').append(b)}
+function stamp(value){return value?new Date(typeof value==='number'?value*1000:value).toLocaleString(language==='en'?'en-GB':'zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—'}
+function bytes(n){if(n==null)return '';const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+' '+units[i]}
+function element(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function card(item){const e=element('section','task'),head=element('div','numbers');head.append(element('h2','',item.title),element('span',item.status==='failed'||item.status==='interrupted'?'bad':'meta',t.stages[item.status==='running'?(item.stage||'running'):item.status]||item.status));e.append(head);const isDirectory=item.source_is_file===false,p=item.progress_percent??item.transfer_percent;const known=p!=null&&!isDirectory;const track=element('div','track'),bar=element('div','bar');if(item.status==='completed')bar.style.width='100%';else if(known)bar.style.width=Math.min(100,Math.max(0,p))+'%';else bar.classList.add('indeterminate');track.append(bar);e.append(track);let metrics=[];if(item.count_label)metrics.push(item.count_label);else if(known)metrics.push(p+'%');else if(isDirectory&&p!=null)metrics.push(t.currentFile+' '+p+'%');else metrics.push(t.unknown);if(item.total_bytes!=null)metrics.push(bytes(item.bytes_done||0)+' / '+bytes(item.total_bytes));if(item.status==='running'&&item.speed)metrics.push(t.speed+' '+item.speed);if(item.status==='running'&&item.stage==='transferring'&&item.eta)metrics.push(t.eta+' '+item.eta);if(item.phase_total>1)metrics.push(t.phase+' '+item.phase_index+'/'+item.phase_total);e.append(element('p','',metrics.join(' · ')));if(item.status==='completed'&&item.verification)e.append(element('p','',item.verification==='sha256'?t.verified:t.dircheck));if(item.link){const a=element('a','',t.imageDetails);a.href=item.link;e.append(a)}if(item.source||item.destination||item.sha256||item.error){const d=element('details'),summary=element('summary','',t.details),parts=[];if(item.source)parts.push(t.source+': '+item.source);if(item.destination)parts.push(t.destination+': '+item.destination);if(item.sha256)parts.push(t.checksum+': '+item.sha256);if(item.error)parts.push(item.error);d.append(summary,element('pre','',parts.join('\n')));e.append(d)}e.append(element('p','meta',t.observed+' '+stamp(item.updated_at)));return e}
+function render(){if(!latest)return;const list=[...latest.tasks];const s=latest.image_cleanup.snapshot;if(s){const done=s.counts.completed||0,status=s.paused?'paused':done===s.planned?'completed':s.alive?'running':s.processed===s.planned?'ended':'stopped';list.push({title:t.images,kind:'images',status,stage:'running',transfer_percent:s.planned?100*done/s.planned:0,count_label:done+' / '+s.planned+' · '+(s.planned?100*done/s.planned:0).toFixed(1)+'%',updated_at:s.observed_at,link:'/images'})}list.sort((a,b)=>Number(b.status==='running')-Number(a.status==='running'));const filtered=list.filter(x=>selected==='all'||selected==='active'&&x.status==='running'||selected==='completed'&&x.status==='completed'||selected==='issues'&&!['running','completed'].includes(x.status));$('tasks').replaceChildren();for(const item of filtered)$('tasks').append(card(item));if(!filtered.length)$('tasks').append(element('p','',t.empty));$('connection').textContent=latest.image_cleanup.available?t.online:t.offline}
+async function refresh(){try{const r=await fetch('/api/tasks',{cache:'no-store'});if(!r.ok)throw Error('http');latest=await r.json();render()}catch(e){$('connection').textContent=t.offline}}
+$('refresh').onclick=refresh;refresh();setInterval(refresh,5000);
+</script></html>'''
+
+
 def main():
     from automation_common import load_config
     config = load_config()
     if not config.get('services', {}).get('image_cleanup_dashboard', {}).get('enabled'):
         return
-    settings = config['image_cleanup_dashboard']
-    cache = {'available': False, 'snapshot': None}
+    settings = config.get('image_cleanup_dashboard', {})
+    remote_enabled = all(settings.get(k) and not settings[k].startswith('REPLACE_WITH_') for k in ['host', 'state_dir'])
+    cache = {'available': not remote_enabled, 'snapshot': None}
     mutex = threading.Lock()
 
     def poll():
@@ -80,19 +105,28 @@ def main():
                 print('STATUS_UNAVAILABLE ' + type(exc).__name__, flush=True)
             time.sleep(max(5, settings.get('poll_seconds', 15)))
 
-    threading.Thread(target=poll, daemon=True).start()
+    if remote_enabled:
+        threading.Thread(target=poll, daemon=True).start()
     language = settings.get('language', 'zh')
     if language not in ['zh', 'en']:
         raise ValueError('Unsupported dashboard language')
     html = HTML.replace('__LANGUAGE__', language).encode()
+    task_html = TASK_HTML.replace('__LANGUAGE__', language).encode()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path == '/':
+                data, content_type = task_html, 'text/html; charset=utf-8'
+            elif self.path == '/images':
                 data, content_type = html, 'text/html; charset=utf-8'
             elif self.path == '/api/progress':
                 with mutex:
                     data = json.dumps(cache).encode()
+                content_type = 'application/json; charset=utf-8'
+            elif self.path == '/api/tasks':
+                tasks = read_tasks()
+                with mutex:
+                    data = json.dumps({'tasks': tasks, 'image_cleanup': cache}).encode()
                 content_type = 'application/json; charset=utf-8'
             else:
                 self.send_error(404)
