@@ -90,6 +90,25 @@ class TestMagicoreImageCleanup(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in root.iterdir()), ['nccl-tests', 'unfamiliar-base-tool'])
             self.assertEqual((root / 'nccl-tests/content').read_text(), 'nccl-tests')
 
+    def test_manual_source_inventory_mismatch_blocks_deletion(self):
+        namespace = {}
+        exec(cleanup.CLEANUP, namespace)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'apps').mkdir()
+            (root / 'nccl-tests').mkdir()
+            item = {'commit': None, 'tracked_roots': ['apps'],
+                    'source_review': {'workspace_entries': ['apps']}}
+            path = lambda name: root if name == '/workspace' else Path(name)
+            with patch.dict(namespace, {'Path': path}):
+                with self.assertRaisesRegex(ValueError, 'inventory changed'):
+                    namespace['cleanup'](item)
+                self.assertTrue((root / 'apps').exists())
+                item['source_review']['workspace_entries'].append('nccl-tests')
+                with contextlib.redirect_stdout(io.StringIO()):
+                    namespace['cleanup'](item)
+            self.assertEqual(sorted(p.name for p in root.iterdir()), ['nccl-tests'])
+
     def test_changed_remote_tag_blocks_manifest_put(self):
         registry = object.__new__(cleanup.Registry)
         registry.manifest = Mock(return_value=({}, 'newer-digest'))

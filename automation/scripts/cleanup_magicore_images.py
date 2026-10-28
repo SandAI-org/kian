@@ -186,6 +186,9 @@ def cleanup(item):
     root=Path('/workspace')
     if not root.is_dir() or root.is_symlink():raise ValueError('Unexpected workspace root')
     before=sorted(p.name for p in root.iterdir())
+    if item.get('source_review'):
+        if '.git' in before or before!=sorted(item['source_review']['workspace_entries']):
+            raise ValueError('Reviewed source inventory changed')
     if '.git' in before:
         if (root/'.git').is_symlink():raise ValueError('Symlinked git metadata')
         head=subprocess.check_output(['git','-c','safe.directory=/workspace','-C','/workspace','rev-parse','HEAD'],text=True).strip()
@@ -299,7 +302,9 @@ def process_image(args, item, stage):
         raise ValueError('Tag moved during pull')
     if original['Config'].get('Volumes'):
         raise ValueError('Declared volumes require separate review')
-    if not item.get('commit'):
+    if item.get('source_review') and (tag not in args.allow_alias or not item.get('tracked_roots') or item.get('commit')):
+        raise ValueError('Manual source review requires an explicitly authorized alias with unknown commit')
+    if not item.get('commit') and not item.get('source_review'):
         stage('resolving_image_commit')
         code = "import subprocess,json;g=['git','-c','safe.directory=/workspace','-C','/workspace'];h,t=subprocess.check_output(g+['show','-s','--format=%H %ct','HEAD'],text=True).split();print(json.dumps({'commit':h,'commit_time':int(t),'tracked_roots':subprocess.check_output(g+['ls-tree','--name-only','HEAD'],text=True).splitlines()}))"
         resolved = json.loads(command(['docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python3',
@@ -353,7 +358,7 @@ def process_image(args, item, stage):
     digest = registry.publish(tag, manifest, old_digest)
     # Record publication before further checks so a post-push failure is visible and recoverable.
     receipt = {'tag': tag, 'status': 'published_unverified', 'old_digest': old_digest, 'new_digest': digest,
-               'commit': item['commit'], 'verified': False, **cleanup_result}
+               'commit': item.get('commit'), 'source_review': item.get('source_review'), 'verified': False, **cleanup_result}
     write_json(receipt_path, receipt)
     stage('verifying_remote')
     verify_remote(source, digest, preview, cleanup_result['retained'])
