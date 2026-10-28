@@ -60,7 +60,9 @@
     "timezone": "Asia/Shanghai",
     "services": [
       "supplement",
-      "public_watch"
+      "public_watch",
+      "qr",
+      "github"
     ],
     "overrides": {},
     "schedule_calendar": {
@@ -92,6 +94,7 @@
     }
   },
   "github": {
+    "language": "zh",
     "tokens": {
       "example-owner": "REPLACE_WITH_GITHUB_TOKEN"
     },

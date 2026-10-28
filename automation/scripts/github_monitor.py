@@ -5,6 +5,7 @@
   python3 github_monitor.py daily      # 每日全貌总结，推送飞书
 """
 import json
+import uuid
 import fcntl
 import os
 import re
@@ -13,8 +14,10 @@ import tempfile
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from automation_common import STATE_DIR, load_config
+from work_calendar import notification_allowed
 
 CONFIG = load_config()
 
@@ -242,7 +245,7 @@ def feishu_token():
         return json.load(resp)["tenant_access_token"]
 
 
-def feishu_send_card(title, md_content, template="orange"):
+def feishu_send_card(title, md_content, template="orange", message_uuid=None):
     # GitHub comments may embed ordinary Markdown images. Feishu cards treat
     # every image as an uploaded card resource and reject the whole card when
     # no image_key is supplied. Preserve the label/link but render it as text.
@@ -304,11 +307,14 @@ def feishu_send_card(title, md_content, template="orange"):
         "header": {"title": {"tag": "plain_text", "content": title}, "template": template},
         "elements": elements,
     }
-    body = json.dumps({
+    message = {
         "receive_id": FEISHU["open_id"],
         "msg_type": "interactive",
         "content": json.dumps(card, ensure_ascii=False),
-    }, ensure_ascii=False).encode()
+    }
+    if message_uuid:
+        message["uuid"] = message_uuid
+    body = json.dumps(message, ensure_ascii=False).encode()
     req = urllib.request.Request(
         "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
         data=body, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
@@ -331,8 +337,20 @@ def load_state():
 
 
 def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+    descriptor, temporary = tempfile.mkstemp(dir=os.path.dirname(STATE_FILE), prefix="github-state-")
+    try:
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(state, handle, ensure_ascii=False, indent=2)
+        os.replace(temporary, STATE_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def owned_notifications_paused(at=None):
+    at = at or datetime.now(ZoneInfo("Asia/Shanghai"))
+    at = at.astimezone(ZoneInfo("Asia/Shanghai"))
+    return at.hour < 10 or not notification_allowed("github", config=CONFIG, now=at)
 
 
 def now_iso():
@@ -576,6 +594,17 @@ def _realtime():
         print("NO_UPDATES")
         return
 
+    if owned_notifications_paused(datetime.fromisoformat(capture_time.replace("Z", "+00:00"))) or owned_notifications_paused():
+        state.setdefault("deferred_updates", []).extend(
+            {"repo": repo, "markdown": block, "captured_at": capture_time}
+            for repo, block in all_updates
+        )
+        state["last_check"] = capture_time
+        state["pr_heads"] = current_pr_heads
+        save_state(state)
+        print(f"QUEUED_FOR_DAILY {len(all_updates)} updates")
+        return
+
     # Group by repo
     by_repo = {}
     for repo, block in all_updates:
@@ -605,38 +634,82 @@ def _realtime():
 DAILY_STAMP = str(STATE_DIR / "daily-sent.json")
 
 
-def daily():
-    """生成并推送每日总结。只有当内容完整（所有 LLM 摘要成功）且推送成功时，
-    才标记今日已发。任何环节失败则不发、不标记，下次重试。
-    该任务从 10:00 起每 5 分钟跑一次，幂等：当天成功发过一次后就不再重发。"""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+def daily(now=None):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(f"{STATE_FILE}.realtime.lock", "a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("SKIPPED_CONCURRENT")
+            return
+        _daily(now)
+
+
+def daily_part(overview, deferred):
+    body = overview
+    selected = 0
+    for event in deferred[:10]:
+        block = event["markdown"]
+        if len(block.encode("utf-8")) > 12000:
+            block = block[:1800] + "\n...\n" + block[-1200:]
+        addition = f"**📦 {event['repo']}**\n\n{block}"
+        if selected == 0:
+            headings = {"zh": "**📥 暂缓期间的更新**", "en": "**📥 Deferred updates**"}
+            addition = headings.get(GITHUB.get("language", "zh"), headings["zh"]) + "\n\n" + addition
+        candidate = body + ("\n\n---\n\n" if body else "") + addition
+        if len(candidate.encode("utf-8")) > 18000 and body:
+            break
+        body = candidate
+        selected += 1
+    return body, selected
+
+
+def _daily(now=None):
+    now = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    if owned_notifications_paused(now):
+        print("DAILY_DEFERRED")
+        return
+    today = now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
     if os.path.exists(DAILY_STAMP):
-        with open(DAILY_STAMP) as f:
-            if json.load(f).get("date") == today:
+        with open(DAILY_STAMP) as handle:
+            if json.load(handle).get("date") == today:
                 print("DAILY_ALREADY_SENT")
                 return
-    # 生成内容（LLM 摘要失败会抛异常）
+    state = load_state()
+    previous = state.get("daily_delivery", {})
+    overview_sent = previous.get("date") == today and previous.get("overview_sent", False)
     try:
-        md = _build_daily_md()
-    except Exception as e:
-        print(f"DAILY_BUILD_FAILED (will retry): {e}", file=sys.stderr)
-        print("DAILY_BUILD_FAILED")
+        overview = "" if overview_sent else _build_daily_md()
+    except Exception as error:
+        print("DAILY_BUILD_FAILED (will retry): " + type(error).__name__, file=sys.stderr)
         return
-    # 推送
-    try:
-        feishu_send_card("📦 我的仓库每日总结", md, "blue")
-    except Exception as e:
-        print(f"DAILY_PUSH_FAILED (will retry): {e}", file=sys.stderr)
-        print("DAILY_PUSH_FAILED")
-        return
-    with open(DAILY_STAMP, "w") as f:
-        json.dump({"date": today, "sent_at": now_iso()}, f)
-    print("DAILY_PUSHED")
+    deferred = state.get("deferred_updates", [])
+    md, count = daily_part(overview, deferred)
+    if md:
+        identity = json.dumps([today, overview_sent, previous.get("parts", 0) if overview_sent else 0,
+                               deferred[:count]], sort_keys=True)
+        try:
+            feishu_send_card("📦 我的仓库每日总结", md, "blue",
+                             message_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, identity)))
+        except Exception as error:
+            print("DAILY_PUSH_FAILED (will retry): " + type(error).__name__, file=sys.stderr)
+            return
+        state["deferred_updates"] = deferred[count:]
+        state["daily_delivery"] = {"date": today, "overview_sent": True,
+                                   "parts": (previous.get("parts", 0) if overview_sent else 0) + 1}
+        save_state(state)
+    if not state.get("deferred_updates"):
+        temporary = DAILY_STAMP + ".tmp"
+        with open(temporary, "w") as handle:
+            json.dump({"date": today, "sent_at": now_iso()}, handle)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, DAILY_STAMP)
+    print(f"DAILY_PUSHED deferred_remaining={len(state.get('deferred_updates', []))}")
 
 
 def _build_daily_md():
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    md = f"**📅 {datetime.now(timezone.utc).strftime('%Y-%m-%d')} 每日总结** · 最近 24h\n\n"
+    md = f"**📅 {datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d')} 每日总结** · 最近 24h\n\n"
     total = 0
     repo_sections = []
 

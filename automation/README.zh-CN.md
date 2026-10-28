@@ -184,7 +184,7 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 
 ### 休息日通知门控
 
-`work_calendar` 只控制其 `services` 中指定的通知（通常为 `supplement`、`public_watch`）。默认周六、周日静默（`weekends_off: true`），包括法定调休的周末补班日；设为 false 才跟随法定补班。中国大陆法定假期使用 `work_calendar.py` 中注明国务院来源的年度安排，目前覆盖 **2026 年**；新年度开始前必须核验并补入新公布的安排。未知年度暂缓所选通知、记录 `WORK_CALENDAR_DEFERRED`，不猜测工作日。`overrides` 可按日期及服务临时指定，例如 `{"2026-10-31": {"public_watch": true}}`；不会绕过原来的夜间静默。
+`work_calendar` 只控制其 `services` 中指定的通知（通常为 `supplement`、`public_watch`、`qr`、`github`）。默认周六、周日静默（`weekends_off: true`），包括法定调休的周末补班日；设为 false 才跟随法定补班。中国大陆法定假期使用 `work_calendar.py` 中注明国务院来源的年度安排，目前覆盖 **2026 年**；新年度开始前必须核验并补入新公布的安排。未知年度暂缓所选通知、记录 `WORK_CALENDAR_DEFERRED`，不猜测工作日。`overrides` 可按日期及服务临时指定，例如 `{"2026-10-31": {"public_watch": true}}`；不会绕过原来的夜间静默。
 
 可选 `schedule_calendar` 接入另一本经过核验的共享排班日历（如“大小周”），通过 `work_title_patterns`／`rest_title_patterns` 精确匹配展开后的日程实例。“工作日”标记可以启用周六，“休息日”标记可以让工作日静默，无关活动忽略；当天没有排班标记时采用基础工作日／周末规则，禁止自行推算单双周。冲突标记或排班日历不可读时暂缓发送。个人请假和法定假期仍优先于排班工作日，除非用户明确指定日期／服务例外。
 
@@ -193,3 +193,12 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 Saul 即使已开通应用身份 API 权限，对个人日历也可能只有 `free_busy_reader` 忙闲权限。因此读取个人请假使用接收者本人的 OAuth 用户身份：agent 执行 `python3 automation/scripts/feishu_calendar_auth.py begin`，把官方授权链接交给用户，确认后执行 `complete`。申请日历只读及后台续期，核对授权用户与 `feishu.open_id` 一致，将 mode-600 凭据保存在私有 `state/feishu-calendar-user-token.json`，禁止提交或分享。飞书可能返回 Saul 既有的其他用户授权 scope，本服务只调用日历读取接口及身份核验。进程锁保护 refresh token 轮换，休息日也维持续期；换电脑或授权过期、撤销后需要重新确认。应用 API 权限不等于私人日历访问权；启用 `feishu_calendar` 前验证实际 owner／reader 权限，不为接入而公开日历或修改共享 ACL。
 
 用户给 nsys 文件指定“前缀”时，将 `profile_iter(...)_n0.nsys-rep` 开头的 `profile` 替换为该前缀，不再追加自动 job tag 后缀。例如前缀 `cpu_sync_work0` 对应 Downloads 下的 `cpu_sync_work0_iter(6-8)_n0.nsys-rep`。这是 agent 命名约定，传输 CLI 仍使用明确的目标路径。
+
+
+### 我的仓库与二维码的工作日投递
+
+`github` 将同一套个人请假／大小周门控用于“我的仓库”的实时与每日卡片。北京时间 `00:00–09:59` 及休息日继续扫描，把完整事件与检查点、PR heads 一起原子保存到 `github-monitor-state.json` 的 `deferred_updates`。这些积压不会在恢复白天后作为实时卡片倒出，而是并入下个工作日 10:00 的每日总结，即使事件已经超过普通总结的 24 小时窗口。每日与实时任务共用进程锁。失败保留队列，每批使用固定飞书 UUID（服务端去重有时限），仅移除已成功投递的事件；大量积压按每个 5 分钟重试点一张、最多 10 项及约 18 KB Markdown 分批补发，不重复发送普通概览，全部排空后才写当日成功标记。新增积压标题支持 `github.language`（`zh`／`en`）。其他正常工作时间仍按原机制实时推送。
+
+每日 LaunchAgent 保留 10:00 触发，并增加每 5 分钟检查；脚本在 10:00 前和休息日拒绝发送，当天完成后不重复发送。二维码提醒（`qr`）维持中午 12:00 日程及 7 个自然日的轮次间隔。休息日不修改待办／已完成轮次，未完成或已到下一轮的提醒保留到下个工作日的原定时间，不直接丢弃。
+
+假期数据边界：已核验的“大小周”API 数据有工作／活动标记，没有国庆、元旦法定假期事件；[飞书日历官方 FAQ](https://open.feishu.cn/document/server-docs/calendar-v4/calendar-faq) 也明确不直接提供法定工作日／节假日查询。禁止声称已经从 API 读到了客户端的假期角标。找到并核验真正可读的假期日历前，保留已核验的官方年度假期表，不能仅凭界面显示就删除兜底。

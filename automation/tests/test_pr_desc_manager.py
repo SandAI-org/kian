@@ -77,7 +77,7 @@ class PrDescriptionRewriteTest(unittest.TestCase):
             monitor, "gh_get", side_effect=github_response
         ), mock.patch.object(monitor, "llm_summarize", return_value="• 拆分为后续 PR"), mock.patch.object(
             monitor, "feishu_send_card"
-        ) as sender:
+        ) as sender, mock.patch.object(monitor, "owned_notifications_paused", return_value=False):
             monitor.realtime()
 
         sender.assert_called_once()
