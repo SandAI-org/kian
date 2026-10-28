@@ -54,6 +54,45 @@ class WorkCalendarTest(unittest.TestCase):
         self.config["work_calendar"]["weekends_off"] = False
         self.assertTrue(calendar.notification_allowed("supplement", self.config, self.at("2026-10-10")))
 
+    def test_shared_schedule_marks_next_saturday_as_working_without_inferring_parity(self):
+        self.config["work_calendar"]["schedule_calendar"] = {"enabled": True}
+        with patch.object(calendar, "calendar_workday", return_value=None):
+            self.assertFalse(calendar.notification_allowed("supplement", self.config, self.at("2026-10-31")))
+        with patch.object(calendar, "calendar_workday", return_value=True):
+            self.assertTrue(calendar.notification_allowed("supplement", self.config, self.at("2026-11-07")))
+            self.assertTrue(calendar.notification_allowed("public_watch", self.config, self.at("2026-11-07")))
+
+    def test_leave_and_statutory_holiday_still_suppress_a_marked_workday(self):
+        self.config["work_calendar"]["schedule_calendar"] = {"enabled": True}
+        self.config["work_calendar"]["feishu_calendar"] = {"enabled": True}
+        with patch.object(calendar, "calendar_workday", return_value=True), \
+                patch.object(calendar, "calendar_leave", return_value=True):
+            self.assertFalse(calendar.notification_allowed("supplement", self.config, self.at("2026-11-07")))
+        with patch.object(calendar, "calendar_workday") as schedule:
+            self.assertFalse(calendar.notification_allowed("supplement", self.config, self.at("2026-10-01")))
+        schedule.assert_not_called()
+
+    def test_schedule_rest_marker_and_unreadable_schedule_hold_sending(self):
+        self.config["work_calendar"]["schedule_calendar"] = {"enabled": True}
+        with patch.object(calendar, "calendar_workday", return_value=False):
+            self.assertFalse(calendar.notification_allowed("public_watch", self.config, self.at("2026-10-28")))
+        with patch.object(calendar, "calendar_workday", side_effect=TimeoutError):
+            self.assertFalse(calendar.notification_allowed("public_watch", self.config, self.at("2026-11-07")))
+
+    def test_schedule_ignores_activity_events_and_cancelled_work_markers(self):
+        settings = {"work_title_patterns": ["^工作日$"], "rest_title_patterns": ["^休息日$"]}
+        event = {"summary": "羽毛球活动日", "start_time": {"date": "2026-11-07"},
+                 "end_time": {"date": "2026-11-08"}}
+        day = date(2026, 11, 7)
+        self.assertIsNone(calendar.schedule_decision([event], day, self.zone, settings))
+        work = dict(event, summary="工作日")
+        self.assertTrue(calendar.schedule_decision([work], day, self.zone, settings))
+        self.assertIsNone(calendar.schedule_decision([dict(work, status="cancelled")], day, self.zone, settings))
+        rest = dict(event, summary="休息日")
+        self.assertFalse(calendar.schedule_decision([rest], day, self.zone, settings))
+        with self.assertRaisesRegex(ValueError, "Conflicting"):
+            calendar.schedule_decision([work, rest], day, self.zone, settings)
+
     def test_leave_and_calendar_outage_hold_notifications(self):
         self.config["work_calendar"]["feishu_calendar"] = {"enabled": True}
         with patch.object(calendar, "calendar_leave", return_value=True):
@@ -118,6 +157,16 @@ class WorkCalendarTest(unittest.TestCase):
                 calendar.calendar_leave(date(2026, 10, 28), self.zone, settings)
             self.assertEqual(request.call_count, 1)
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_successful_empty_calendar_response_may_omit_items(self):
+        settings = {"calendar_id": "personal", "leave_title_patterns": ["^请假中"]}
+        for data in [{}, {"items": None}, {"items": []}]:
+            responses = [io.StringIO(json.dumps({"code": 0, "data": {"role": "reader"}})),
+                         io.StringIO(json.dumps({"code": 0, "data": data}))]
+            with self.subTest(data=data), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(calendar, "STATE_DIR", Path(directory)), \
+                    patch("feishu_remind.OPENER.open", side_effect=responses):
+                self.assertFalse(calendar.calendar_leave(date(2026, 10, 28), self.zone, settings))
 
 
 if __name__ == "__main__":

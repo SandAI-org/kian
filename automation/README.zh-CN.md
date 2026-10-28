@@ -186,6 +186,10 @@ python3 automation/scripts/pr_desc_manager.py policy610 world-sim-dev/magicore p
 
 `work_calendar` 只控制其 `services` 中指定的通知（通常为 `supplement`、`public_watch`）。默认周六、周日静默（`weekends_off: true`），包括法定调休的周末补班日；设为 false 才跟随法定补班。中国大陆法定假期使用 `work_calendar.py` 中注明国务院来源的年度安排，目前覆盖 **2026 年**；新年度开始前必须核验并补入新公布的安排。未知年度暂缓所选通知、记录 `WORK_CALENDAR_DEFERRED`，不猜测工作日。`overrides` 可按日期及服务临时指定，例如 `{"2026-10-31": {"public_watch": true}}`；不会绕过原来的夜间静默。
 
+可选 `schedule_calendar` 接入另一本经过核验的共享排班日历（如“大小周”），通过 `work_title_patterns`／`rest_title_patterns` 精确匹配展开后的日程实例。“工作日”标记可以启用周六，“休息日”标记可以让工作日静默，无关活动忽略；当天没有排班标记时采用基础工作日／周末规则，禁止自行推算单双周。冲突标记或排班日历不可读时暂缓发送。个人请假和法定假期仍优先于排班工作日，除非用户明确指定日期／服务例外。
+
 请假识别使用明确核验过的个人 `feishu_calendar.calendar_id`、展开后的日程实例以及可配置的 `leave_title_patterns`。匹配且与当天重叠的请假会让整天静默，半天假也按当天处理；取消、拒绝的日程及普通会议不算请假。未出现在此日历、不可见或自定义标题不匹配的请假无法推断。判断缓存 15 分钟，只存日期、布尔结果、检查时间，不保存日程正文。日历详情不可读、API 或授权异常时暂缓发送，不当作没有请假。休息日补品提醒直接跳过，不跨日补发；开源仓库／博客继续扫描、去重和入队，仅暂停投递，下个工作日 10:30 起按原机制分批发送，每个 5 分钟重试点最多一张、25 项。
 
 Saul 即使已开通应用身份 API 权限，对个人日历也可能只有 `free_busy_reader` 忙闲权限。因此读取个人请假使用接收者本人的 OAuth 用户身份：agent 执行 `python3 automation/scripts/feishu_calendar_auth.py begin`，把官方授权链接交给用户，确认后执行 `complete`。申请日历只读及后台续期，核对授权用户与 `feishu.open_id` 一致，将 mode-600 凭据保存在私有 `state/feishu-calendar-user-token.json`，禁止提交或分享。飞书可能返回 Saul 既有的其他用户授权 scope，本服务只调用日历读取接口及身份核验。进程锁保护 refresh token 轮换，休息日也维持续期；换电脑或授权过期、撤销后需要重新确认。应用 API 权限不等于私人日历访问权；启用 `feishu_calendar` 前验证实际 owner／reader 权限，不为接入而公开日历或修改共享 ACL。
+
+用户给 nsys 文件指定“前缀”时，将 `profile_iter(...)_n0.nsys-rep` 开头的 `profile` 替换为该前缀，不再追加自动 job tag 后缀。例如前缀 `cpu_sync_work0` 对应 Downloads 下的 `cpu_sync_work0_iter(6-8)_n0.nsys-rep`。这是 agent 命名约定，传输 CLI 仍使用明确的目标路径。

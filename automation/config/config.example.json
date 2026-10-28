@@ -63,6 +63,12 @@
       "public_watch"
     ],
     "overrides": {},
+    "schedule_calendar": {
+      "enabled": false,
+      "calendar_id": "REPLACE_WITH_VERIFIED_WORK_SCHEDULE_CALENDAR_ID",
+      "work_title_patterns": ["^工作日$", "^上班$"],
+      "rest_title_patterns": ["^休息日$", "^放假$"]
+    },
     "feishu_calendar": {
       "enabled": false,
       "calendar_id": "REPLACE_WITH_VERIFIED_PERSONAL_CALENDAR_ID",

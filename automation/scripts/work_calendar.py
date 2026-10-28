@@ -54,12 +54,21 @@ def is_leave_event(event, day, zone, patterns):
     return event_overlaps_day(event, day, zone)
 
 
-def calendar_leave(day, zone, settings):
+def schedule_decision(events, day, zone, settings):
+    work = any(is_leave_event(event, day, zone, settings["work_title_patterns"]) for event in events)
+    rest = any(is_leave_event(event, day, zone, settings["rest_title_patterns"]) for event in events)
+    if work and rest:
+        raise ValueError("Conflicting work and rest calendar markers")
+    return True if work else False if rest else None
+
+
+def calendar_decision(day, zone, settings, schedule=False):
     from feishu_remind import OPENER
     from feishu_calendar_auth import user_token
     calendar_id = settings["calendar_id"]
-    patterns = settings["leave_title_patterns"]
-    identity = hashlib.sha256(json.dumps([calendar_id, patterns]).encode()).hexdigest()[:16]
+    patterns = [settings["work_title_patterns"], settings["rest_title_patterns"]] if schedule \
+        else settings["leave_title_patterns"]
+    identity = hashlib.sha256(json.dumps([calendar_id, patterns, schedule, str(zone)]).encode()).hexdigest()[:16]
     cache = STATE_DIR / ("work-calendar-" + identity + ".json")
     now = datetime.now().timestamp()
     try:
@@ -67,7 +76,7 @@ def calendar_leave(day, zone, settings):
     except (FileNotFoundError, json.JSONDecodeError):
         previous = {}
     if previous.get("date") == day.isoformat() and 0 <= now - previous["checked_at"] < 900:
-        return previous["has_leave"]
+        return previous["workday" if schedule else "has_leave"]
     start = datetime.combine(day, time(), zone)
     query = urllib.parse.urlencode({"start_time": int(start.timestamp()),
                                    "end_time": int((start + timedelta(days=1)).timestamp())})
@@ -89,16 +98,26 @@ def calendar_leave(day, zone, settings):
     data = payload["data"]
     if data.get("has_more"):
         raise RuntimeError("Incomplete calendar instance response")
-    events = data["items"]
+    events = data.get("items") or []
     if any(not event.get("summary") for event in events):
         raise RuntimeError("Calendar event details unavailable")
-    has_leave = any(is_leave_event(event, day, zone, patterns) for event in events)
-    state = {"date": day.isoformat(), "checked_at": now, "has_leave": has_leave}
+    decision = schedule_decision(events, day, zone, settings) if schedule \
+        else any(is_leave_event(event, day, zone, patterns) for event in events)
+    state = {"date": day.isoformat(), "checked_at": now,
+             "workday" if schedule else "has_leave": decision}
     temporary = cache.with_suffix("." + str(os.getpid()) + ".tmp")
     temporary.write_text(json.dumps(state) + "\n")
     temporary.chmod(0o600)
     os.replace(temporary, cache)
-    return has_leave
+    return decision
+
+
+def calendar_leave(day, zone, settings):
+    return calendar_decision(day, zone, settings)
+
+
+def calendar_workday(day, zone, settings):
+    return calendar_decision(day, zone, settings, schedule=True)
 
 
 def notification_allowed(service, config=None, now=None):
@@ -114,15 +133,21 @@ def notification_allowed(service, config=None, now=None):
         return override
     try:
         calendar = settings.get("feishu_calendar", {})
-        if calendar.get("enabled", False):
+        schedule = settings.get("schedule_calendar", {})
+        if calendar.get("enabled", False) or schedule.get("enabled", False):
             # Keep rotating refresh tokens alive through long holidays too.
             from feishu_calendar_auth import user_token
             user_token()
-        if settings.get("weekends_off", True) and day.weekday() >= 5:
+        workday = statutory_workday(day)
+        short = day.strftime("%m-%d")
+        if any(start <= short <= end for start, end in HOLIDAYS[day.year]["rest"]):
             return False
-        if not statutory_workday(day):
-            return False
-        return not calendar.get("enabled", False) or not calendar_leave(day, zone, calendar)
+        scheduled = calendar_workday(day, zone, schedule) if schedule.get("enabled", False) else None
+        if scheduled is not None:
+            workday = scheduled
+        elif settings.get("weekends_off", True) and day.weekday() >= 5:
+            workday = False
+        return workday and (not calendar.get("enabled", False) or not calendar_leave(day, zone, calendar))
     except Exception as error:
         # Uncertain calendar access must not accidentally send on a leave day.
         print("WORK_CALENDAR_DEFERRED " + service + " " + type(error).__name__, flush=True)
