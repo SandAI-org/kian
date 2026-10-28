@@ -504,6 +504,37 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
             "rendered event",
         )
 
+    def test_rest_day_run_persists_events_without_sending(self):
+        state = {"repos": {"owner/repo": {"last_check": "old"}}}
+        block = {
+            "markdown": "event", "summary_key": "pr:1", "summary_kind": "pr",
+            "title": "Change", "body": "Details",
+        }
+        next_state = {"last_check": "new", "integration_branches": ["main"]}
+        sender = MagicMock()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            monitor, "LOCK_FILE", Path(directory) / "watch.lock",
+        ), patch.object(monitor, "configure"), patch.object(
+            monitor, "WATCH", {"repositories": [{"repo": "owner/repo"}]},
+        ), patch.object(monitor, "load_state", return_value=state), patch.object(
+            monitor, "save_state",
+        ), patch.object(
+            monitor, "collect_repo", return_value=([block], next_state),
+        ), patch.object(
+            monitor, "add_chinese_summaries", return_value=["rendered event"],
+        ), patch.object(monitor, "in_quiet_hours", return_value=False), patch.object(
+            monitor, "notification_allowed", return_value=False,
+        ), patch.object(
+            monitor, "send_card", sender,
+        ):
+            monitor.run()
+        sender.assert_not_called()
+        self.assertEqual(len(state["pending_notifications"]), 1)
+        self.assertEqual(
+            state["pending_notifications"][0]["events"][0]["markdown"],
+            "rendered event",
+        )
+
     def test_daytime_run_sends_multiple_repositories_in_one_card(self):
         repositories = [{"repo": "owner/one"}, {"repo": "owner/two"}]
         state = {"repos": {

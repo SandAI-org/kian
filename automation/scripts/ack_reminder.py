@@ -8,6 +8,7 @@ from pathlib import Path
 
 from automation_common import STATE_DIR, load_config
 from feishu_remind import send
+from work_calendar import notification_allowed
 
 
 REMINDER_STATE_DIR = STATE_DIR / "ack-reminders"
@@ -85,6 +86,8 @@ def run(now=None, config=None):
     results = []
     for reminder_id, reminder in config.get("reminders", {}).items():
         if not reminder.get("enabled", True):
+            continue
+        if not notification_allowed(reminder_id, config=config, now=now):
             continue
         state = load_state(reminder_id)
         if not due(reminder, state, now):

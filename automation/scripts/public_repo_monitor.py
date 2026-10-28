@@ -20,12 +20,14 @@ from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 from automation_common import STATE_DIR, load_config
+from work_calendar import notification_allowed
 
 
 WATCH = {}
 GITHUB = {}
 SUMMARIZATION = {}
 PUBLIC_SERVICE = {}
+WORK_CALENDAR = {}
 STATE_FILE = STATE_DIR / "public-watch-state.json"
 LOCK_FILE = STATE_DIR / "public-watch.lock"
 PINS_DIR = STATE_DIR / "public-watch-pins"
@@ -40,12 +42,13 @@ SUMMARY_MARKER = "@@KIAN_CHINESE_SUMMARY@@"
 
 
 def configure(config=None):
-    global WATCH, GITHUB, SUMMARIZATION, PUBLIC_SERVICE
+    global WATCH, GITHUB, SUMMARIZATION, PUBLIC_SERVICE, WORK_CALENDAR
     config = config or load_config()
     WATCH = config.get("public_watch", {})
     GITHUB = config.get("github", {})
     SUMMARIZATION = config.get("summarization", {})
     PUBLIC_SERVICE = config.get("services", {}).get("public_watch", {})
+    WORK_CALENDAR = config.get("work_calendar", {})
 
 
 def send_card(title, body, template, actions=None):
@@ -1234,7 +1237,9 @@ def run():
                     print("[error] source {0}: {1}".format(source_id, cause), file=sys.stderr)
             state["last_scan_at"] = capture_time
             save_state(state)
-        if pending and not in_quiet_hours():
+        if pending and not in_quiet_hours() and notification_allowed(
+            "public_watch", config={"work_calendar": WORK_CALENDAR},
+        ):
             batch, remaining = take_pending_batch(pending)
             events = pending_events(batch)
             body = render_notification_batch(batch)

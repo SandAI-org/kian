@@ -54,6 +54,24 @@
     "open_id": "REPLACE_WITH_FEISHU_OPEN_ID",
     "allowed_users": ["REPLACE_WITH_ALLOWED_OPEN_ID"]
   },
+  "work_calendar": {
+    "enabled": false,
+    "weekends_off": true,
+    "timezone": "Asia/Shanghai",
+    "services": [
+      "supplement",
+      "public_watch"
+    ],
+    "overrides": {},
+    "feishu_calendar": {
+      "enabled": false,
+      "calendar_id": "REPLACE_WITH_VERIFIED_PERSONAL_CALENDAR_ID",
+      "leave_title_patterns": [
+        "^(?:请假(?:中)?|休假(?:中)?|年假|病假|事假|调休)(?:[（(：: /]|$)",
+        "^(?:time off|out of office|ooo)\\b"
+      ]
+    }
+  },
   "reminders": {
     "supplement": {
       "enabled": true,
