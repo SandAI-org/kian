@@ -1,5 +1,13 @@
 # 可迁移 Kian 自动化套件
 
+## 按需清理 Magicore 镜像
+
+`automation/scripts/cleanup_magicore_images.py` 在明确选定的 Docker 宿主机上运行，参数为 `--repository <registry/project/image> --plan <私有计划.json> --state-dir <私有状态目录>`；不带 `--apply` 仅显示从旧到新的计划。每项包含十六进制 `tag`、完整 `commit`、整数 `commit_time` 和对应 Git 的 `tracked_roots`。`--unresolved <私有tags.json>` 把暂未解析的 commit tags 放在已知日期项之后，从拉取镜像内核对 Git HEAD 与根目录清单，且 HEAD 必须匹配 tag；非 commit 别名不纳入。仅在用户授权覆盖后使用 `--workers 2 --apply`。
+
+流程删除 `/workspace` 内属于对应 Magicore commit 的根目录项、`.git`、`Megatron-LM`、`Mooncake`，对其余内容（包括 nccl-tests）做内容及权限保留校验。按用户接受的范围，旧层仍可恢复源码。发布前核对包清单/导入、运行配置、平台、原始层及只限 workspace 的文件变更；转换为 Docker V2 manifest 时不改 blob 内容。覆盖前再次核对远端原 digest，发布后拉取验证；不修改运行中容器、不向其他 registry 同步。结构不支持、存在 volume、导入变化或 tag 并发更新时记录该项失败，不强制覆盖；不代表做过 GPU 计算测试。
+
+计划、凭据、镜像元数据、逐项回执及 `status.json`/`events.jsonl` 均放私有目录。同状态目录重跑会跳过已验证 digest，并可补做已记录发布的验证。批次锁防止同目录重复运行；SIGTERM 会等待当前 tag 处理结束后停止派发。默认剩余空间低于 200 GiB 时暂停新工作，不做全局 Docker prune。已授权批次可作为远端脱离终端的进程运行，Mac 睡眠/SSH 断开不影响它；通过私有状态查看进度。成功镜像可能仍占用本地磁盘，需要时只管理明确属于此任务的缓存。
+
 本目录打包 GitHub 到飞书监控、PR 描述管理、提醒、文件传输、二维码发布、飞书桥接及 macOS `launchd` 集成，Git 中不保存私有运行数据。
 
 需确认的定期提醒配置在私有 `config.json` 的 `reminders` 中。每个提醒可以独立设置日程、确认按钮文案和重复间隔；到点后会持续发送，直到授权用户点击按钮。确认状态按提醒 ID 和日期保存在 `state/ack-reminders/`，因此旧卡片不会误确认新一天。`services.reminders.poll_interval_seconds` 控制调度检查频率，单个提醒的 `repeat_interval_seconds` 控制未确认时的催办频率。

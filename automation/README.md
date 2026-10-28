@@ -28,6 +28,14 @@ Per-repository `exclude` rules accept regular expressions in `title_patterns`, `
 
 ## Private/runtime boundary
 
+### On-demand Magicore image cleanup
+
+`automation/scripts/cleanup_magicore_images.py` runs on the explicitly selected Docker host. Supply `--repository <registry/project/image> --plan <private-plan.json> --state-dir <private-state-dir>`; without `--apply` it only shows the ordered plan. Entries contain hexadecimal `tag`, full `commit`, integer `commit_time`, and the corresponding Git `tracked_roots`. `--unresolved <private-tags.json>` appends unresolved commit tags after dated entries and resolves their exact Git HEAD and tracked roots from the pulled image, requiring the HEAD to match the tag. Non-commit aliases are not included. Use `--workers 2 --apply` only after publication is authorized.
+
+The worker removes visible tracked Magicore workspace entries, `.git`, `Megatron-LM`, and `Mooncake`, preserving and hashing other workspace content (including nccl-tests). Old source remains recoverable in earlier image layers by design. It checks package inventory/imports, runtime configuration, platform, original layers and workspace-only filesystem changes before publishing Docker V2 manifests with unchanged blob identities. Each remote tag is rechecked against its input digest before replacement; pulled output is verified afterwards. This does not sync other registries or modify running containers. Unsupported layouts, mounts, import changes and tag races fail that item without forcing publication. No GPU compute test is implied.
+
+Plans, registry credentials, metadata, per-tag receipts and `status.json`/`events.jsonl` remain private. Re-running the same state directory skips verified published digests and can finish verification of a recorded publication. A single batch lock prevents concurrent runners sharing that state; graceful SIGTERM finishes active tags, then stops dispatch. The default 200 GiB free-space guard pauses new work; shared Docker images/containers are never globally pruned. Run the approved batch as a detached remote process to survive Mac sleep or SSH disconnection; poll its private status for progress. Successful tags may still occupy local disk, so check free space and explicitly manage job-owned cache if needed.
+
 The repository contains code, templates, and placeholder-only examples. The default private home is `~/.config/kian-automation` (override with `KIAN_AUTOMATION_HOME`):
 
 - `config/config.json`: credentials, repository list, SSH aliases, paths, and service settings; mode `600`.
