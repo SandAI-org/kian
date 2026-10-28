@@ -13,6 +13,43 @@ import public_repo_monitor as monitor  # noqa: E402
 
 
 class PublicRepoMonitorRulesTest(unittest.TestCase):
+    def test_required_events_precede_scored_items_across_merged_batches_and_limit(self):
+        low = {"markdown": "score-low", "required": False, "score": 8}
+        high = {"markdown": "score-high", "required": False, "score": 12}
+        tied = {"markdown": "score-tied", "required": False, "score": 12}
+        release = {"markdown": "release", "required": True, "score": None}
+        pinned = {"markdown": "pinned", "required": True,
+                  "complete_pin": {"repo": "owner/one", "number": 3}}
+        groups = [
+            {"repo": "owner/one", "events": [low, high]},
+            {"repo": "owner/two", "events": [{"markdown": "other"}]},
+            {"repo": "owner/one", "events": [release, pinned, tied]},
+        ]
+        batch, remaining = monitor.take_pending_batch(groups, limit=3)
+        self.assertEqual(monitor.pending_events(batch), [release, pinned, high])
+        self.assertEqual(monitor.pending_events(remaining), [tied, low, {"markdown": "other"}])
+        rendered = monitor.render_notification_batch(groups)
+        positions = [rendered.index(name) for name in ['release', 'pinned', 'score-high', 'score-tied', 'score-low']]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(groups[0]['events'], [low, high])
+
+    def test_priority_survives_summary_and_supports_preexisting_queued_cards(self):
+        item = {"number": 1, "title": "Bug", "html_url": "url"}
+        scored = monitor.event_block(monitor.importance_block('pr', item, 9, []), item, 'pr', 1, score=9)
+        mandatory = monitor.event_block('release', item, 'release', 'v1')
+        with patch.object(monitor, 'add_chinese_summaries', return_value=['scored', 'release']):
+            group = monitor.prepare_notification_group({'repo': 'owner/repo'}, {}, [scored, mandatory])
+        self.assertEqual(monitor.event_priority(group['events'][0]), (1, -9))
+        self.assertEqual(monitor.event_priority(group['events'][1]), (0, 0))
+        legacy = {"repo": "owner/repo", "events": [
+            {'markdown': monitor.importance_block('issue', item, 8, [])},
+            {'markdown': 'release'},
+            {'markdown': monitor.importance_block('pr', item, 13, [])},
+        ]}
+        batch, remaining = monitor.take_pending_batch([legacy], limit=2)
+        self.assertEqual([monitor.event_priority(e) for e in monitor.pending_events(batch)], [(0, 0), (1, -13)])
+        self.assertEqual(monitor.event_priority(monitor.pending_events(remaining)[0]), (1, -8))
+
     def test_html_blog_discovery_deduplicates_and_excludes_navigation(self):
         source = {"index_url": "https://example.test/research", "link_pattern": r"^/research/[^/]+$"}
         document = '''<a href="/research/new"><img></a>

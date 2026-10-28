@@ -8,6 +8,8 @@ The installer stages Python runtime scripts under the private `~/.config/kian-au
 
 ### Important public-repository updates
 
+Within each repository, required events (releases, eligible PR outcomes, followed-item updates and registered blog/image releases) appear before score-selected early PR/Issue signals. Scored signals sort by descending score; ties and required events keep their original relative order. Repeated repository groups are merged and sorted before the 25-event batch limit, including quiet-hour backlog and retries. Older queued cards derive priority from their existing early-signal heading. Repository order and event eligibility are unchanged.
+
 `public_watch.repositories` observes public repositories that you do not maintain. It is isolated from the full-fidelity owned-repository monitor and silently creates a baseline on first run instead of replaying history. Releases and PRs merged into `integration_branches` are always reported; without an override, the GitHub `default_branch` is used. Early important PR/Issue signals are scored from security, correctness/regression, breaking API, performance, hardware/compiler semantics, GitHub labels, maintainer authorship, discussion, and reaction activity.
 
 A repository can also declare `blogs` entries with `name` and `feed_url`. Each RSS/Atom feed is baselined independently, so enabling it does not replay old posts; later posts are rendered as Blog events with Chinese summaries and grouped under the owning repository in the same durable Feishu batch. Repository title/body exclusion rules also apply to posts. Feed state is kept separately from GitHub PR/Issue state, and up to 200 seen item identifiers are retained per feed.

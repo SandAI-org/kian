@@ -483,13 +483,15 @@ def excluded_event(repo_config, repo, item, kind):
     return custom_exclusion(repo_config, item, pr_file_paths(repo, item["number"]))
 
 
-def event_block(markdown, item, kind, identity, repo=""):
+def event_block(markdown, item, kind, identity, repo="", score=None):
     return {
         "markdown": markdown,
         "summary_key": "{0}:{1}".format(kind, identity),
         "summary_kind": kind,
         "title": str(item.get("title") or item.get("name") or item.get("tag_name") or ""),
         "body": str(item.get("body") or ""),
+        "required": score is None,
+        "score": score,
     }
 
 
@@ -1008,7 +1010,7 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             else:
                 blocks.append(event_block(
                     importance_block("pr", pr, score, reasons), pr, "pr", pr["number"],
-                    repo=repo,
+                    repo=repo, score=score,
                 ))
         remember_signal(signals, key, pr, score, previous.get("notified", False) or should_notify)
 
@@ -1064,7 +1066,7 @@ def collect_repo(repo_config, repo_state, capture_time, bootstrap=False):
             else:
                 blocks.append(event_block(
                     importance_block("issue", issue, score, reasons), issue, "issue", issue["number"],
-                    repo=repo,
+                    repo=repo, score=score,
                 ))
         remember_signal(
             signals, key, issue, score,
@@ -1098,7 +1100,7 @@ def prepare_notification_group(repo_config, repo_state, blocks):
     events = []
     for block, markdown in zip(blocks, rendered):
         event = {"markdown": markdown}
-        for key in ("complete_pin",):
+        for key in ("complete_pin", "required", "score"):
             if key in block:
                 event[key] = block[key]
         events.append(event)
@@ -1111,7 +1113,15 @@ def prepare_notification_group(repo_config, repo_state, blocks):
     }
 
 
-def render_notification_batch(groups):
+def event_priority(event):
+    if "required" in event:
+        return (0, 0) if event["required"] else (1, -event.get("score", 0))
+    # Existing durable queues predate structured priority metadata.
+    match = re.search(r"^\*\*[^\n]*重要(?:PR|Issue)早期信号 #\d+\*\* · 评分 (\d+)", event["markdown"])
+    return (1, -int(match[1])) if match else (0, 0)
+
+
+def ordered_notification_groups(groups):
     combined = {}
     for group in groups:
         repo = group["repo"]
@@ -1124,8 +1134,14 @@ def render_notification_batch(groups):
                 "events": [],
             }
         combined[repo]["events"].extend(group.get("events", []))
-    sections = []
     for group in combined.values():
+        group["events"] = sorted(group["events"], key=event_priority)
+    return list(combined.values())
+
+
+def render_notification_batch(groups):
+    sections = []
+    for group in ordered_notification_groups(groups):
         intro = "📰 **{0}** · Research blog".format(group["source_name"]) if group.get("source_name") else repo_intro(
             group["repo"], group["level"], group.get("integration_branches", []),
         )
@@ -1148,7 +1164,7 @@ def take_pending_batch(groups, limit=25):
     batch = []
     remaining = []
     slots = limit
-    for group in groups:
+    for group in ordered_notification_groups(groups):
         events = group.get("events", [])
         selected = events[:slots] if slots > 0 else []
         deferred = events[len(selected):]
