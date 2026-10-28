@@ -2,6 +2,8 @@
 
 ## 按需清理 Magicore 镜像
 
+需要可点击的实时进度页时，启用 `services.image_cleanup_dashboard.enabled`，配置 `image_cleanup_dashboard.host`、远端 `state_dir`，可选本地 `port`（8767）、`poll_seconds`（15）、`language`（`zh`/`en`）。常驻 LaunchAgent `com.kian.image_cleanup_dashboard` 提供 `http://127.0.0.1:8767/`，安装、doctor、卸载均包含该服务。只读 SSH 采集经过筛选的进度、当前阶段、最近完成项、异常及时间戳；连接失败保留上次快照并明确显示离线。页面每 10 秒刷新，不提供修改批次的接口，且仅绑定 Mac loopback。Mac 睡眠/断网会使页面不可访问或数据变旧，H200 后台清理仍继续；手机上的 localhost 不能访问这台 Mac 的页面。
+
 `automation/scripts/cleanup_magicore_images.py` 在明确选定的 Docker 宿主机上运行，参数为 `--repository <registry/project/image> --plan <私有计划.json> --state-dir <私有状态目录>`；不带 `--apply` 仅显示从旧到新的计划。每项包含十六进制 `tag`、完整 `commit`、整数 `commit_time` 和对应 Git 的 `tracked_roots`。`--unresolved <私有tags.json>` 把暂未解析的 commit tags 放在已知日期项之后，从拉取镜像内核对 Git HEAD 与根目录清单，且 HEAD 必须匹配 tag；非 commit 别名不纳入。仅在用户授权覆盖后使用 `--workers 2 --apply`。
 
 流程删除 `/workspace` 内属于对应 Magicore commit 的根目录项、`.git`、`Megatron-LM`、`Mooncake`，对其余内容（包括 nccl-tests）做内容及权限保留校验。按用户接受的范围，旧层仍可恢复源码。发布前核对包清单/导入、运行配置、平台、原始层及只限 workspace 的文件变更；转换为 Docker V2 manifest 时不改 blob 内容。覆盖前再次核对远端原 digest，发布后拉取验证；不修改运行中容器、不向其他 registry 同步。结构不支持、存在 volume、导入变化或 tag 并发更新时记录该项失败，不强制覆盖；不代表做过 GPU 计算测试。

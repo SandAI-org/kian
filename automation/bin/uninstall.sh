@@ -3,7 +3,7 @@ set -euo pipefail
 
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 DOMAIN="gui/$(id -u)"
-for service in bridge realtime daily qr codex_lock_guard codex_activity_monitor; do
+for service in bridge realtime daily qr codex_lock_guard codex_activity_monitor image_cleanup_dashboard; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   rm -f "$plist"

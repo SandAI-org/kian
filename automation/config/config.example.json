@@ -7,6 +7,7 @@
     "reminders": { "enabled": false, "poll_interval_seconds": 60 },
     "codex_lock_guard": { "enabled": false },
     "codex_activity_monitor": { "enabled": false, "interval_seconds": 60 },
+    "image_cleanup_dashboard": { "enabled": false },
     "public_watch": {
       "enabled": false,
       "interval_seconds": 3600,
@@ -14,6 +15,13 @@
       "flush_hour": 10,
       "flush_minute": 30
     }
+  },
+  "image_cleanup_dashboard": {
+    "host": "REPLACE_WITH_SSH_ALIAS",
+    "state_dir": "REPLACE_WITH_REMOTE_BATCH_STATE_DIRECTORY",
+    "port": 8767,
+    "poll_seconds": 15,
+    "language": "zh"
   },
   "codex_activity_monitor": {
     "response_grace_seconds": 300,
