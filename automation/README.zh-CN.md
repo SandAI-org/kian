@@ -4,6 +4,8 @@
 
 ## 按需清理 Magicore 镜像
 
+远端发布与本地缓存回收是两件事：当前改写 worker 会删除自己的临时容器／预览别名，但会保留拉取及验证镜像。完成批次时应按用户指定的本地保留集合收尾：从处理回执或已发布 digest 台账生成精确清单，复查容器引用和当前 tag 身份，逐项无 force 删除本次操作的引用；可删除别名若与保留 tag 共用 image ID，仍须保留后者。完成后核对所有无关本地引用未变；禁止全局 prune、删除远端 tag，或累加共享层的 tag Size 冒充释放空间。耗时的本地回收也登记统一后台进度页。
+
 非 commit 别名默认排除。用户明确授权具体别名后，逐项传 `--allow-alias <tag>`，在私有计划中记录该项 `commit: null`、排序时间戳及盘点时的 `expected_digest`。流程从镜像核对实际 Git HEAD，不再把别名当 commit 前缀；普通十六进制 commit tags 仍保留前缀校验。别名若指向已验证项原先完全相同的 digest，可通过 `reuse_tag` 核对原/新镜像身份后复用已验证 manifest/config/layers，覆盖后仍回拉验证。扩展计划保留原有进度与回执；别名在盘点后发生变化时不强制覆盖。
 
 明确授权的别名若镜像没有 Git 元数据，可人工核对后在私有计划中提供 `tracked_roots` 及 `source_review.workspace_entries`（完整根目录清单）。流程要求 commit 未知，删除前拒绝新出现的 Git 元数据或目录清单不一致，并在回执中保留核对依据与 `commit: null`，禁止由 tag 猜造 commit。其余运行配置、保留内容、层及发布验证保持一致。
