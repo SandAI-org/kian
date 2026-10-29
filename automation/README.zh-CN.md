@@ -1,5 +1,7 @@
 # 可迁移 Kian 自动化套件
 
+补品提醒在符合日历规则的工作日北京时间 **14:00** 发送，使用统一的大小周／请假／法定假期门控。
+
 ## 按需清理 Magicore 镜像
 
 非 commit 别名默认排除。用户明确授权具体别名后，逐项传 `--allow-alias <tag>`，在私有计划中记录该项 `commit: null`、排序时间戳及盘点时的 `expected_digest`。流程从镜像核对实际 Git HEAD，不再把别名当 commit 前缀；普通十六进制 commit tags 仍保留前缀校验。别名若指向已验证项原先完全相同的 digest，可通过 `reuse_tag` 核对原/新镜像身份后复用已验证 manifest/config/layers，覆盖后仍回拉验证。扩展计划保留原有进度与回执；别名在盘点后发生变化时不强制覆盖。

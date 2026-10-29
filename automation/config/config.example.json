@@ -83,7 +83,7 @@
   "reminders": {
     "supplement": {
       "enabled": true,
-      "schedule": { "hour": 13, "minute": 0 },
+      "schedule": { "hour": 14, "minute": 0 },
       "title": "💊 补品提醒",
       "body": "别忘了今天的补品哦：\n\n🔸 复合维生素\n🔸 鱼油\n🔸 维生素C咀嚼片",
       "confirmation_required": true,
