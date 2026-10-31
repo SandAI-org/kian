@@ -9,6 +9,55 @@ from automation.scripts import file_transfer as transfer
 
 
 class TestBackgroundTasks(unittest.TestCase):
+    def test_transfer_average_excludes_preparation_and_verification(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(tasks, 'process_start', return_value='identity'), \
+                patch.object(tasks.time, 'time', return_value=100) as clock:
+            with tasks.BackgroundTask('file', 'file_transfer', directory=directory, total_bytes=1000) as task:
+                clock.return_value = 110
+                task.update(stage='transferring', bytes_done=0)
+                clock.return_value = 115
+                task.update(bytes_done=500)
+                self.assertEqual(task.data['estimated_remaining_seconds'], 5)
+                clock.return_value = 120
+                task.update(bytes_done=1000)
+                task.update(stage='verifying')
+                clock.return_value = 140
+            saved = json.loads(task.path.read_text())
+            self.assertEqual(saved['elapsed_seconds'], 40)
+            self.assertEqual(saved['transfer_elapsed_seconds'], 10)
+            self.assertEqual(saved['average_transfer_bytes_per_second'], 100)
+            self.assertEqual(saved['average_effective_bytes_per_second'], 25)
+            self.assertNotIn('estimated_remaining_seconds', saved)
+
+    def test_relay_counts_both_transfer_phases_without_counting_byte_resets(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(tasks, 'process_start', return_value='identity'), \
+                patch.object(tasks.time, 'time', return_value=100) as clock:
+            with tasks.BackgroundTask('relay', 'file_transfer', directory=directory, total_bytes=1000) as task:
+                task.update(stage='download_to_staging', phase_index=1, bytes_done=0)
+                clock.return_value = 110
+                task.update(bytes_done=1000)
+                task.update(stage='upload_to_idg', phase_index=2, bytes_done=0)
+                clock.return_value = 130
+                task.update(bytes_done=1000)
+                task.update(stage='verifying')
+            saved = json.loads(task.path.read_text())
+            self.assertEqual(saved['transferred_bytes'], 2000)
+            self.assertEqual(saved['transfer_elapsed_seconds'], 30)
+            self.assertAlmostEqual(saved['average_transfer_bytes_per_second'], 2000 / 30)
+            self.assertAlmostEqual(saved['average_effective_bytes_per_second'], 1000 / 30)
+
+    def test_historical_completion_has_fixed_elapsed_and_honest_effective_average(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'legacy.json'
+            original = {'status': 'completed', 'started_at': 100, 'completed_at': 140, 'total_bytes': 1000}
+            path.write_text(json.dumps(original))
+            with patch.object(tasks.time, 'time', return_value=10000):
+                item = tasks.read_tasks(directory)[0]
+            self.assertEqual(item['elapsed_seconds'], 40)
+            self.assertEqual(item['average_effective_bytes_per_second'], 25)
+            self.assertNotIn('average_transfer_bytes_per_second', item)
+            self.assertEqual(json.loads(path.read_text()), original)
+
     def test_completion_is_only_recorded_after_context_succeeds(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(tasks, 'process_start', return_value='identity'):
             with tasks.BackgroundTask('file', 'file_transfer', directory=directory) as task:
