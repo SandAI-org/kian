@@ -18,6 +18,7 @@ class TestBackgroundTasks(unittest.TestCase):
                 clock.return_value = 115
                 task.update(bytes_done=500)
                 self.assertEqual(task.data['estimated_remaining_seconds'], 5)
+                self.assertEqual(task.data['current_phase_bytes_per_second'], 100)
                 clock.return_value = 120
                 task.update(bytes_done=1000)
                 task.update(stage='verifying')
@@ -28,6 +29,7 @@ class TestBackgroundTasks(unittest.TestCase):
             self.assertEqual(saved['average_transfer_bytes_per_second'], 100)
             self.assertEqual(saved['average_effective_bytes_per_second'], 25)
             self.assertNotIn('estimated_remaining_seconds', saved)
+            self.assertNotIn('current_phase_bytes_per_second', saved)
 
     def test_relay_counts_both_transfer_phases_without_counting_byte_resets(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(tasks, 'process_start', return_value='identity'), \
@@ -37,6 +39,8 @@ class TestBackgroundTasks(unittest.TestCase):
                 clock.return_value = 110
                 task.update(bytes_done=1000)
                 task.update(stage='upload_to_idg', phase_index=2, bytes_done=0)
+                self.assertNotIn('estimated_remaining_seconds', task.data)
+                self.assertNotIn('current_phase_bytes_per_second', task.data)
                 clock.return_value = 130
                 task.update(bytes_done=1000)
                 task.update(stage='verifying')

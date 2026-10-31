@@ -37,13 +37,14 @@ def task_metrics(item, now):
     size = item.get('total_bytes')
     if item.get('status') == 'completed' and size is not None and item.get('elapsed_seconds', 0) > 0:
         item['average_effective_bytes_per_second'] = size / item['elapsed_seconds']
+    item.pop('current_phase_bytes_per_second', None)
+    item.pop('estimated_remaining_seconds', None)
     if item.get('transfer_started_at') is not None and size is not None and item.get('source_is_file') is not False:
         phase_seconds = max(0, end - item['transfer_started_at'])
         phase_bytes = max(0, item.get('bytes_done', 0) - item.get('transfer_bytes_at_start', 0))
         if phase_seconds > 0 and phase_bytes > 0:
+            item['current_phase_bytes_per_second'] = phase_bytes / phase_seconds
             item['estimated_remaining_seconds'] = max(0, size - item.get('bytes_done', 0)) * phase_seconds / phase_bytes
-    elif item.get('transfer_started_at') is None:
-        item.pop('estimated_remaining_seconds', None)
     return item
 
 
