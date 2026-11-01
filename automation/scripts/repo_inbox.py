@@ -31,6 +31,8 @@ def connect():
         required INTEGER NOT NULL, score INTEGER, captured_at TEXT,
         imported_at TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, read_at TEXT)''')
     db.execute('CREATE INDEX IF NOT EXISTS inbox_channel_repo ON events(channel,repo)')
+    db.execute('CREATE TABLE IF NOT EXISTS event_dates (event_id TEXT PRIMARY KEY, event_at TEXT NOT NULL, date_source TEXT NOT NULL)')
+    db.execute('CREATE TABLE IF NOT EXISTS source_dates_cache (url TEXT PRIMARY KEY, payload TEXT NOT NULL)')
     try:
         with db:
             yield db
@@ -69,6 +71,9 @@ def archive(groups, channel, captured_at=None):
                     (identity, channel, group['repo'], group.get('source_name', ''), md, title, summary, url, kind,
                      bool(event.get('required', False)), event.get('score'), event.get('captured_at', captured_at), now))
                 added += cursor.rowcount
+                if event.get("event_at"):
+                    db.execute('INSERT OR IGNORE INTO event_dates VALUES (?,?,?)',
+                               (identity, event['event_at'], event.get('date_source', 'source.timestamp')))
     return added
 
 
@@ -87,7 +92,7 @@ def import_pending():
 
 def snapshot():
     with connect() as db:
-        events = [dict(r) for r in db.execute('SELECT * FROM events ORDER BY imported_at DESC,id')]
+        events = [dict(r) for r in db.execute('SELECT events.*,event_dates.event_at,event_dates.date_source FROM events LEFT JOIN event_dates ON events.id=event_dates.event_id ORDER BY imported_at DESC,id')]
     return {'events': events, 'observed_at': datetime.now(timezone.utc).isoformat()}
 
 

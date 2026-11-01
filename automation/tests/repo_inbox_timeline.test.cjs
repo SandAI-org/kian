@@ -44,3 +44,9 @@ test('day actions retain all entries beyond the visible page', () => {
   assert.equal(new Set(day.events.map(e => e.id)).size, 40);
   assert.deepEqual(day.events, input);
 });
+
+test('backfilled source event dates precede collection dates without changing read dates', () => {
+  assert.equal(dayOf(event('merged', '2026-11-01T10:00:00Z', {
+    event_at:'2026-10-29T15:59:59Z', read_at:'2026-11-03T00:00:00Z',
+  })), '2026-10-29');
+});

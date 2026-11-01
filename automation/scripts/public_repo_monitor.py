@@ -489,8 +489,12 @@ def excluded_event(repo_config, repo, item, kind):
 
 
 def event_block(markdown, item, kind, identity, repo="", score=None):
+    from repo_inbox_dates import source_time
+    event_at, date_source = source_time(markdown, item)
     return {
         "markdown": markdown,
+        "event_at": event_at,
+        "date_source": date_source,
         "summary_key": "{0}:{1}".format(kind, identity),
         "summary_kind": kind,
         "title": str(item.get("title") or item.get("name") or item.get("tag_name") or ""),
@@ -1105,7 +1109,7 @@ def prepare_notification_group(repo_config, repo_state, blocks):
     events = []
     for block, markdown in zip(blocks, rendered):
         event = {"markdown": markdown, "captured_at": now_iso()}
-        for key in ("complete_pin", "required", "score"):
+        for key in ("complete_pin", "required", "score", "event_at", "date_source"):
             if key in block:
                 event[key] = block[key]
         events.append(event)

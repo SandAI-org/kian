@@ -1,7 +1,9 @@
 (function () {
+  function timestamp(event) { return event.event_at || event.captured_at; }
+
   function dayOf(event) {
-    if (!event.captured_at) return null;
-    const date = new Date(event.captured_at);
+    if (!timestamp(event)) return null;
+    const date = new Date(timestamp(event));
     if (!Number.isFinite(date.getTime())) return null;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -38,7 +40,7 @@
     return result;
   }
 
-  const api = { dayOf, group };
+  const api = { dayOf, group, timestamp };
   if (typeof module !== 'undefined') module.exports = api;
   else window.InboxTimeline = api;
 }());
