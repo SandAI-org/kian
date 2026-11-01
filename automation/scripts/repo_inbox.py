@@ -52,7 +52,7 @@ def fields(markdown):
     title = plain(match[1]) if match else plain(next((s for s in markdown.splitlines() if s.strip()), ''))
     lines = [plain(s) for s in markdown.splitlines() if s.strip()]
     summary = next((s.split('：', 1)[-1].strip() for s in lines if '中文摘要' in s), '')
-    kind = 'pr' if '/pull/' in url else 'issue' if '/issues/' in url else 'release' if '/releases/' in url else 'article'
+    kind = 'paper' if 'papers.cool/' in url or 'arxiv.org/abs/' in url else 'pr' if '/pull/' in url else 'issue' if '/issues/' in url else 'release' if '/releases/' in url else 'article'
     return title, summary, url, kind
 
 
@@ -63,12 +63,15 @@ def archive(groups, channel, captured_at=None):
         for group in groups:
             for event in group.get('events', []):
                 md = event['markdown']
-                identity = hashlib.sha256(json.dumps([channel, group['repo'], md], ensure_ascii=False).encode()).hexdigest()
+                event_channel = group.get('channel', channel)
+                identity = hashlib.sha256(json.dumps([event_channel, group['repo'], md], ensure_ascii=False).encode()).hexdigest()
                 title, summary, url, kind = fields(md)
+                if event_channel == 'papers':
+                    kind = 'paper'
                 cursor = db.execute('''INSERT OR IGNORE INTO events
                     (id,channel,repo,source_name,markdown,title,summary,url,kind,required,score,captured_at,imported_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                    (identity, channel, group['repo'], group.get('source_name', ''), md, title, summary, url, kind,
+                    (identity, event_channel, group['repo'], group.get('source_name', ''), md, title, summary, url, kind,
                      bool(event.get('required', False)), event.get('score'), event.get('captured_at', captured_at), now))
                 added += cursor.rowcount
                 if event.get("event_at"):
@@ -113,6 +116,8 @@ def notification_body(groups, config, channel, daily=False):
         totals[group.get('source_name') or group['repo']] += len(group.get('events', []))
     en = config.get('repo_inbox', {}).get('language', 'zh') == 'en'
     heading = ('Repository daily digest' if daily else 'Repository updates') if en else ('本次每日总结已整理' if daily else '有新的仓库更新')
+    if channel in ('papers', 'all') and not daily:
+        heading = 'New reading updates' if en else '有新的阅读动态'
     body = f'**{heading}** · {sum(totals.values())} ' + ('items' if en else '条') + '\n\n'
     body += '\n'.join(f'• {repo} · {count}' for repo, count in totals.items())
     settings = config.get('repo_inbox', {})

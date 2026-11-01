@@ -110,6 +110,32 @@
         "name": "Anthropic Research",
         "index_url": "https://www.anthropic.com/research",
         "link_pattern": "^/research/[^/]+$"
+      },
+      {
+        "id": "papers-cool-infra",
+        "type": "papers_cool",
+        "name": "AI Infra Papers",
+        "arxiv_categories": [
+          "cs.DC",
+          "cs.AR",
+          "cs.PF",
+          "cs.OS",
+          "cs.PL",
+          "cs.LG",
+          "cs.CL",
+          "cs.AI"
+        ],
+        "venues": [
+          "MLSYS",
+          "OSDI",
+          "USENIX-Fast"
+        ],
+        "min_score": 8,
+        "bootstrap_limit": 12,
+        "exclude_title_patterns": [
+          "\\b(?:AMD|ROCm|HIP|XPU|MPS|FPGA|TPU|Windows)\\b",
+          "\\b(?:Apple|Macs?|Metal|quantum|photonic)\\b"
+        ]
       }
     ],
     "quiet_hours": {

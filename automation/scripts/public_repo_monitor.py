@@ -524,11 +524,11 @@ def copilot_chinese_summaries(blocks):
             "key": block["summary_key"],
             "kind": block["summary_kind"],
             "title": block["title"][:300],
-            "body": summary_body(block["body"]),
+            "body": compact_body(block["body"], 4000) if block["summary_kind"] == "paper" else summary_body(block["body"]),
         }
         for block in blocks
     ]
-    prompt = """请为下面的开源项目事件（PR、Issue、Release 或 Blog）生成中文摘要。要求：
+    prompt = """请为下面的开源项目事件（PR、Issue、Release、Blog 或论文）生成中文摘要。要求：
 1. 每项用 1-2 句中文，不超过 90 个汉字；说明改了什么、为什么重要或解决什么问题。
 2. 不要只翻译标题；结合正文，但不要臆测正文没有的信息。
 3. 保留 CUDA、FP8、API 等技术名词。不要 Markdown、不要 emoji。
@@ -562,11 +562,13 @@ def copilot_chinese_summaries(blocks):
 
 
 def add_chinese_summaries(blocks):
-    try:
-        summaries = copilot_chinese_summaries(blocks)
-    except Exception as cause:
-        print("[warn] Chinese summary failed: {0}".format(cause), file=sys.stderr)
-        summaries = {}
+    summaries = {}
+    for _ in range(2 if any(b["summary_kind"] == "paper" for b in blocks) else 1):
+        try:
+            summaries = copilot_chinese_summaries(blocks)
+            break
+        except Exception as cause:
+            print("[warn] Chinese summary failed: {0}".format(cause), file=sys.stderr)
     rendered = []
     for block in blocks:
         summary = summaries.get(block["summary_key"])
@@ -734,6 +736,27 @@ def discover_blog_posts(source):
 
 
 def collect_source(source, previous, capture_time):
+    if source.get("type") == "papers_cool":
+        from papers_cool_watch import collect
+        papers, next_state = collect(source, previous, capture_time, web_page_get)
+        config = dict(source, repo="paper:" + source["id"])
+        en = INBOX_CONFIG.get("repo_inbox", {}).get("language", "zh") == "en"
+        blocks = []
+        for paper in papers:
+            identity = hashlib.sha256(paper["id"].encode()).hexdigest()[:20]
+            label = "New paper" if en else "论文更新"
+            metadata = "Authors" if en else "作者"
+            original = "Original paper" if en else "论文原文"
+            title = re.sub(r"[\[\]*`]", "", paper["title"])
+            markdown = "**{0}** · {1}\n\n📌 **{2}**\n\n{3}\n\n{4}: {5}\n\nSignals: {6}\n\n[🔗 papers.cool]({7}) · [{8}]({9})".format(
+                label, paper["listing"], title, SUMMARY_MARKER, metadata, paper["author"],
+                " · ".join(paper["reasons"]), paper["link"], original, paper["original"],
+            )
+            blocks.append(dict(markdown=markdown, summary_key="paper:" + identity, summary_kind="paper",
+                               title=paper["title"], body=paper["body"], required=False, score=paper["score"],
+                               event_at=paper["published"] or capture_time,
+                               date_source="paper.published" if paper["published"] else "paper.discovered"))
+        return config, blocks, next_state
     config = dict(source, repo="source:" + source["id"], blogs=[source])
     blocks, feeds = collect_blog_posts(config, previous)
     return config, blocks, {"last_check": capture_time, "blog_feeds": feeds}
@@ -1105,7 +1128,11 @@ def repo_intro(repo, level, branches):
 
 
 def prepare_notification_group(repo_config, repo_state, blocks):
-    rendered = add_chinese_summaries(blocks)
+    if repo_config.get("type") == "papers_cool":
+        rendered = [markdown for offset in range(0, len(blocks), 10)
+                    for markdown in add_chinese_summaries(blocks[offset:offset + 10])]
+    else:
+        rendered = add_chinese_summaries(blocks)
     events = []
     for block, markdown in zip(blocks, rendered):
         event = {"markdown": markdown, "captured_at": now_iso()}
@@ -1115,7 +1142,8 @@ def prepare_notification_group(repo_config, repo_state, blocks):
         events.append(event)
     return {
         "repo": repo_config["repo"],
-        "source_name": repo_config.get("name", "") if repo_config.get("repo", "").startswith("source:") else "",
+        "source_name": repo_config.get("name", "") if repo_config.get("repo", "").startswith(("source:", "paper:")) else "",
+        "channel": "papers" if repo_config.get("repo", "").startswith("paper:") else "public",
         "level": repo_config.get("level", "balanced"),
         "integration_branches": repo_state.get("integration_branches", []),
         "events": events,
@@ -1138,6 +1166,7 @@ def ordered_notification_groups(groups):
             combined[repo] = {
                 "repo": repo,
                 "source_name": group.get("source_name", ""),
+                "channel": group.get("channel", "public"),
                 "level": group.get("level", "balanced"),
                 "integration_branches": group.get("integration_branches", []),
                 "events": [],
@@ -1151,7 +1180,7 @@ def ordered_notification_groups(groups):
 def render_notification_batch(groups):
     sections = []
     for group in ordered_notification_groups(groups):
-        intro = "📰 **{0}** · Research blog".format(group["source_name"]) if group.get("source_name") else repo_intro(
+        intro = ("📚 **{0}** · Research papers" if group.get("channel") == "papers" else "📰 **{0}** · Research blog").format(group["source_name"]) if group.get("source_name") else repo_intro(
             group["repo"], group["level"], group.get("integration_branches", []),
         )
         markdown = "\n\n---\n\n".join(event["markdown"] for event in group["events"])
@@ -1233,7 +1262,7 @@ def run():
                     config, blocks, next_state = collect_source(source, previous, capture_time)
                     if not previous.get("last_check"):
                         bootstrapped += 1
-                    elif blocks:
+                    if blocks:
                         pending.append(prepare_notification_group(config, next_state, blocks))
                         queued += len(blocks)
                     source_states[source_id] = next_state
@@ -1252,12 +1281,16 @@ def run():
         ):
             batch, remaining = (ordered_notification_groups(pending), []) if inbox_enabled else take_pending_batch(pending)
             events = pending_events(batch)
-            body = notification_body(batch, INBOX_CONFIG, "public") if inbox_enabled else render_notification_batch(batch)
+            reader_channel = "papers" if all(g.get("channel") == "papers" for g in batch) else "all" if any(g.get("channel") == "papers" for g in batch) else "public"
+            body = notification_body(batch, INBOX_CONFIG, reader_channel) if inbox_enabled else render_notification_batch(batch)
             deferred = len(pending_events(remaining))
             if deferred:
                 body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)
             try:
                 title = "🌐 开源仓库与研究博客实时更新" if any(group.get("source_name") for group in batch) else "🌐 开源仓库实时更新"
+                if any(g.get("channel") == "papers" for g in batch):
+                    en = INBOX_CONFIG.get("repo_inbox", {}).get("language", "zh") == "en"
+                    title = ("📚 Paper updates" if en else "📚 论文更新") if all(g.get("channel") == "papers" for g in batch) else ("🌐 Open-source, blog and paper updates" if en else "🌐 开源仓库、研究博客与论文更新")
                 send_card(title, body, template="purple")
             except Exception as cause:
                 print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)
