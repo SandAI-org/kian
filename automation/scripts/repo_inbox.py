@@ -56,6 +56,10 @@ def fields(markdown):
     return title, summary, url, kind
 
 
+def event_id(channel, repo, markdown):
+    return hashlib.sha256(json.dumps([channel, repo, markdown], ensure_ascii=False).encode()).hexdigest()
+
+
 def archive(groups, channel, captured_at=None):
     now = datetime.now(timezone.utc).isoformat()
     added = 0
@@ -64,7 +68,7 @@ def archive(groups, channel, captured_at=None):
             for event in group.get('events', []):
                 md = event['markdown']
                 event_channel = group.get('channel', channel)
-                identity = hashlib.sha256(json.dumps([event_channel, group['repo'], md], ensure_ascii=False).encode()).hexdigest()
+                identity = event_id(event_channel, group['repo'], md)
                 title, summary, url, kind = fields(md)
                 if event_channel == 'papers':
                     kind = 'paper'
@@ -109,8 +113,24 @@ def mark_read(ids, is_read):
                        [(is_read, datetime.now(timezone.utc).isoformat() if is_read else None, i) for i in ids])
 
 
+def unread_groups(groups, channel):
+    channel = 'public' if channel == 'all' else channel
+    with connect() as db:
+        read_ids = {row['id'] for row in db.execute('SELECT id FROM events WHERE is_read=1')}
+    result = []
+    for group in groups:
+        events = [event for event in group.get('events', [])
+                  if event_id(group.get('channel', channel), group['repo'], event['markdown']) not in read_ids]
+        if events:
+            result.append(dict(group, events=events))
+    return result
+
+
 def notification_body(groups, config, channel, daily=False):
     from collections import Counter
+    groups = unread_groups(groups, channel)
+    if not groups:
+        return ''
     totals = Counter()
     for group in groups:
         totals[group.get('source_name') or group['repo']] += len(group.get('events', []))
@@ -118,7 +138,7 @@ def notification_body(groups, config, channel, daily=False):
     heading = ('Repository daily digest' if daily else 'Repository updates') if en else ('本次每日总结已整理' if daily else '有新的仓库更新')
     if channel in ('papers', 'all') and not daily:
         heading = 'New reading updates' if en else '有新的阅读动态'
-    body = f'**{heading}** · {sum(totals.values())} ' + ('items' if en else '条') + '\n\n'
+    body = f'**{heading}** · {sum(totals.values())} ' + ('unread items' if en else '条未读') + '\n\n'
     body += '\n'.join(f'• {repo} · {count}' for repo, count in totals.items())
     settings = config.get('repo_inbox', {})
     url = settings.get('reader_url') or f"http://127.0.0.1:{int(settings.get('port', 8768))}/"

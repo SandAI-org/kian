@@ -626,7 +626,8 @@ def _realtime():
     try:
         if inbox_enabled(CONFIG):
             md = inbox_notification_body(inbox_groups, CONFIG, "owned")
-        feishu_send_card("🔔 我的仓库实时更新", md, "orange")
+        if md:
+            feishu_send_card("🔔 我的仓库实时更新", md, "orange")
     except Exception as e:
         print(f"PUSH_FAILED (will retry next run): {e}", file=sys.stderr)
         print("PUSH_FAILED")
@@ -635,7 +636,7 @@ def _realtime():
     state["last_check"] = capture_time
     state["pr_heads"] = current_pr_heads
     save_state(state)
-    print(f"PUSHED {len(all_updates)} updates")
+    print(f"PUSHED {len(all_updates)} updates" if md else "SKIPPED_ALREADY_READ")
 
 
 DAILY_STAMP = str(STATE_DIR / "daily-sent.json")
@@ -709,7 +710,7 @@ def _daily(now=None):
             state["inbox_daily_snapshot"] = {"date": today, "overview": overview}
             save_state(state)
         inbox_archive(groups, "owned")
-        md = inbox_notification_body(groups, CONFIG, "owned", daily=True) if groups else overview
+        md = inbox_notification_body(groups, CONFIG, "owned", daily=True)
         count = len(deferred)
     else:
         md, count = daily_part(overview, deferred)
@@ -722,10 +723,10 @@ def _daily(now=None):
         except Exception as error:
             print("DAILY_PUSH_FAILED (will retry): " + type(error).__name__, file=sys.stderr)
             return
-        state["deferred_updates"] = deferred[count:]
-        state["daily_delivery"] = {"date": today, "overview_sent": True,
-                                   "parts": (previous.get("parts", 0) if overview_sent else 0) + 1}
-        save_state(state)
+    state["deferred_updates"] = deferred[count:]
+    state["daily_delivery"] = {"date": today, "overview_sent": True,
+                               "parts": (previous.get("parts", 0) if overview_sent else 0) + int(bool(md))}
+    save_state(state)
     if not state.get("deferred_updates"):
         temporary = DAILY_STAMP + ".tmp"
         with open(temporary, "w") as handle:

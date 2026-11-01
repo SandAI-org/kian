@@ -1272,7 +1272,7 @@ def run():
                     print("[error] source {0}: {1}".format(source_id, cause), file=sys.stderr)
             state["last_scan_at"] = capture_time
             save_state(state)
-        from repo_inbox import enabled, archive, notification_body
+        from repo_inbox import enabled, archive, notification_body, unread_groups
         inbox_enabled = enabled(INBOX_CONFIG)
         if pending and inbox_enabled:
             archive(pending, "public")
@@ -1281,6 +1281,8 @@ def run():
         ):
             batch, remaining = (ordered_notification_groups(pending), []) if inbox_enabled else take_pending_batch(pending)
             events = pending_events(batch)
+            if inbox_enabled:
+                batch = unread_groups(batch, "public")
             reader_channel = "papers" if all(g.get("channel") == "papers" for g in batch) else "all" if any(g.get("channel") == "papers" for g in batch) else "public"
             body = notification_body(batch, INBOX_CONFIG, reader_channel) if inbox_enabled else render_notification_batch(batch)
             deferred = len(pending_events(remaining))
@@ -1291,7 +1293,8 @@ def run():
                 if any(g.get("channel") == "papers" for g in batch):
                     en = INBOX_CONFIG.get("repo_inbox", {}).get("language", "zh") == "en"
                     title = ("📚 Paper updates" if en else "📚 论文更新") if all(g.get("channel") == "papers" for g in batch) else ("🌐 Open-source, blog and paper updates" if en else "🌐 开源仓库、研究博客与论文更新")
-                send_card(title, body, template="purple")
+                if body:
+                    send_card(title, body, template="purple")
             except Exception as cause:
                 print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)
             else:
@@ -1301,7 +1304,7 @@ def run():
                         deactivate_pin(
                             completion["repo"], completion["number"], completion["outcome"],
                         )
-                delivered = len(events)
+                delivered = len(pending_events(batch)) if body else 0
                 pending[:] = remaining
                 save_state(state)
         print(
