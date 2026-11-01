@@ -35,7 +35,7 @@ def make_handler(port, language='zh', repositories=()):
             route = urlsplit(self.path).path
             if route == '/api/inbox':
                 return self.reply(200, dict(repo_inbox.snapshot(), token=token, language=language, repositories=[{"repo": repo, "channel": "owned"} for repo in repositories]))
-            assets = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+            assets = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/timeline.js': ('timeline.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
             if route not in assets:
                 return self.reply(404, {'error': 'Not found'})
             name, mime = assets[route]
