@@ -78,6 +78,7 @@ required = {
   "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
   "codex_lock_guard": ["codex_lock_guard.targets"],
   "image_cleanup_dashboard": [],
+  "repo_inbox": [],
   "codex_activity_monitor": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_activity_monitor.targets"],
 }[service]
 
@@ -163,7 +164,7 @@ remove_legacy_service() {
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor image_cleanup_dashboard; do
+for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor image_cleanup_dashboard repo_inbox; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

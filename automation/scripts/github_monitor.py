@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from automation_common import STATE_DIR, load_config
 from work_calendar import notification_allowed
+from repo_inbox import enabled as inbox_enabled, archive as inbox_archive, notification_body as inbox_notification_body
 
 CONFIG = load_config()
 
@@ -594,6 +595,10 @@ def _realtime():
         print("NO_UPDATES")
         return
 
+    inbox_groups = [{"repo": repo, "events": [{"markdown": block, "captured_at": capture_time}]} for repo, block in all_updates]
+    if inbox_enabled(CONFIG):
+        inbox_archive(inbox_groups, "owned")
+
     if owned_notifications_paused(datetime.fromisoformat(capture_time.replace("Z", "+00:00"))) or owned_notifications_paused():
         state.setdefault("deferred_updates", []).extend(
             {"repo": repo, "markdown": block, "captured_at": capture_time}
@@ -619,6 +624,8 @@ def _realtime():
 
     # 先推送，成功后才推进时间戳；推送失败则不保存，下次重试
     try:
+        if inbox_enabled(CONFIG):
+            md = inbox_notification_body(inbox_groups, CONFIG, "owned")
         feishu_send_card("🔔 我的仓库实时更新", md, "orange")
     except Exception as e:
         print(f"PUSH_FAILED (will retry next run): {e}", file=sys.stderr)
@@ -679,12 +686,33 @@ def _daily(now=None):
     previous = state.get("daily_delivery", {})
     overview_sent = previous.get("date") == today and previous.get("overview_sent", False)
     try:
-        overview = "" if overview_sent else _build_daily_md()
+        cached = state.get("inbox_daily_snapshot", {})
+        overview = "" if overview_sent else cached["overview"] if inbox_enabled(CONFIG) and cached.get("date") == today else _build_daily_md()
     except Exception as error:
         print("DAILY_BUILD_FAILED (will retry): " + type(error).__name__, file=sys.stderr)
         return
     deferred = state.get("deferred_updates", [])
-    md, count = daily_part(overview, deferred)
+    if inbox_enabled(CONFIG):
+        groups = [{"repo": event["repo"], "events": [event]} for event in deferred]
+        # Keep each repository's current daily snapshot as its own readable item.
+        for section in overview.split("\n\n---\n\n"):
+            match = re.search(r"\*\*📦 ([^*]+)\*\*", section)
+            if match:
+                for block in re.split(r"(?=🔀 \*\*PR |🐛 \*\*Issue )", section):
+                    if not block.startswith(("🔀 **PR ", "🐛 **Issue ")):
+                        continue
+                    lines = block.strip().splitlines()
+                    if len(lines) > 1:
+                        lines[1] = "📌 **" + lines[1].strip() + "**"
+                    groups.append({"repo": match[1], "events": [{"markdown": "\n".join(lines), "captured_at": now_iso()}]})
+        if overview and state.get("inbox_daily_snapshot", {}).get("date") != today:
+            state["inbox_daily_snapshot"] = {"date": today, "overview": overview}
+            save_state(state)
+        inbox_archive(groups, "owned")
+        md = inbox_notification_body(groups, CONFIG, "owned", daily=True) if groups else overview
+        count = len(deferred)
+    else:
+        md, count = daily_part(overview, deferred)
     if md:
         identity = json.dumps([today, overview_sent, previous.get("parts", 0) if overview_sent else 0,
                                deferred[:count]], sort_keys=True)

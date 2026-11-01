@@ -28,6 +28,7 @@ GITHUB = {}
 SUMMARIZATION = {}
 PUBLIC_SERVICE = {}
 WORK_CALENDAR = {}
+INBOX_CONFIG = {}
 STATE_FILE = STATE_DIR / "public-watch-state.json"
 LOCK_FILE = STATE_DIR / "public-watch.lock"
 PINS_DIR = STATE_DIR / "public-watch-pins"
@@ -42,13 +43,14 @@ SUMMARY_MARKER = "@@KIAN_CHINESE_SUMMARY@@"
 
 
 def configure(config=None):
-    global WATCH, GITHUB, SUMMARIZATION, PUBLIC_SERVICE, WORK_CALENDAR
+    global WATCH, GITHUB, SUMMARIZATION, PUBLIC_SERVICE, WORK_CALENDAR, INBOX_CONFIG
     config = config or load_config()
     WATCH = config.get("public_watch", {})
     GITHUB = config.get("github", {})
     SUMMARIZATION = config.get("summarization", {})
     PUBLIC_SERVICE = config.get("services", {}).get("public_watch", {})
     WORK_CALENDAR = config.get("work_calendar", {})
+    INBOX_CONFIG = config
 
 
 def send_card(title, body, template, actions=None):
@@ -1102,7 +1104,7 @@ def prepare_notification_group(repo_config, repo_state, blocks):
     rendered = add_chinese_summaries(blocks)
     events = []
     for block, markdown in zip(blocks, rendered):
-        event = {"markdown": markdown}
+        event = {"markdown": markdown, "captured_at": now_iso()}
         for key in ("complete_pin", "required", "score"):
             if key in block:
                 event[key] = block[key]
@@ -1237,12 +1239,16 @@ def run():
                     print("[error] source {0}: {1}".format(source_id, cause), file=sys.stderr)
             state["last_scan_at"] = capture_time
             save_state(state)
+        from repo_inbox import enabled, archive, notification_body
+        inbox_enabled = enabled(INBOX_CONFIG)
+        if pending and inbox_enabled:
+            archive(pending, "public")
         if pending and not in_quiet_hours() and notification_allowed(
             "public_watch", config={"work_calendar": WORK_CALENDAR},
         ):
-            batch, remaining = take_pending_batch(pending)
+            batch, remaining = (ordered_notification_groups(pending), []) if inbox_enabled else take_pending_batch(pending)
             events = pending_events(batch)
-            body = render_notification_batch(batch)
+            body = notification_body(batch, INBOX_CONFIG, "public") if inbox_enabled else render_notification_batch(batch)
             deferred = len(pending_events(remaining))
             if deferred:
                 body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)

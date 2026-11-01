@@ -8,6 +8,7 @@
     "codex_lock_guard": { "enabled": false },
     "codex_activity_monitor": { "enabled": false, "interval_seconds": 60 },
     "image_cleanup_dashboard": { "enabled": false },
+    "repo_inbox": { "enabled": false },
     "public_watch": {
       "enabled": false,
       "interval_seconds": 3600,
@@ -16,6 +17,7 @@
       "flush_minute": 30
     }
   },
+  "repo_inbox": { "port": 8768, "language": "zh" },
   "image_cleanup_dashboard": {
     "host": "REPLACE_WITH_SSH_ALIAS",
     "state_dir": "REPLACE_WITH_REMOTE_BATCH_STATE_DIRECTORY",
