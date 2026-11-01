@@ -11,7 +11,7 @@ import repo_inbox
 ASSETS = Path(__file__).with_name('repo_inbox_web')
 
 
-def make_handler(port, language='zh'):
+def make_handler(port, language='zh', repositories=()):
     token = secrets.token_urlsafe(32)
 
     class Handler(BaseHTTPRequestHandler):
@@ -34,7 +34,7 @@ def make_handler(port, language='zh'):
                 return self.reply(403, {'error': 'Invalid host'})
             route = urlsplit(self.path).path
             if route == '/api/inbox':
-                return self.reply(200, dict(repo_inbox.snapshot(), token=token, language=language))
+                return self.reply(200, dict(repo_inbox.snapshot(), token=token, language=language, repositories=[{"repo": repo, "channel": "owned"} for repo in repositories]))
             assets = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
             if route not in assets:
                 return self.reply(404, {'error': 'Not found'})
@@ -71,7 +71,7 @@ def main():
     repo_inbox.import_pending()
     settings = config.get('repo_inbox', {})
     port = int(settings.get('port', 8768))
-    ThreadingHTTPServer(('127.0.0.1', port), make_handler(port, settings.get('language', 'zh'))).serve_forever()
+    ThreadingHTTPServer(('127.0.0.1', port), make_handler(port, settings.get('language', 'zh'), config.get('github', {}).get('repos', []))).serve_forever()
 
 
 if __name__ == '__main__':

@@ -60,7 +60,7 @@ class RepoInboxTest(unittest.TestCase):
         inbox.archive(self.groups, 'public')
         server = ThreadingHTTPServer(('127.0.0.1', 0), dashboard.make_handler(0))
         port = server.server_port
-        server.RequestHandlerClass = dashboard.make_handler(port)
+        server.RequestHandlerClass = dashboard.make_handler(port, repositories=["example/empty-repo"])
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
@@ -68,6 +68,7 @@ class RepoInboxTest(unittest.TestCase):
         base = f'http://127.0.0.1:{port}'
         with urllib.request.urlopen(base + '/api/inbox') as response:
             data = json.load(response)
+        self.assertEqual(data['repositories'], [{'repo': 'example/empty-repo', 'channel': 'owned'}])
         payload = json.dumps({'ids': [data['events'][0]['id']], 'is_read': True}).encode()
         for origin, expected in [(base, 200), ('https://untrusted.example', 403)]:
             request = urllib.request.Request(base + '/api/read', data=payload, headers={
