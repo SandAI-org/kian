@@ -1,4 +1,6 @@
 import json
+import subprocess
+import shutil
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -23,6 +25,34 @@ class TestImageCleanupDashboard(unittest.TestCase):
         with patch.object(dashboard.subprocess, 'run', return_value=SimpleNamespace(returncode=255, stdout='')):
             with self.assertRaisesRegex(RuntimeError, 'unavailable'):
                 dashboard.snapshot({'host': 'host', 'state_dir': '/batch'})
+
+
+    def test_live_metrics_distinguish_directory_scan_and_verification(self):
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('Node.js unavailable')
+        script = dashboard.TASK_HTML.split('<script>')[1].split('</script>')[0]
+        texts = script.split('const texts=', 1)[1].split(';\nconst t=', 1)[0]
+        helpers = script[script.index('function bytes('):script.index('function element(')]
+        metrics = script[script.index('function transferMetrics('):script.index('function card(')]
+        cases = [
+            {'stage': 'upload_to_idg', 'source_is_file': False},
+            {'stage': 'sha256_verification', 'source_is_file': False, 'speed': 'stale', 'eta': '00:01:00'},
+            {'stage': 'transferring', 'source_is_file': False, 'speed': '3.25MB/s', 'eta': '00:01:20'},
+            {'stage': 'transferring', 'source_is_file': True, 'current_phase_bytes_per_second': 1024, 'estimated_remaining_seconds': 5},
+        ]
+        source = 'const texts=' + texts + ';const t=texts.en;\n' + helpers + metrics
+        source += '\nconsole.log(JSON.stringify(' + json.dumps(cases) + '.map(transferMetrics)))'
+        result = subprocess.run([node, '-e', source], text=True, capture_output=True, check=True)
+        scan, verify, directory_file, file = json.loads(result.stdout)
+        self.assertEqual(scan[0][1], 'Delta sync; ETA unavailable')
+        self.assertEqual(scan[1][1], 'No transfer-speed sample yet')
+        self.assertEqual(verify[1][1], 'No transfer in this stage')
+        self.assertNotIn('stale', json.dumps(verify))
+        self.assertEqual(directory_file[0][0], 'Current file ETA')
+        self.assertEqual(directory_file[1][1], '3.25MB/s')
+        self.assertEqual(file[0][1], '5s')
+        self.assertEqual(file[1][1], '1.0 KiB/s')
 
 
 if __name__ == '__main__':
