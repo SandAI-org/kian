@@ -126,11 +126,11 @@ def unread_groups(groups, channel):
     return result
 
 
-def notification_body(groups, config, channel, daily=False):
+def notification_card(groups, config, channel, daily=False):
     from collections import Counter
     groups = unread_groups(groups, channel)
     if not groups:
-        return ''
+        return {'body': '', 'elements': []}
     totals = Counter()
     for group in groups:
         totals[group.get('source_name') or group['repo']] += len(group.get('events', []))
@@ -139,13 +139,42 @@ def notification_body(groups, config, channel, daily=False):
     if channel in ('papers', 'all') and not daily:
         heading = 'New reading updates' if en else '有新的阅读动态'
     body = f'**{heading}** · {sum(totals.values())} ' + ('unread items' if en else '条未读') + '\n\n'
-    body += '\n'.join(f'• {repo} · {count}' for repo, count in totals.items())
+    body += '\n'.join(f'**{repo}** · {count}' for repo, count in totals.items())
     settings = config.get('repo_inbox', {})
     url = settings.get('reader_url') or f"http://127.0.0.1:{int(settings.get('port', 8768))}/"
     if urlsplit(url).scheme not in ('http', 'https'):
         raise ValueError('Invalid reader URL')
-    body += '\n\n[' + ('Open reading inbox' if en else '打开阅读收件箱') + f']({url}?channel={channel})'
+    target = url + ('&' if urlsplit(url).query else '?') + 'channel=' + channel
+    body += '\n\n[' + ('Open reading inbox' if en else '打开阅读收件箱') + f']({target})'
     body += '\n\n' + ('Read status is saved in the inbox.' if en else '详细内容与已读状态保存在网页中。')
     if urlsplit(url).hostname in ('127.0.0.1', 'localhost'):
         body += '\n' + ('This link opens on this computer; phone access is not configured.' if en else '此链接在这台电脑打开；尚未配置手机访问。')
-    return body
+    labels = {'pytorch': 'PyTorch', 'triton': 'Triton', 'cutlass': 'CUTLASS', 'nccl': 'NCCL', 'magicore': 'Magicore', 'odin': 'Odin'}
+    names = {name: labels.get(name.rsplit('/', 1)[-1], name.rsplit('/', 1)[-1]) for name in totals}
+    duplicates = Counter(names.values())
+    for name, label in list(names.items()):
+        if duplicates[label] > 1:
+            names[name] = name
+    def column(content):
+        return {'tag': 'column', 'width': 'weighted', 'weight': 1,
+                'elements': [{'tag': 'div', 'text': {'tag': 'lark_md', 'content': content}}]}
+    elements = [{'tag': 'column_set', 'flex_mode': 'bisect', 'background_style': 'grey', 'columns': [
+        column(f"**{sum(totals.values()):,}**\n" + ('Unread updates' if en else '未读更新')),
+        column(f"**{len(totals)}**\n" + ('Repositories / sources' if en else '仓库 / 来源')),
+    ]}, {'tag': 'hr'}]
+    entries = list(totals.items())
+    for offset in range(0, len(entries), 2):
+        columns = [column(f"**{names[name]}**\n{count:,} " + ('unread' if en else '条未读'))
+                   for name, count in entries[offset:offset + 2]]
+        if len(columns) == 1:
+            columns.append(column(' '))
+        elements.append({'tag': 'column_set', 'flex_mode': 'bisect', 'background_style': 'default', 'columns': columns})
+    elements.extend([{'tag': 'hr'}, {'tag': 'action', 'actions': [{
+        'tag': 'button', 'type': 'primary', 'text': {'tag': 'plain_text', 'content': 'Open reading room' if en else '打开阅读空间'},
+        'url': target,
+    }]}])
+    note = 'Read progress is saved in the reading room.' if en else '阅读进度保存在网页中。'
+    if urlsplit(url).hostname in ('127.0.0.1', 'localhost'):
+        note += ' Local access only.' if en else '仅本机访问。'
+    elements.append({'tag': 'note', 'elements': [{'tag': 'plain_text', 'content': note}]})
+    return {'body': body, 'elements': elements}

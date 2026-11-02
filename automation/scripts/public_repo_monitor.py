@@ -53,11 +53,11 @@ def configure(config=None):
     INBOX_CONFIG = config
 
 
-def send_card(title, body, template, actions=None):
+def send_card(title, body, template, actions=None, elements=None):
     # Import lazily so the pure filtering helpers remain testable without a
     # private runtime configuration file.
     from feishu_remind import send
-    return send(title, body, actions=actions, template=template)
+    return send(title, body, actions=actions, template=template, elements=elements)
 
 SEMANTIC_SIGNALS = (
     ("Security", 8, r"\bsecurity\b|vulnerab|\bcve[- ]|remote code|privilege escalat"),
@@ -1272,7 +1272,7 @@ def run():
                     print("[error] source {0}: {1}".format(source_id, cause), file=sys.stderr)
             state["last_scan_at"] = capture_time
             save_state(state)
-        from repo_inbox import enabled, archive, notification_body, unread_groups
+        from repo_inbox import enabled, archive, notification_card, unread_groups
         inbox_enabled = enabled(INBOX_CONFIG)
         if pending and inbox_enabled:
             archive(pending, "public")
@@ -1284,7 +1284,8 @@ def run():
             if inbox_enabled:
                 batch = unread_groups(batch, "public")
             reader_channel = "papers" if all(g.get("channel") == "papers" for g in batch) else "all" if any(g.get("channel") == "papers" for g in batch) else "public"
-            body = notification_body(batch, INBOX_CONFIG, reader_channel) if inbox_enabled else render_notification_batch(batch)
+            card = notification_card(batch, INBOX_CONFIG, reader_channel) if inbox_enabled else None
+            body = card['body'] if card is not None else render_notification_batch(batch)
             deferred = len(pending_events(remaining))
             if deferred:
                 body += "\n\n---\n\n_另有 {0} 项已保留，将在后续批次继续发送。_".format(deferred)
@@ -1294,7 +1295,7 @@ def run():
                     en = INBOX_CONFIG.get("repo_inbox", {}).get("language", "zh") == "en"
                     title = ("📚 Paper updates" if en else "📚 论文更新") if all(g.get("channel") == "papers" for g in batch) else ("🌐 Open-source, blog and paper updates" if en else "🌐 开源仓库、研究博客与论文更新")
                 if body:
-                    send_card(title, body, template="purple")
+                    send_card(title, body, template="purple", **({'elements': card['elements']} if card is not None else {}))
             except Exception as cause:
                 print("PUSH_FAILED (will retry): {0}".format(cause), file=sys.stderr)
             else:

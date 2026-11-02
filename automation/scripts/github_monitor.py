@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from automation_common import STATE_DIR, load_config
 from work_calendar import notification_allowed
-from repo_inbox import enabled as inbox_enabled, archive as inbox_archive, notification_body as inbox_notification_body
+from repo_inbox import enabled as inbox_enabled, archive as inbox_archive, notification_card as inbox_notification_card
 
 CONFIG = load_config()
 
@@ -246,7 +246,7 @@ def feishu_token():
         return json.load(resp)["tenant_access_token"]
 
 
-def feishu_send_card(title, md_content, template="orange", message_uuid=None):
+def feishu_send_card(title, md_content, template="orange", message_uuid=None, elements=None):
     # GitHub comments may embed ordinary Markdown images. Feishu cards treat
     # every image as an uploaded card resource and reject the whole card when
     # no image_key is supplied. Preserve the label/link but render it as text.
@@ -265,8 +265,9 @@ def feishu_send_card(title, md_content, template="orange", message_uuid=None):
             item = (current_repo, action, number)
             if item not in actions:
                 actions.append(item)
-    elements = [{"tag": "markdown", "content": md_content}]
-    if actions:
+    custom_elements = elements is not None
+    elements = list(elements) if custom_elements else [{"tag": "markdown", "content": md_content}]
+    if actions and not custom_elements:
         buttons = []
         for repo, action, number in actions:
             buttons.append({
@@ -624,10 +625,11 @@ def _realtime():
 
     # 先推送，成功后才推进时间戳；推送失败则不保存，下次重试
     try:
-        if inbox_enabled(CONFIG):
-            md = inbox_notification_body(inbox_groups, CONFIG, "owned")
+        card = inbox_notification_card(inbox_groups, CONFIG, "owned") if inbox_enabled(CONFIG) else None
+        if card is not None:
+            md = card['body']
         if md:
-            feishu_send_card("🔔 我的仓库实时更新", md, "orange")
+            feishu_send_card("🔔 我的仓库实时更新", md, "orange", **({'elements': card['elements']} if card is not None else {}))
     except Exception as e:
         print(f"PUSH_FAILED (will retry next run): {e}", file=sys.stderr)
         print("PUSH_FAILED")
@@ -710,16 +712,19 @@ def _daily(now=None):
             state["inbox_daily_snapshot"] = {"date": today, "overview": overview}
             save_state(state)
         inbox_archive(groups, "owned")
-        md = inbox_notification_body(groups, CONFIG, "owned", daily=True)
+        card = inbox_notification_card(groups, CONFIG, "owned", daily=True)
+        md = card['body']
         count = len(deferred)
     else:
+        card = None
         md, count = daily_part(overview, deferred)
     if md:
         identity = json.dumps([today, overview_sent, previous.get("parts", 0) if overview_sent else 0,
                                deferred[:count]], sort_keys=True)
         try:
             feishu_send_card("📦 我的仓库每日总结", md, "blue",
-                             message_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, identity)))
+                             message_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, identity)),
+                             **({'elements': card['elements']} if card is not None else {}))
         except Exception as error:
             print("DAILY_PUSH_FAILED (will retry): " + type(error).__name__, file=sys.stderr)
             return

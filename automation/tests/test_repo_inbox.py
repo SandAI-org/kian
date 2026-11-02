@@ -14,6 +14,7 @@ import repo_inbox as inbox
 import repo_inbox_dashboard as dashboard
 import public_repo_monitor as public
 import github_monitor as owned
+import feishu_remind as remind
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -50,7 +51,7 @@ class RepoInboxTest(unittest.TestCase):
         self.assertFalse(inbox.snapshot()['events'][0]['is_read'])
 
     def test_summary_card_contains_counts_and_link_not_item_body(self):
-        body = inbox.notification_body(self.groups, {}, 'public')
+        body = inbox.notification_card(self.groups, {}, 'public')['body']
         self.assertIn('example/repo', body)
         self.assertIn('127.0.0.1:8768', body)
         self.assertNotIn('A kernel', body)
@@ -63,17 +64,63 @@ class RepoInboxTest(unittest.TestCase):
         inbox.archive(groups, 'public')
         read = next(e for e in inbox.snapshot()['events'] if e['channel'] == 'public')
         inbox.mark_read([read['id']], True)
-        body = inbox.notification_body(groups, {}, 'all')
+        body = inbox.notification_card(groups, {}, 'all')['body']
         self.assertIn('1 条未读', body)
         self.assertIn('Infra Papers', body)
         self.assertNotIn('example/repo', body)
         inbox.mark_read([e['id'] for e in inbox.snapshot()['events']], True)
-        self.assertEqual(inbox.notification_body(groups, {}, 'all'), '')
+        self.assertEqual(inbox.notification_card(groups, {}, 'all')['body'], '')
+        self.assertEqual(inbox.notification_card(groups, {}, 'all')['elements'], [])
         inbox.mark_read([read['id']], False)
-        body = inbox.notification_body(groups, {'repo_inbox': {'language': 'en'}}, 'all')
+        body = inbox.notification_card(groups, {'repo_inbox': {'language': 'en'}}, 'all')['body']
         self.assertIn('1 unread items', body)
         self.assertIn('example/repo', body)
         self.assertEqual(len(groups), 2)
+
+    def test_native_digest_has_stats_two_columns_and_one_reader_action(self):
+        groups = self.groups + [
+            {'repo': 'world-sim-dev/magicore', 'events': [{'markdown': 'A'}]},
+            {'repo': 'world-sim-dev/odin', 'events': [{'markdown': 'B'}]},
+        ]
+        card = inbox.notification_card(groups, {}, 'owned')
+        stats = card['elements'][0]
+        self.assertEqual(stats['background_style'], 'grey')
+        self.assertEqual(len(stats['columns']), 2)
+        self.assertIn('**3**', json.dumps(stats, ensure_ascii=False))
+        rows = [e for e in card['elements'][1:] if e['tag'] == 'column_set']
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(len(row['columns']) == 2 for row in rows))
+        text = json.dumps(card['elements'], ensure_ascii=False)
+        self.assertIn('**Magicore**', text)
+        self.assertIn('**Odin**', text)
+        self.assertNotIn('•', text)
+        action = next(e for e in card['elements'] if e['tag'] == 'action')
+        self.assertEqual(len(action['actions']), 1)
+        self.assertEqual(action['actions'][0]['url'], 'http://127.0.0.1:8768/?channel=owned')
+        self.assertNotIn('value', action['actions'][0])
+        english = inbox.notification_card(groups, {'repo_inbox': {'language': 'en'}}, 'owned')
+        self.assertIn('Open reading room', json.dumps(english['elements']))
+
+    def test_card_preserves_repository_identity_when_short_names_collide(self):
+        groups = [{'repo': owner + '/same', 'events': [{'markdown': owner}]} for owner in ['one', 'two']]
+        text = json.dumps(inbox.notification_card(groups, {}, 'public')['elements'])
+        self.assertIn('one/same', text)
+        self.assertIn('two/same', text)
+
+    def test_custom_digest_elements_reach_both_senders_without_pr_buttons(self):
+        elements = inbox.notification_card(self.groups, {}, 'owned')['elements']
+        for module, call in [(remind, remind.send), (owned, owned.feishu_send_card)]:
+            with patch.object(module, 'feishu_token', return_value='test-token'), patch.object(module.OPENER, 'open') as send:
+                send.return_value.__enter__.return_value.read.return_value = b'{"code":0}'
+                call('Digest', '`desc1`', elements=elements)
+                payload = json.loads(send.call_args.args[0].data)
+                self.assertEqual(json.loads(payload['content'])['elements'], elements)
+
+    def test_feishu_rejection_is_reported_for_delivery_retry(self):
+        with patch.object(remind, 'feishu_token', return_value='test-token'), patch.object(remind.OPENER, 'open') as send:
+            send.return_value.__enter__.return_value.read.return_value = b'{"code":230099,"msg":"invalid card"}'
+            with self.assertRaisesRegex(RuntimeError, 'invalid card'):
+                remind.send('Digest', 'Body', elements=[])
 
     def test_same_origin_read_write_and_cross_origin_denial(self):
         inbox.archive(self.groups, 'public')

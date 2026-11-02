@@ -50,7 +50,10 @@ def send(title, body_md, actions=None, template="green", message_uuid=None, elem
         "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
         data=payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     with OPENER.open(req, timeout=30) as resp:
-        return json.load(resp)
+        result = json.load(resp)
+    if result.get('code', 0) != 0:
+        raise RuntimeError(f"Feishu API rejected message: {result}")
+    return result
 
 
 if __name__ == "__main__":
