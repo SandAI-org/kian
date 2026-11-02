@@ -1,6 +1,6 @@
 # Portable Kian Automation
 
-The supplement reminder runs at **14:00 Asia/Shanghai on eligible working days**, using the shared work/leave/holiday calendar gate.
+The supplement reminder runs at **14:00 Asia/Shanghai on eligible working days**, using the shared work/leave/holiday calendar gate. Until confirmed as taken, it repeats every **10 minutes**.
 
 This directory packages the GitHub-to-Feishu monitor, PR description manager, reminders, file transfer helper, QR publisher, Feishu bridge, and macOS `launchd` integration without storing private runtime data in Git.
 

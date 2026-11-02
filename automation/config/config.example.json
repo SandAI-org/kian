@@ -92,7 +92,7 @@
       "confirm_button_text": "已服用",
       "confirmed_button_text": "今日已服用 ✓",
       "confirmed_toast": "已记录今日服用，不再重复提醒",
-      "repeat_interval_seconds": 300
+      "repeat_interval_seconds": 600
     }
   },
   "github": {
