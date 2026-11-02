@@ -14,7 +14,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
@@ -53,11 +53,12 @@ def configure(config=None):
     INBOX_CONFIG = config
 
 
-def send_card(title, body, template, actions=None, elements=None):
+def send_card(title, body, template, actions=None, elements=None, message_uuid=None):
     # Import lazily so the pure filtering helpers remain testable without a
     # private runtime configuration file.
     from feishu_remind import send
-    return send(title, body, actions=actions, template=template, elements=elements)
+    return send(title, body, actions=actions, template=template, elements=elements,
+                **({"message_uuid": message_uuid} if message_uuid else {}))
 
 SEMANTIC_SIGNALS = (
     ("Security", 8, r"\bsecurity\b|vulnerab|\bcve[- ]|remote code|privilege escalat"),
@@ -1214,6 +1215,50 @@ def take_pending_batch(groups, limit=25):
     return batch, remaining
 
 
+def daily_digest_due(state, at):
+    settings = WATCH.get("daily_digest", {})
+    if not settings.get("enabled", False):
+        return False
+    local = at.astimezone(ZoneInfo(settings.get("timezone", "Asia/Shanghai")))
+    return (local.hour * 60 + local.minute >= clock_minutes(settings.get("time", "10:30"))
+            and state.get("daily_digest", {}).get("date") != local.date().isoformat())
+
+
+def deliver_daily_digest(state, at):
+    from repo_inbox import connect, notification_card
+    settings = WATCH["daily_digest"]
+    local = at.astimezone(ZoneInfo(settings.get("timezone", "Asia/Shanghai")))
+    previous = state.get("daily_digest", {}).get("through")
+    cutoff = datetime.fromisoformat(previous.replace("Z", "+00:00")) if previous else at - timedelta(days=1)
+    groups = {}
+    with connect() as db:
+        rows = db.execute("SELECT * FROM events WHERE channel='public' ORDER BY imported_at, id")
+        for row in rows:
+            imported = datetime.fromisoformat(row["imported_at"].replace("Z", "+00:00"))
+            if imported > at or (row["is_read"] and imported < cutoff):
+                continue
+            key = (row["repo"], row["source_name"])
+            group = groups.setdefault(key, {"repo": row["repo"], "source_name": row["source_name"], "events": []})
+            group["events"].append({"markdown": row["markdown"]})
+    reader_channel = "all" if any(g.get("source_name") for g in groups.values()) else "public"
+    card = notification_card(list(groups.values()), INBOX_CONFIG, reader_channel, daily=True)
+    if card["body"]:
+        en = INBOX_CONFIG.get("repo_inbox", {}).get("language", "zh") == "en"
+        send_card("🌐 Open-source repositories daily digest" if en else "🌐 开源仓库每日总结",
+                  card["body"], template="purple", elements=card["elements"],
+                  message_uuid=hashlib.sha256(("public-daily:" + local.date().isoformat()).encode()).hexdigest()[:32])
+    pending = state.setdefault("pending_notifications", [])
+    for event in pending_events([g for g in pending if g.get("channel", "public") == "public"]):
+        completion = event.get("complete_pin")
+        if completion:
+            deactivate_pin(completion["repo"], completion["number"], completion["outcome"])
+    pending[:] = [g for g in pending if g.get("channel", "public") != "public"]
+    state["daily_digest"] = {"date": local.date().isoformat(), "through": at.isoformat(),
+                             "notified": bool(card["body"])}
+    save_state(state)
+    print("DAILY_DIGEST_SENT" if card["body"] else "DAILY_DIGEST_ALL_READ_OR_EMPTY")
+
+
 def run():
     configure()
     repositories = [item for item in WATCH.get("repositories", []) if item.get("enabled", True)]
@@ -1276,9 +1321,17 @@ def run():
         inbox_enabled = enabled(INBOX_CONFIG)
         if pending and inbox_enabled:
             archive(pending, "public")
-        if pending and not in_quiet_hours() and notification_allowed(
+        notifications_open = not in_quiet_hours() and notification_allowed(
             "public_watch", config={"work_calendar": WORK_CALENDAR},
-        ):
+        )
+        daily_failed = False
+        if inbox_enabled and notifications_open and daily_digest_due(state, capture_datetime):
+            try:
+                deliver_daily_digest(state, datetime.now(timezone.utc))
+            except Exception as cause:
+                daily_failed = True
+                print("DAILY_DIGEST_FAILED (will retry): {0}".format(cause), file=sys.stderr)
+        if pending and notifications_open and not daily_failed:
             batch, remaining = (ordered_notification_groups(pending), []) if inbox_enabled else take_pending_batch(pending)
             events = pending_events(batch)
             if inbox_enabled:

@@ -128,18 +128,31 @@ def unread_groups(groups, channel):
 
 def notification_card(groups, config, channel, daily=False):
     from collections import Counter
-    groups = unread_groups(groups, channel)
-    if not groups:
+    unread = unread_groups(groups, channel)
+    if not unread:
         return {'body': '', 'elements': []}
-    totals = Counter()
+    all_totals = Counter()
     for group in groups:
+        all_totals[group.get('source_name') or group['repo']] += len(group.get('events', []))
+    totals = Counter()
+    for group in unread:
         totals[group.get('source_name') or group['repo']] += len(group.get('events', []))
     en = config.get('repo_inbox', {}).get('language', 'zh') == 'en'
     heading = ('Repository daily digest' if daily else 'Repository updates') if en else ('本次每日总结已整理' if daily else '有新的仓库更新')
     if channel in ('papers', 'all') and not daily:
         heading = 'New reading updates' if en else '有新的阅读动态'
     body = f'**{heading}** · {sum(totals.values())} ' + ('unread items' if en else '条未读') + '\n\n'
-    body += '\n'.join(f'**{repo}** · {count}' for repo, count in totals.items())
+    read_count = sum(all_totals.values()) - sum(totals.values())
+    if daily:
+        body = body.rstrip() + f" · {read_count:,} " + ('read items' if en else '条已读') + '\n\n'
+    displayed = all_totals if daily else totals
+    def status(name):
+        count = totals[name]
+        text = f"{count:,} " + ('unread' if en else '条未读')
+        if daily:
+            text += f" · {all_totals[name] - count:,} " + ('read' if en else '条已读')
+        return text
+    body += '\n'.join(f'**{repo}** · {status(repo)}' for repo in displayed)
     settings = config.get('repo_inbox', {})
     url = settings.get('reader_url') or f"http://127.0.0.1:{int(settings.get('port', 8768))}/"
     if urlsplit(url).scheme not in ('http', 'https'):
@@ -150,7 +163,7 @@ def notification_card(groups, config, channel, daily=False):
     if urlsplit(url).hostname in ('127.0.0.1', 'localhost'):
         body += '\n' + ('This link opens on this computer; phone access is not configured.' if en else '此链接在这台电脑打开；尚未配置手机访问。')
     labels = {'pytorch': 'PyTorch', 'triton': 'Triton', 'cutlass': 'CUTLASS', 'nccl': 'NCCL', 'magicore': 'Magicore', 'odin': 'Odin'}
-    names = {name: labels.get(name.rsplit('/', 1)[-1], name.rsplit('/', 1)[-1]) for name in totals}
+    names = {name: labels.get(name.rsplit('/', 1)[-1], name.rsplit('/', 1)[-1]) for name in displayed}
     duplicates = Counter(names.values())
     for name, label in list(names.items()):
         if duplicates[label] > 1:
@@ -160,11 +173,12 @@ def notification_card(groups, config, channel, daily=False):
                 'elements': [{'tag': 'div', 'text': {'tag': 'lark_md', 'content': content}}]}
     elements = [{'tag': 'column_set', 'flex_mode': 'bisect', 'background_style': 'grey', 'columns': [
         column(f"**{sum(totals.values()):,}**\n" + ('Unread updates' if en else '未读更新')),
+        column(f"**{read_count:,}**\n" + ('Read updates' if en else '已读更新')) if daily else
         column(f"**{len(totals)}**\n" + ('Repositories / sources' if en else '仓库 / 来源')),
     ]}, {'tag': 'hr'}]
-    entries = list(totals.items())
+    entries = list(displayed.items())
     for offset in range(0, len(entries), 2):
-        columns = [column(f"**{names[name]}**\n{count:,} " + ('unread' if en else '条未读'))
+        columns = [column(f"**{names[name]}**\n{status(name)}")
                    for name, count in entries[offset:offset + 2]]
         if len(columns) == 1:
             columns.append(column(' '))

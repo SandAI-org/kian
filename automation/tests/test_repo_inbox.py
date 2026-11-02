@@ -151,7 +151,7 @@ class RepoInboxTest(unittest.TestCase):
         state = {'pending_notifications': self.groups, 'repos': {}}
         config = {'services': {'repo_inbox': {'enabled': True}}}
         with patch.object(public, 'configure'), patch.object(public, 'INBOX_CONFIG', config), \
-                patch.object(public, 'WATCH', {'repositories': [{'repo': 'example/repo'}]}), \
+                patch.object(public, 'WATCH', {'repositories': [{'repo': 'example/repo'}], 'daily_digest': {'enabled': True}}), \
                 patch.object(public, 'LOCK_FILE', self.root / 'lock'), \
                 patch.object(public, 'load_state', return_value=state), \
                 patch.object(public, 'scan_is_due', return_value=False), \
@@ -200,6 +200,50 @@ class RepoInboxTest(unittest.TestCase):
         self.assertEqual(state['pending_notifications'], [])
         self.assertTrue(inbox.snapshot()['events'][0]['is_read'])
 
+
+    def test_public_daily_includes_read_counts_backlog_and_preserves_paper_queue(self):
+        now = datetime(2026, 11, 3, 10, 30, tzinfo=ZoneInfo('Asia/Shanghai'))
+        public_groups = self.groups + [{'repo': 'example/read', 'events': [{'markdown': 'Read item'}]}]
+        papers = {'repo': 'papers', 'channel': 'papers', 'events': [{'markdown': 'A paper'}]}
+        inbox.archive(public_groups + [papers], 'public')
+        with inbox.connect() as db:
+            db.execute("UPDATE events SET imported_at='2026-11-02T03:00:00+00:00'")
+            db.execute("UPDATE events SET imported_at='2026-10-20T03:00:00+00:00' WHERE repo='example/repo'")
+        read = next(e for e in inbox.snapshot()['events'] if e['repo'] == 'example/read')
+        inbox.mark_read([read['id']], True)
+        state = {'pending_notifications': public_groups + [papers],
+                 'daily_digest': {'date': '2026-11-02', 'through': '2026-11-02T02:30:00Z'}}
+        with patch.object(public, 'WATCH', {'daily_digest': {'enabled': True}}), \
+                patch.object(public, 'INBOX_CONFIG', {}), patch.object(public, 'save_state'), \
+                patch.object(public, 'send_card') as sender:
+            self.assertFalse(public.daily_digest_due(state, now.replace(minute=29)))
+            self.assertTrue(public.daily_digest_due(state, now))
+            public.deliver_daily_digest(state, now)
+            self.assertFalse(public.daily_digest_due(state, now))
+        self.assertIn('1 条未读', sender.call_args.args[1])
+        self.assertIn('1 条已读', sender.call_args.args[1])
+        self.assertIn('example/read', sender.call_args.args[1])
+        self.assertNotIn('A paper', sender.call_args.args[1])
+        self.assertEqual(state['pending_notifications'], [papers])
+        self.assertEqual(sum(e['is_read'] for e in inbox.snapshot()['events']), 1)
+
+    def test_public_daily_failure_retries_and_all_read_settles_silently(self):
+        inbox.archive(self.groups, 'public')
+        now = datetime.now(ZoneInfo('Asia/Shanghai'))
+        state = {'pending_notifications': list(self.groups)}
+        with patch.object(public, 'WATCH', {'daily_digest': {'enabled': True}}), \
+                patch.object(public, 'INBOX_CONFIG', {}), patch.object(public, 'save_state'), \
+                patch.object(public, 'send_card', side_effect=TimeoutError) as sender:
+            with self.assertRaises(TimeoutError):
+                public.deliver_daily_digest(state, now)
+            self.assertNotIn('daily_digest', state)
+            self.assertEqual(state['pending_notifications'], self.groups)
+            inbox.mark_read([e['id'] for e in inbox.snapshot()['events']], True)
+            public.deliver_daily_digest(state, now)
+            sender.assert_called_once()
+        self.assertFalse(state['daily_digest']['notified'])
+        self.assertEqual(state['pending_notifications'], [])
+        self.assertTrue(inbox.snapshot()['events'][0]['is_read'])
 
     def test_owned_daily_creates_individual_items_and_retries_without_losing_reads(self):
         overview = "**daily**\n\n---\n\n**📦 example/repo** (2)\n\n🔀 **PR [#1](https://github.com/example/repo/pull/1)** [open]\n First title\n ↳ Summary\n\n🔀 **PR [#2](https://github.com/example/repo/pull/2)** [open]\n Second title\n ↳ Another summary"

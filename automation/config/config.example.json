@@ -138,6 +138,7 @@
         ]
       }
     ],
+    "daily_digest": {"enabled": true, "time": "10:30", "timezone": "Asia/Shanghai"},
     "quiet_hours": {
       "enabled": true,
       "timezone": "Asia/Shanghai",
