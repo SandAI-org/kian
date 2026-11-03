@@ -31,6 +31,38 @@ class TestBackgroundTasks(unittest.TestCase):
             self.assertNotIn('estimated_remaining_seconds', saved)
             self.assertNotIn('current_phase_bytes_per_second', saved)
 
+    def test_git_clone_rough_eta_and_reference_overrun(self):
+        item = {'kind': 'git-clone', 'status': 'running', 'transfer_started_at': 100,
+                'estimated_total_bytes': 1000, 'bytes_done': 400}
+        tasks.task_metrics(item, 120)
+        self.assertTrue(item['eta_is_rough'])
+        self.assertEqual(item['estimated_remaining_seconds'], 30)
+        self.assertNotIn('total_bytes', item)
+        item['bytes_done'] = 1100
+        tasks.task_metrics(item, 130)
+        self.assertTrue(item['estimate_size_exceeded'])
+        self.assertNotIn('estimated_remaining_seconds', item)
+        item['total_bytes'] = 1200
+        tasks.task_metrics(item, 130)
+        self.assertFalse(item['eta_is_rough'])
+        self.assertFalse(item['estimate_size_exceeded'])
+        self.assertGreater(item['estimated_remaining_seconds'], 0)
+
+    def test_running_clone_can_gain_estimate_without_restarting_writer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'clone.json'
+            original = {'kind': 'git-clone', 'status': 'running', 'pid': 1,
+                        'pid_start': 'identity', 'transfer_started_at': 100, 'bytes_done': 400}
+            path.write_text(json.dumps(original))
+            path.with_suffix('.estimate').write_text(json.dumps({
+                'estimated_total_bytes': 1000, 'estimate_basis': 'GitHub repository.size * 1024'}))
+            with patch.object(tasks, 'process_start', return_value='identity'), \
+                    patch.object(tasks.time, 'time', return_value=120):
+                item = tasks.read_tasks(directory)[0]
+            self.assertEqual(item['estimated_remaining_seconds'], 30)
+            self.assertTrue(item['eta_is_rough'])
+            self.assertEqual(json.loads(path.read_text()), original)
+
     def test_relay_counts_both_transfer_phases_without_counting_byte_resets(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(tasks, 'process_start', return_value='identity'), \
                 patch.object(tasks.time, 'time', return_value=100) as clock:

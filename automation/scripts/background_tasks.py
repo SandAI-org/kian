@@ -39,12 +39,20 @@ def task_metrics(item, now):
         item['average_effective_bytes_per_second'] = size / item['elapsed_seconds']
     item.pop('current_phase_bytes_per_second', None)
     item.pop('estimated_remaining_seconds', None)
+    rough = size is None and item.get('kind') == 'git-clone' and item.get('estimated_total_bytes', 0) > 0
+    item['eta_is_rough'] = rough
+    item['estimate_size_exceeded'] = False
+    if rough:
+        size = item['estimated_total_bytes']
     if item.get('transfer_started_at') is not None and size is not None and item.get('source_is_file') is not False:
         phase_seconds = max(0, end - item['transfer_started_at'])
         phase_bytes = max(0, item.get('bytes_done', 0) - item.get('transfer_bytes_at_start', 0))
         if phase_seconds > 0 and phase_bytes > 0:
             item['current_phase_bytes_per_second'] = phase_bytes / phase_seconds
-            item['estimated_remaining_seconds'] = max(0, size - item.get('bytes_done', 0)) * phase_seconds / phase_bytes
+            if rough and item.get('bytes_done', 0) >= size:
+                item['estimate_size_exceeded'] = True
+            else:
+                item['estimated_remaining_seconds'] = max(0, size - item.get('bytes_done', 0)) * phase_seconds / phase_bytes
     return item
 
 
@@ -107,6 +115,11 @@ def read_tasks(directory=None, limit=100):
                 if started is None or (item.get('pid_start') and started != item['pid_start']):
                     item['status'] = 'unknown'
                     item['error'] = 'WorkerExited'
+            estimate = path.with_suffix('.estimate')
+            if item.get('kind') == 'git-clone' and item.get('total_bytes') is None and estimate.exists():
+                metadata = json.loads(estimate.read_text())
+                item['estimated_total_bytes'] = metadata['estimated_total_bytes']
+                item['estimate_basis'] = metadata.get('estimate_basis', 'GitHub repository size')
             task_metrics(item, time.time() if item.get('status') == 'running' else item.get('completed_at', item.get('updated_at', time.time())))
             tasks.append(item)
         except (OSError, ValueError, KeyError):
