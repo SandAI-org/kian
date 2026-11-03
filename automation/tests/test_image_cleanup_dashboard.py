@@ -40,11 +40,13 @@ class TestImageCleanupDashboard(unittest.TestCase):
             {'stage': 'sha256_verification', 'source_is_file': False, 'speed': 'stale', 'eta': '00:01:00'},
             {'stage': 'transferring', 'source_is_file': False, 'speed': '3.25MB/s', 'eta': '00:01:20'},
             {'stage': 'transferring', 'source_is_file': True, 'current_phase_bytes_per_second': 1024, 'estimated_remaining_seconds': 5},
+            {'kind': 'git-clone', 'stage': 'transferring', 'speed': '900 KiB/s', 'progress_percent': 20},
+            {'kind': 'git-clone', 'stage': 'transferring', 'total_bytes': 1024, 'estimated_remaining_seconds': 7},
         ]
         source = 'const texts=' + texts + ';const t=texts.en;\n' + helpers + metrics
         source += '\nconsole.log(JSON.stringify(' + json.dumps(cases) + '.map(transferMetrics)))'
         result = subprocess.run([node, '-e', source], text=True, capture_output=True, check=True)
-        scan, verify, directory_file, file = json.loads(result.stdout)
+        scan, verify, directory_file, file, git_unknown, git_known = json.loads(result.stdout)
         self.assertEqual(scan[0][1], 'Delta sync; ETA unavailable')
         self.assertEqual(scan[1][1], 'No transfer-speed sample yet')
         self.assertEqual(verify[1][1], 'No transfer in this stage')
@@ -53,6 +55,9 @@ class TestImageCleanupDashboard(unittest.TestCase):
         self.assertEqual(directory_file[1][1], '3.25MB/s')
         self.assertEqual(file[0][1], '5s')
         self.assertEqual(file[1][1], '1.0 KiB/s')
+        self.assertEqual(git_unknown[0][1], 'Git transfer size unknown; ETA unavailable')
+        self.assertEqual(git_unknown[1][1], '900 KiB/s')
+        self.assertEqual(git_known[0][1], '7s')
 
 
 if __name__ == '__main__':
