@@ -64,7 +64,14 @@ def local_connections(log_root, include_history=False):
              for path in session.glob("window*/renderer.log")]
     for path in paths:
         try:
-            parsed = window_connections(tail(path, 8 * 1024 * 1024 if include_history else 2 * 1024 * 1024))
+            text = tail(path, 8 * 1024 * 1024 if include_history else 2 * 1024 * 1024)
+            parsed = window_connections(text)
+            if include_history or not parsed:
+                rotated = sorted((p for p in path.parent.glob("renderer.*.log")
+                                  if p.name.split(".")[1].isdigit()),
+                                 key=lambda p: int(p.name.split(".")[1]), reverse=True)
+                text = "\n".join([tail(p, 8 * 1024 * 1024) for p in rotated] + [text])
+                parsed = window_connections(text)
             if not parsed:
                 continue
             pid, key, active, old = parsed

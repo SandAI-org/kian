@@ -62,6 +62,23 @@ class CodexLockGuardTests(unittest.TestCase):
                 self.assertEqual(links['active'], ['bbbbbbbb'])
                 self.assertEqual(links['replaced'], {'aaaaaaaa': ['bbbbbbbb']})
 
+    def test_rotated_renderer_logs_recover_live_host_and_latest_connection(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            window = root / 'session/window1'
+            window.mkdir(parents=True)
+            (window / 'renderer.5.log').write_text(window_text(1, OLD, container=None))
+            (window / 'renderer.2.log').write_text(window_text(2, OLD, container=None))
+            (window / 'renderer.1.log').write_text('Creating a socket (renderer-ExtensionHost-' + NEW + ') was successful\n')
+            (window / 'renderer.log').write_text('Unrelated extension errors\n')
+            with patch.object(guard.subprocess, 'check_output', return_value='2 Code Helper (Plugin)\n'):
+                for history in (False, True):
+                    links = guard.local_connections(root, include_history=history)[('example-host', None)]
+                    self.assertEqual(links['active'], ['bbbbbbbb'])
+                    self.assertEqual(links['replaced'], {'aaaaaaaa': ['bbbbbbbb']})
+            with patch.object(guard.subprocess, 'check_output', return_value='3 Code Helper (Plugin)\n'):
+                self.assertEqual(guard.local_connections(root, include_history=True), {})
+
     def test_manual_uses_current_workspace_registry_when_service_disabled(self):
         config = {"services": {"codex_lock_guard": {"enabled": False}},
                   "codex_activity_monitor": {"targets": [
