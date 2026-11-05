@@ -85,7 +85,7 @@ def parse_endpoint(value: str, *, local_default_downloads: bool) -> Endpoint:
 
 
 def parse_progress(line: str):
-    match = re.match(r"^\s*([\d,]+)\s+(\d+)%\s+([\d.]+\s*[kMGT]?B/s)\s+(\d+:\d+:\d+)", line)
+    match = re.match(r"^\s*([\d,]+)\s+(\d+)%\s+([\d.]+\s*[kKMGT]?B/s)\s+(\d+:\d+:\d+)", line)
     if not match:
         return None
     return dict(bytes_done=int(match[1].replace(',', '')), transfer_percent=int(match[2]),

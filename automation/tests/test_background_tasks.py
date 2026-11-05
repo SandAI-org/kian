@@ -120,6 +120,11 @@ class TestBackgroundTasks(unittest.TestCase):
     def test_rsync_progress_handles_commas_and_ignores_other_lines(self):
         self.assertEqual(transfer.parse_progress('  1,234,567  42%  3.25MB/s  00:01:20'),
                          {'bytes_done': 1234567, 'transfer_percent': 42, 'speed': '3.25MB/s', 'eta': '00:01:20'})
+        for unit in ('KB/s', 'kB/s', 'MB/s', 'B/s'):
+            with self.subTest(unit=unit):
+                self.assertEqual(transfer.parse_progress(f'  104628224  32%  97.04{unit}  00:36:38'),
+                                 {'bytes_done': 104628224, 'transfer_percent': 32,
+                                  'speed': f'97.04{unit}', 'eta': '00:36:38'})
         self.assertIsNone(transfer.parse_progress('TRANSFER_VERIFIED size=10 sha256=abc'))
 
     def test_remote_sync_reports_two_distinct_phases(self):
