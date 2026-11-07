@@ -120,7 +120,7 @@ def calendar_workday(day, zone, settings):
     return calendar_decision(day, zone, settings, schedule=True)
 
 
-def notification_allowed(service, config=None, now=None):
+def notification_allowed(service, config=None, now=None, raise_on_error=False):
     config = load_config() if config is None else config
     settings = config.get("work_calendar", {})
     if not settings.get("enabled", False) or service not in settings.get("services", []):
@@ -149,6 +149,8 @@ def notification_allowed(service, config=None, now=None):
             workday = False
         return workday and (not calendar.get("enabled", False) or not calendar_leave(day, zone, calendar))
     except Exception as error:
+        if raise_on_error:
+            raise
         # Uncertain calendar access must not accidentally send on a leave day.
         print("WORK_CALENDAR_DEFERRED " + service + " " + type(error).__name__, flush=True)
         return False

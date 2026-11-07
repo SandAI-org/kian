@@ -243,3 +243,11 @@ Saul 即使已开通应用身份 API 权限，对个人日历也可能只有 `fr
 Git clone 任务可能只有对象数量进度和当前速度，无法知道本次协商出的压缩包总量。进行中的 `kind: git-clone` 传输既无 `total_bytes` 也无 `estimated_total_bytes` 时，页面明确显示“Git 传输总量未知，暂无法估算”，不再一直显示“计算中”。对象百分比和 GitHub 仓库大小不能当作字节量来估算剩余时间。普通文件传输仍按原有方式显示 ETA。
 
 GitHub clone 有仓库大小参考值时，创建 `BackgroundTask` 可提供 `estimated_total_bytes=repository.size * 1024` 和 `estimate_basis`。ETA 按当前传输阶段实际平均字节速度推算，明确标注“粗估”；参考值不是协商后的 pack 大小，也不是准确进度分母。已运行的 clone 可在同目录私有 `<task-id>.estimate` JSON 中补充相同元数据，无需重启下载；页面读取时合并，不改写 worker 状态。已收字节达到或超过参考量时显示暂无法估算，不显示误导的零秒；实际 `total_bytes` 始终优先。Git 解包／解析、checkout 和校验不包含在传输 ETA 中。
+
+### 重置卡的休息时段前提醒
+
+夜间00:00–10:00、周末/节假日/请假期间到期的Codex重置卡，提前到上一个工作日23:00发飞书卡片；大小周按既有飞书日历判断。工作时段内到期的卡不提醒，不发额度日报，不自动兑换。
+
+由Codex桌面heartbeat每天北京时间23:00读取当前账户的`get_usage_limits`，将新鲜JSON通过stdin传给`python3 automation/scripts/codex_reset_reminder.py --snapshot -`。私有配置启用`codex_reset_reminder.enabled`，`language`支持`zh/en`；工作日历必须启用。未知卡片详情或日历错误停止而不猜测；按账户/卡/到期时间去重，飞书成功后才写私有回执，失败可重试。`--dry-run`只展示计划，不发卡、不写已发送标记。不得用旧快照代替当前卡片资格。
+
+通过宿主automation工具实际创建heartbeat；脚本/安装器不会自动迁移桌面计划。换电脑后恢复同名计划，避免重复。Mac休眠/断网可能延迟运行；过期后不补发无用提醒，实际发送限定工作日10:00–24:00。

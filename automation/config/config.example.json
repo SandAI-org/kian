@@ -17,6 +17,7 @@
       "flush_minute": 30
     }
   },
+  "codex_reset_reminder": { "enabled": false, "language": "zh" },
   "repo_inbox": { "port": 8768, "language": "zh" },
   "image_cleanup_dashboard": {
     "host": "REPLACE_WITH_SSH_ALIAS",
