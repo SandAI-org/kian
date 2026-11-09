@@ -17,7 +17,8 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 PYTHON_BIN="$(command -v python3 || true)"
 NODE_BIN="$(command -v node || true)"
-RUNTIME_PATH="$(dirname "$NODE_BIN"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+CODEX_BIN="$(command -v codex || true)"
+RUNTIME_PATH="${CODEX_BIN:+$(dirname "$CODEX_BIN"):}$(dirname "$NODE_BIN"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 [[ -n "$PYTHON_BIN" ]] || { echo "ERROR: python3 is required" >&2; exit 1; }
 [[ -n "$NODE_BIN" ]] || { echo "ERROR: node is required" >&2; exit 1; }
@@ -77,6 +78,7 @@ required = {
   "reminders": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "reminders"],
   "public_watch": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
   "codex_lock_guard": ["codex_lock_guard.targets"],
+  "codex_reset_reminder": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_reset_reminder.enabled", "work_calendar.enabled"],
   "image_cleanup_dashboard": [],
   "repo_inbox": [],
   "codex_activity_monitor": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_activity_monitor.targets"],
@@ -164,7 +166,7 @@ remove_legacy_service() {
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor image_cleanup_dashboard repo_inbox; do
+for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor codex_reset_reminder image_cleanup_dashboard repo_inbox; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

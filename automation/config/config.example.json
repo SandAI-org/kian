@@ -6,6 +6,7 @@
     "qr": { "enabled": false, "hour": 12, "minute": 0 },
     "reminders": { "enabled": false, "poll_interval_seconds": 60 },
     "codex_lock_guard": { "enabled": false },
+    "codex_reset_reminder": { "enabled": false },
     "codex_activity_monitor": { "enabled": false, "interval_seconds": 60 },
     "image_cleanup_dashboard": { "enabled": false },
     "repo_inbox": { "enabled": false },
@@ -17,7 +18,7 @@
       "flush_minute": 30
     }
   },
-  "codex_reset_reminder": { "enabled": false, "language": "zh" },
+  "codex_reset_reminder": { "enabled": false, "language": "zh", "codex_binary": "codex" },
   "repo_inbox": { "port": 8768, "language": "zh" },
   "image_cleanup_dashboard": {
     "host": "REPLACE_WITH_SSH_ALIAS",

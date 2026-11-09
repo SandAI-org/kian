@@ -248,6 +248,6 @@ GitHub clone 有仓库大小参考值时，创建 `BackgroundTask` 可提供 `es
 
 夜间00:00–10:00、周末/节假日/请假期间到期的Codex重置卡，提前到上一个工作日23:00发飞书卡片；大小周按既有飞书日历判断。工作时段内到期的卡不提醒，不发额度日报，不自动兑换。
 
-由Codex桌面heartbeat每天北京时间23:00读取当前账户的`get_usage_limits`，将新鲜JSON通过stdin传给`python3 automation/scripts/codex_reset_reminder.py --snapshot -`。私有配置启用`codex_reset_reminder.enabled`，`language`支持`zh/en`；工作日历必须启用。未知卡片详情或日历错误停止而不猜测；按账户/卡/到期时间去重，飞书成功后才写私有回执，失败可重试。`--dry-run`只展示计划，不发卡、不写已发送标记。不得用旧快照代替当前卡片资格。
+由Kian的 `com.kian.codex_reset_reminder` LaunchAgent在北京时间23:00检查；失败后每五分钟重试至午夜，成功后当日不再重复检查。启用 `services.codex_reset_reminder.enabled`、`codex_reset_reminder.enabled` 和工作日历，`language` 支持 `zh/en`。安装并登录Codex CLI，可通过 `codex_reset_reminder.codex_binary` 指定绝对路径。脚本短暂启动本机app-server，只调用初始化及只读 `account/rateLimits/read`；不新建聊天、不运行模型任务、不兑换卡、不提取认证token，也不需要Codex聊天自动任务。
 
-通过宿主automation工具实际创建heartbeat；脚本/安装器不会自动迁移桌面计划。换电脑后恢复同名计划，避免重复。Mac休眠/断网可能延迟运行；过期后不补发无用提醒，实际发送限定工作日10:00–24:00。
+未知卡片详情、登录失败或日历错误停止而不猜测；按账户/卡/到期时间去重，飞书确认成功后才写私有回执。`python3 automation/scripts/codex_reset_reminder.py --dry-run` 实时读取并展示计划，不发送或确认卡片；`--snapshot` 仍可接收新鲜宿主工具JSON用于诊断，不得用旧快照代替当前资格。安装器随其他Kian服务迁移此LaunchAgent。Mac休眠或断网可能延迟或错过23点检查窗口，已过期卡直接跳过；实际发送仍限定工作日10:00–24:00。

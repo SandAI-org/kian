@@ -1,14 +1,69 @@
 import copy
+import asyncio
+from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
+import json
+import io
+import tempfile
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import codex_reset_reminder as reminder
 import work_calendar
+
+
+class TestLiveSnapshot(unittest.TestCase):
+    def process(self, responses):
+        process = Mock(returncode=None)
+        process.stdin.drain = AsyncMock()
+        process.stdout.readline = AsyncMock(side_effect=[
+            (json.dumps(response) + '\n').encode() for response in responses])
+        process.wait = AsyncMock(return_value=0)
+        return process
+
+    def test_reads_live_without_starting_chat_or_redeeming(self):
+        snapshot = {'accountId': 'test-account', 'rateLimitResetCredits': {'credits': []}}
+        process = self.process([{'id': 1, 'result': {}},
+                                {'method': 'account/updated'}, {'id': 2, 'result': snapshot}])
+        with patch.object(asyncio, 'create_subprocess_exec', AsyncMock(return_value=process)):
+            self.assertEqual(asyncio.run(reminder.read_live_snapshot('codex')), snapshot)
+        methods = [json.loads(call.args[0])['method'] for call in process.stdin.write.call_args_list]
+        self.assertEqual(methods, ['initialize', 'initialized', 'account/rateLimits/read'])
+        process.terminate.assert_called_once()
+
+    def test_auth_error_stops_and_closes_own_backend(self):
+        process = self.process([{'id': 1, 'result': {}},
+                                {'id': 2, 'error': {'code': -1, 'message': 'unauthorized'}}])
+        with patch.object(asyncio, 'create_subprocess_exec', AsyncMock(return_value=process)):
+            with self.assertRaisesRegex(RuntimeError, 'account read failed'):
+                asyncio.run(reminder.read_live_snapshot('codex'))
+        process.terminate.assert_called_once()
+
+
+class TestScheduledResetReminder(unittest.TestCase):
+    def test_failed_check_retries_success_is_not_repeated(self):
+        now = datetime(2026, 11, 30, 23, 0, tzinfo=ZoneInfo('Asia/Shanghai'))
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(reminder, 'STATE_DIR', Path(directory)), \
+                patch.object(sys, 'argv', ['codex_reset_reminder.py', '--scheduled']), \
+                patch.object(reminder, 'load_config', return_value={'codex_reset_reminder': {'enabled': True}}), \
+                patch.object(reminder, 'datetime') as clock, \
+                patch.object(reminder, 'read_live_snapshot', AsyncMock(return_value={})), \
+                patch.object(reminder, 'evaluate', side_effect=[RuntimeError('calendar offline'), {'sent': 0}]) as evaluate, \
+                redirect_stdout(io.StringIO()):
+            clock.now.return_value = now
+            state = Path(directory) / 'codex-reset-reminder.json'
+            with self.assertRaisesRegex(RuntimeError, 'calendar offline'):
+                reminder.main()
+            self.assertFalse(state.exists())
+            reminder.main()
+            self.assertEqual(json.loads(state.read_text())['checked_on'], '2026-11-30')
+            reminder.main()
+            self.assertEqual(evaluate.call_count, 2)
 
 
 class TestCodexResetReminder(unittest.TestCase):

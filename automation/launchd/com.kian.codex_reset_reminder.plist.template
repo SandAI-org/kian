@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.kian.codex_reset_reminder</string>
+  <key>ProgramArguments</key><array><string>__PYTHON__</string><string>__RUNTIME_ROOT__/automation/scripts/codex_reset_reminder.py</string><string>--scheduled</string></array>
+  <key>EnvironmentVariables</key><dict><key>KIAN_AUTOMATION_HOME</key><string>__AUTOMATION_HOME__</string><key>PATH</key><string>__PATH__</string></dict>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__AUTOMATION_HOME__/logs/codex-reset-reminder.log</string>
+  <key>StandardErrorPath</key><string>__AUTOMATION_HOME__/logs/codex-reset-reminder.err.log</string>
+</dict></plist>

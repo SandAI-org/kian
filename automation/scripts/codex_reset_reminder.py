@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Warn before a Codex reset card expires during the user's rest period."""
 import argparse
+import asyncio
 import copy
 from datetime import datetime, time, timedelta
 import fcntl
@@ -30,6 +31,45 @@ COPY = {
         'unknown': 'unavailable',
     },
 }
+
+
+async def read_live_snapshot(binary):
+    process = await asyncio.create_subprocess_exec(
+        binary, 'app-server', stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    async def request(method, request_id, params=None):
+        message = {'method': method, 'id': request_id}
+        if params is not None:
+            message['params'] = params
+        process.stdin.write((json.dumps(message) + '\n').encode())
+        await process.stdin.drain()
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                raise RuntimeError('Codex app-server exited before responding')
+            response = json.loads(line)
+            if response.get('id') != request_id:
+                continue
+            if 'error' in response:
+                raise RuntimeError('Codex account read failed')
+            return response['result']
+    async def exchange():
+        await request('initialize', 1, {'clientInfo': {
+            'name': 'kian_reset_reminder', 'version': '1.0'},
+            'capabilities': {'experimentalApi': True}})
+        process.stdin.write(b'{"method":"initialized"}\n')
+        await process.stdin.drain()
+        return await request('account/rateLimits/read', 2)
+    try:
+        return await asyncio.wait_for(exchange(), timeout=60)
+    finally:
+        if process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
 
 
 def reminder_at(expiry, is_workday):
@@ -112,10 +152,10 @@ def evaluate(snapshot, config, now, state, sender, persist, dry_run=False, workd
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--snapshot', required=True, help='Fresh get_usage_limits JSON file, or - for stdin')
+    parser.add_argument('--snapshot', help='Fresh get_usage_limits JSON file, or - for stdin; otherwise read live through Codex CLI')
+    parser.add_argument('--scheduled', action='store_true', help='Check once at 23:00, retrying failed checks until midnight')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
-    snapshot = json.loads(sys.stdin.read() if args.snapshot == '-' else Path(args.snapshot).read_text())
     from feishu_remind import send
     state_path = STATE_DIR / 'codex-reset-reminder.json'
     def save(state):
@@ -126,8 +166,23 @@ def main():
     with (STATE_DIR / 'codex-reset-reminder.lock').open('a+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = json.loads(state_path.read_text()) if state_path.exists() else {'sent': {}}
-        result = evaluate(snapshot, load_config(), datetime.now(ZoneInfo('Asia/Shanghai')),
+        now = datetime.now(ZoneInfo('Asia/Shanghai'))
+        config = load_config()
+        if not config.get(SERVICE, {}).get('enabled', False):
+            print(json.dumps({'status': 'disabled', 'sent': 0}))
+            return
+        if args.scheduled and (now.hour != 23 or state.get('checked_on') == now.date().isoformat()):
+            print(json.dumps({'status': 'not_due', 'sent': 0}))
+            return
+        snapshot = (json.loads(sys.stdin.read() if args.snapshot == '-' else Path(args.snapshot).read_text())
+                    if args.snapshot else asyncio.run(read_live_snapshot(
+                        config.get(SERVICE, {}).get('codex_binary', 'codex'))))
+        now = datetime.now(ZoneInfo('Asia/Shanghai'))
+        result = evaluate(snapshot, config, now,
                           state, send, save, args.dry_run)
+        if args.scheduled and not args.dry_run:
+            state['checked_on'] = now.date().isoformat()
+            save(state)
         print(json.dumps(result, ensure_ascii=False))
 
 
