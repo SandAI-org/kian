@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { dayOf, group } = require('../scripts/repo_inbox_web/timeline.js');
+const { dayOf, group, unreadWindow } = require('../scripts/repo_inbox_web/timeline.js');
 
 const event = (id, captured_at, extra = {}) => ({ id, captured_at, ...extra });
 
@@ -49,4 +49,17 @@ test('backfilled source event dates precede collection dates without changing re
   assert.equal(dayOf(event('merged', '2026-11-01T10:00:00Z', {
     event_at:'2026-10-29T15:59:59Z', read_at:'2026-11-03T00:00:00Z',
   })), '2026-10-29');
+});
+
+test('seven-day unread window includes today plus six Beijing dates and retains older undated entries', () => {
+  const input = [event('today', '2026-11-09T16:00:00Z'),
+    event('boundary', '2026-11-03T16:00:00Z'),
+    event('old', '2026-11-03T15:59:59Z'), event('unknown', null),
+    event('source-old', '2026-11-10T02:00:00Z', { event_at: '2026-10-01T00:00:00Z' })];
+  const result = unreadWindow(input, Date.parse('2026-11-10T03:00:00Z'));
+  assert.equal(result.cutoff, '2026-11-04');
+  assert.deepEqual(result.recent.map(e => e.id), ['today', 'boundary']);
+  assert.deepEqual(result.history.map(e => e.id), ['old', 'unknown', 'source-old']);
+  assert.equal(result.recent.length + result.history.length, input.length);
+  assert.equal(unreadWindow(input, Date.parse('2026-11-10T16:00:00Z')).cutoff, '2026-11-05');
 });

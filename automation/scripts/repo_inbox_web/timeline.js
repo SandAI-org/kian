@@ -40,7 +40,18 @@
     return result;
   }
 
-  const api = { dayOf, group, timestamp };
+  function unreadWindow(events, now = Date.now()) {
+    const today = dayOf({ captured_at: new Date(now).toISOString() });
+    const cutoff = new Date(Date.parse(today + 'T00:00:00Z') - 6 * 86400000).toISOString().slice(0, 10);
+    const recent = [], history = [];
+    for (const event of events) {
+      const day = dayOf(event);
+      (day && day >= cutoff ? recent : history).push(event);
+    }
+    return { recent, history, cutoff };
+  }
+
+  const api = { dayOf, group, timestamp, unreadWindow };
   if (typeof module !== 'undefined') module.exports = api;
   else window.InboxTimeline = api;
 }());

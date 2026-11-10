@@ -1,5 +1,7 @@
 # Portable Kian Automation
 
+The reading room's default unread view shows today and the previous six Beijing dates. Older and undated unread items stay in a collapsed **Older unread** section, populated only when expanded; searches expand matching history. This does not change read state or notifications. All/read-only views retain the complete timeline. Each item has a star toggle and the sidebar has **Favorites**, defaulting to all saved items, including read and older ones. Favorites persist separately in private SQLite across re-imports and restarts. Removing a favorite does not delete or mark an item read. Favorite writes use the existing loopback host/origin/token protections.
+
 The supplement reminder runs at **14:00 Asia/Shanghai on eligible working days**, using the shared work/leave/holiday calendar gate. Until confirmed as taken, it repeats every **10 minutes**.
 
 This directory packages the GitHub-to-Feishu monitor, PR description manager, reminders, file transfer helper, QR publisher, Feishu bridge, and macOS `launchd` integration without storing private runtime data in Git.

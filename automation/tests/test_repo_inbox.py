@@ -41,6 +41,25 @@ class RepoInboxTest(unittest.TestCase):
         self.assertEqual(inbox.archive(self.groups, 'public'), 1)
         self.assertEqual(sum(e['is_read'] for e in inbox.snapshot()['events']), 1)
 
+    def test_favorites_persist_independently_of_read_and_reimport(self):
+        inbox.archive(self.groups, 'public')
+        identity = inbox.snapshot()['events'][0]['id']
+        inbox.mark_favorite([identity, 'missing-event'], True)
+        saved = inbox.snapshot()['events'][0]
+        self.assertTrue(saved['is_favorite'])
+        self.assertFalse(saved['is_read'])
+        self.assertIsNotNone(saved['favorited_at'])
+        inbox.mark_read([identity], True)
+        inbox.archive(self.groups, 'public')
+        inbox.mark_favorite([identity], True)
+        self.assertEqual(inbox.snapshot()['events'][0]['favorited_at'], saved['favorited_at'])
+        inbox.mark_favorite([identity], False)
+        final = inbox.snapshot()['events'][0]
+        self.assertFalse(final['is_favorite'])
+        self.assertTrue(final['is_read'])
+        self.assertEqual(len(inbox.snapshot()['events']), 1)
+        with self.assertRaises(ValueError):inbox.mark_favorite([identity], 'yes')
+
     def test_import_does_not_consume_delivery_queue_or_invent_timestamps(self):
         p = self.root / 'public-watch-state.json'
         text = json.dumps({'pending_notifications': self.groups})
@@ -192,6 +211,18 @@ class RepoInboxTest(unittest.TestCase):
             except urllib.error.HTTPError as error:
                 status = error.code
             self.assertEqual(status, expected)
+        self.assertTrue(inbox.snapshot()['events'][0]['is_read'])
+
+        favorite_payload = json.dumps({'ids': [data['events'][0]['id']], 'is_favorite': True}).encode()
+        for origin, token, expected in [(base, data['token'], 200),
+                                        ('https://untrusted.example', data['token'], 403), (base, 'wrong', 403)]:
+            request = urllib.request.Request(base + '/api/favorite', data=favorite_payload, headers={
+                'Content-Type': 'application/json', 'Origin': origin, 'X-Inbox-Token': token})
+            try:
+                with urllib.request.urlopen(request) as response:status = response.status
+            except urllib.error.HTTPError as error:status = error.code
+            self.assertEqual(status, expected)
+        self.assertTrue(inbox.snapshot()['events'][0]['is_favorite'])
         self.assertTrue(inbox.snapshot()['events'][0]['is_read'])
 
     def test_public_archives_on_quiet_day_without_consuming_pending(self):

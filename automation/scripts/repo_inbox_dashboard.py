@@ -46,14 +46,17 @@ def make_handler(port, language='zh', repositories=()):
             if (not self.valid_host() or origin not in (f'http://127.0.0.1:{port}', f'http://localhost:{port}')
                     or self.headers.get('X-Inbox-Token') != token):
                 return self.reply(403, {'error': 'Invalid origin or token'})
-            if self.path != '/api/read':
+            if self.path not in ('/api/read', '/api/favorite'):
                 return self.reply(404, {'error': 'Not found'})
             try:
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 < length <= 1000000:
                     raise ValueError('Invalid request length')
                 body = json.loads(self.rfile.read(length))
-                repo_inbox.mark_read(body['ids'], body['is_read'])
+                if self.path == '/api/read':
+                    repo_inbox.mark_read(body['ids'], body['is_read'])
+                else:
+                    repo_inbox.mark_favorite(body['ids'], body['is_favorite'])
             except (ValueError, KeyError, TypeError):
                 return self.reply(400, {'error': 'Invalid request'})
             return self.reply(200, {'ok': True})
