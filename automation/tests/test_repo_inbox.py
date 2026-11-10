@@ -59,6 +59,17 @@ class RepoInboxTest(unittest.TestCase):
         self.assertIn('关注点：', body)
         self.assertNotIn('A kernel', inbox.notification_card(self.groups, {}, 'owned')['body'])
 
+    def test_bracketed_titles_are_not_nested_or_escaped_link_labels(self):
+        for title in ['[RFE]: layout-aware FSDP2', '[Common] Use .shared::cta']:
+            groups = [{'repo': 'example/repo', 'events': [{'markdown':
+                f'New PR\n📌 **{title}**\n📝 中文摘要： 摘要\n[PR](https://github.com/example/repo/pull/1)'}]}]
+            card = inbox.notification_card(groups, {}, 'public')
+            text = json.dumps(card, ensure_ascii=False)
+            self.assertIn(f'**{title}**', text)
+            self.assertIn('[查看原文](https://github.com/example/repo/pull/1)', text)
+            self.assertNotIn('\\[', text)
+            self.assertNotIn('[' + title + '](', text)
+
     def test_highlights_limit_diversity_deduplication_and_priority(self):
         def event(number, score, required=False):
             return {'markdown': f'📌 Kernel {number}\n📝 中文摘要： 摘要 {number}\nSignals: Performance\n[PR](https://github.com/example/repo/pull/{number})',

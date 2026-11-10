@@ -168,7 +168,7 @@ def reading_highlights(groups, en=False):
         text = re.sub(r'\s+', ' ', plain(text))
         return text if len(text) <= limit else text[:limit - 1] + '…'
     return [f"**{short(c['name'], 60)}** · {short(c['context'], 80)}\n"
-            + '[' + short(c['title'], 110).replace('[', r'\[').replace(']', r'\]') + f"]({c['url']})\n"
+            + '**' + short(c['title'], 110) + '** · [' + ('Read source' if en else '查看原文') + f"]({c['url']})\n"
             + short(c['summary'], 160) + '\n' + ('Why read: ' if en else '关注点：') + c['reason']
             for c in selected]
 
