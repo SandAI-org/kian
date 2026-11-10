@@ -1,5 +1,7 @@
 # Portable Kian Automation
 
+Reading-room folding shortcuts use a chord: press Command-K (Control-K also works), release it, then press 1–9 to open ancestor levels and fold the selected level and deeper. Unread/all views use repository → day → item; read-only archives add year/month before day. Command-K then J expands every rendered level, including older unread, while keeping existing pagination. Shortcuts ignore editable fields and expire after 2.5 seconds. Reload still starts fully collapsed.
+
 The reading room's default unread view shows today and the previous six Beijing dates. Older and undated unread items stay in a collapsed **Older unread** section, populated only when expanded. Repositories, dates and older unread all start collapsed, including during search; the user expands them explicitly. This does not change read state or notifications. All/read-only views retain the complete timeline. Each item has a star toggle and the sidebar has **Favorites**, defaulting to all saved items, including read and older ones. Favorites persist separately in private SQLite across re-imports and restarts. Removing a favorite does not delete or mark an item read. Favorite writes use the existing loopback host/origin/token protections.
 
 The supplement reminder runs at **14:00 Asia/Shanghai on eligible working days**, using the shared work/leave/holiday calendar gate. Until confirmed as taken, it repeats every **10 minutes**.
