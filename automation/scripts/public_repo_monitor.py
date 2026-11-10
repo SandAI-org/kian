@@ -1239,7 +1239,8 @@ def deliver_daily_digest(state, at):
                 continue
             key = (row["repo"], row["source_name"])
             group = groups.setdefault(key, {"repo": row["repo"], "source_name": row["source_name"], "events": []})
-            group["events"].append({"markdown": row["markdown"]})
+            group["events"].append({"markdown": row["markdown"], "required": bool(row["required"]),
+                                    "score": row["score"], "captured_at": row["captured_at"] or row["imported_at"]})
     reader_channel = "all" if any(g.get("source_name") for g in groups.values()) else "public"
     card = notification_card(list(groups.values()), INBOX_CONFIG, reader_channel, daily=True)
     if card["body"]:

@@ -50,12 +50,48 @@ class RepoInboxTest(unittest.TestCase):
         self.assertIsNone(inbox.snapshot()['events'][0]['captured_at'])
         self.assertFalse(inbox.snapshot()['events'][0]['is_read'])
 
-    def test_summary_card_contains_counts_and_link_not_item_body(self):
+    def test_public_card_contains_brief_reading_preview_and_link(self):
         body = inbox.notification_card(self.groups, {}, 'public')['body']
         self.assertIn('example/repo', body)
         self.assertIn('127.0.0.1:8768', body)
-        self.assertNotIn('A kernel', body)
-        self.assertNotIn('一个摘要', body)
+        self.assertIn('A kernel', body)
+        self.assertIn('一个摘要', body)
+        self.assertIn('关注点：', body)
+        self.assertNotIn('A kernel', inbox.notification_card(self.groups, {}, 'owned')['body'])
+
+    def test_highlights_limit_diversity_deduplication_and_priority(self):
+        def event(number, score, required=False):
+            return {'markdown': f'📌 Kernel {number}\n📝 中文摘要： 摘要 {number}\nSignals: Performance\n[PR](https://github.com/example/repo/pull/{number})',
+                    'score': score, 'required': required}
+        groups = [{'repo': 'example/one', 'events': [event(1, 100), event(2, 99)]},
+                  {'repo': 'example/two', 'events': [event(3, 8, True), event(1, 100)]},
+                  {'repo': 'example/three', 'events': [event(4, 9)]},
+                  {'repo': 'papers', 'channel': 'papers', 'events': [event(5, 1000)]}]
+        card = inbox.notification_card(groups, {}, 'all')
+        previews = [e['content'] for e in card['elements'] if e['tag'] == 'markdown' and '关注点：' in e['content']]
+        self.assertEqual(len(previews), 3)
+        self.assertIn('Kernel 3', previews[0])
+        self.assertTrue(any('Kernel 1' in p for p in previews))
+        self.assertTrue(any('Kernel 4' in p for p in previews))
+        self.assertFalse(any('Kernel 5' in p or 'Kernel 2' in p for p in previews))
+        self.assertTrue(all('性能优化' in p for p in previews))
+
+    def test_previews_exclude_read_items_and_keep_summary_short(self):
+        self.groups[0]['events'][0]['markdown'] += '\nStack from ghstack: irrelevant full body'
+        self.groups[0]['events'].append({'markdown': '📌 Long summary\n📝 中文摘要： ' + '长摘要' * 200 +
+                                      '\n[PR](https://github.com/example/repo/pull/2)'})
+        inbox.archive(self.groups, 'public')
+        first = next(e for e in inbox.snapshot()['events'] if e['title'] == 'A kernel')
+        inbox.mark_read([first['id']], True)
+        card = inbox.notification_card(self.groups, {}, 'public')
+        self.assertNotIn('A kernel', card['body'])
+        self.assertNotIn('ghstack', card['body'])
+        self.assertIn('Long summary', card['body'])
+        self.assertNotIn('长摘要' * 60, card['body'])
+        self.assertEqual(sum(e['is_read'] for e in inbox.snapshot()['events']), 1)
+        english = inbox.notification_card(self.groups, {'repo_inbox': {'language': 'en'}}, 'public')
+        self.assertIn('Selected reading', english['body'])
+        self.assertIn('Why read:', english['body'])
 
     def test_summary_counts_only_unread_across_public_and_paper_channels(self):
         papers = {'repo': 'paper:infra', 'channel': 'papers', 'source_name': 'Infra Papers',
@@ -218,7 +254,10 @@ class RepoInboxTest(unittest.TestCase):
                 patch.object(public, 'send_card') as sender:
             self.assertFalse(public.daily_digest_due(state, now.replace(minute=29)))
             self.assertTrue(public.daily_digest_due(state, now))
-            public.deliver_daily_digest(state, now)
+            with patch.object(inbox, 'reading_highlights', wraps=inbox.reading_highlights) as highlights:
+                public.deliver_daily_digest(state, now)
+                event = next(g for g in highlights.call_args.args[0] if g['repo'] == 'example/repo')['events'][0]
+                self.assertTrue(event['required'])
             self.assertFalse(public.daily_digest_due(state, now))
         self.assertIn('1 条未读', sender.call_args.args[1])
         self.assertIn('1 条已读', sender.call_args.args[1])

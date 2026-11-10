@@ -126,6 +126,53 @@ def unread_groups(groups, channel):
     return result
 
 
+def reading_highlights(groups, en=False):
+    from public_repo_monitor import SEMANTIC_SIGNALS
+    signals = [('Security', '安全风险', r'安全|漏洞'),
+               ('Correctness / regression', '正确性与回归', r'错误|死锁|竞态|挂起|越界|正确性|驱动异常'),
+               ('Breaking / API change', 'API 兼容性', r'不兼容|弃用|接口变更'),
+               ('Performance', '性能优化', r'性能|吞吐|延迟|显存|优化|提速|减少.*(?:拷贝|开销)'),
+               ('Core capability / hardware', '内核与硬件能力', r'内核|SM\d+|TMA|GEMM|FSDP|通信')]
+    patterns = {name: pattern for name, points, pattern in SEMANTIC_SIGNALS}
+    candidates = []
+    for group in groups:
+        if group.get('channel', 'public') != 'public':
+            continue
+        for event in group.get('events', []):
+            title, summary, url, kind = fields(event['markdown'])
+            if not url or not summary or '中文摘要暂时生成失败' in summary:
+                continue
+            reasons = [a if en else b for a, b, pattern in signals
+                       if a in event['markdown'] or re.search(pattern + '|' + patterns[a], title + ' ' + summary, re.I)][:2]
+            if not reasons:
+                reasons = [('Release' if en else '版本发布') if kind == 'release' else
+                           ('Tracked repository update' if en else '关注仓库的变更')]
+            candidates.append({'repo': group['repo'], 'name': group.get('source_name') or group['repo'],
+                               'event': event, 'title': title, 'summary': summary, 'url': url,
+                               'context': next((plain(s) for s in event['markdown'].splitlines() if s.strip()), ''),
+                               'reason': ' · '.join(reasons)})
+    candidates.sort(key=lambda c: c['event'].get('captured_at') or '', reverse=True)
+    candidates.sort(key=lambda c: ('pinned' not in c['event']['markdown'].lower(),
+                                  not c['event'].get('required', False), -(c['event'].get('score') or 0)))
+    selected = []
+    for diverse in (True, False):
+        for candidate in candidates:
+            if len(selected) == 3:
+                break
+            if any(c['url'] == candidate['url'] for c in selected):
+                continue
+            if diverse and any(c['repo'] == candidate['repo'] for c in selected):
+                continue
+            selected.append(candidate)
+    def short(text, limit):
+        text = re.sub(r'\s+', ' ', plain(text))
+        return text if len(text) <= limit else text[:limit - 1] + '…'
+    return [f"**{short(c['name'], 60)}** · {short(c['context'], 80)}\n"
+            + '[' + short(c['title'], 110).replace('[', r'\[').replace(']', r'\]') + f"]({c['url']})\n"
+            + short(c['summary'], 160) + '\n' + ('Why read: ' if en else '关注点：') + c['reason']
+            for c in selected]
+
+
 def notification_card(groups, config, channel, daily=False):
     from collections import Counter
     unread = unread_groups(groups, channel)
@@ -138,6 +185,7 @@ def notification_card(groups, config, channel, daily=False):
     for group in unread:
         totals[group.get('source_name') or group['repo']] += len(group.get('events', []))
     en = config.get('repo_inbox', {}).get('language', 'zh') == 'en'
+    highlights = reading_highlights(unread, en) if channel in ('public', 'all') else []
     heading = ('Repository daily digest' if daily else 'Repository updates') if en else ('本次每日总结已整理' if daily else '有新的仓库更新')
     if channel in ('papers', 'all') and not daily:
         heading = 'New reading updates' if en else '有新的阅读动态'
@@ -153,6 +201,8 @@ def notification_card(groups, config, channel, daily=False):
             text += f" · {all_totals[name] - count:,} " + ('read' if en else '条已读')
         return text
     body += '\n'.join(f'**{repo}** · {status(repo)}' for repo in displayed)
+    if highlights:
+        body += '\n\n**' + ('Selected reading' if en else '本次精选') + '**\n\n' + '\n\n'.join(highlights)
     settings = config.get('repo_inbox', {})
     url = settings.get('reader_url') or f"http://127.0.0.1:{int(settings.get('port', 8768))}/"
     if urlsplit(url).scheme not in ('http', 'https'):
@@ -176,13 +226,23 @@ def notification_card(groups, config, channel, daily=False):
         column(f"**{read_count:,}**\n" + ('Read updates' if en else '已读更新')) if daily else
         column(f"**{len(totals)}**\n" + ('Repositories / sources' if en else '仓库 / 来源')),
     ]}, {'tag': 'hr'}]
-    entries = list(displayed.items())
+    entries = [] if highlights else list(displayed.items())
     for offset in range(0, len(entries), 2):
         columns = [column(f"**{names[name]}**\n{status(name)}")
                    for name, count in entries[offset:offset + 2]]
         if len(columns) == 1:
             columns.append(column(' '))
         elements.append({'tag': 'column_set', 'flex_mode': 'bisect', 'background_style': 'default', 'columns': columns})
+    if highlights:
+        elements.append({'tag': 'markdown', 'content': '**' + ('Selected reading' if en else '本次精选') + '**'})
+        for index, highlight in enumerate(highlights):
+            if index:
+                elements.append({'tag': 'hr'})
+            elements.append({'tag': 'markdown', 'content': highlight})
+        remaining = sum(totals.values()) - len(highlights)
+        if remaining:
+            elements.append({'tag': 'note', 'elements': [{'tag': 'plain_text', 'content':
+                (f'{remaining} more unread updates in the reading room.' if en else f'另有 {remaining} 条未读，完整列表见阅读空间。')}]})
     elements.extend([{'tag': 'hr'}, {'tag': 'action', 'actions': [{
         'tag': 'button', 'type': 'primary', 'text': {'tag': 'plain_text', 'content': 'Open reading room' if en else '打开阅读空间'},
         'url': target,
