@@ -35,6 +35,14 @@ def window_connections(text):
     pid, current = int(segments[-2]), segments[-1]
     authority = re.search(r"remoteAuthority=([^\s)]+)", current)
     if not authority:
+        # VS Code can log initialization immediately before the local host starts.
+        starts = list(re.finditer(r"Started local extension host with pid \d+\.", text))
+        preceding = text[:starts[-1].end()]
+        authority = re.search(
+            r"\[AgentHost:remote\] Initializing [^\n]*remoteAuthority=([^\s)]+)[^\n]*\n"
+            r"(?:[^\n]*\[AgentHost:remote\] Disabled [^\n]*\n)?"
+            r"[^\n]*Started local extension host with pid " + str(pid) + r"\.$", preceding)
+    if not authority:
         return None
     host = re.search(r"ssh-remote\+([0-9a-f]+)", authority[1])
     container = re.search(r"attached-container\+([0-9a-f]+)", authority[1])

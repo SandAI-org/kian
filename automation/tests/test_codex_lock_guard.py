@@ -219,6 +219,21 @@ class CodexLockGuardTests(unittest.TestCase):
         parsed = guard.window_connections(window_text(3, NEW, container=None))
         self.assertEqual(parsed[1], ("example-host", None))
 
+    def test_authority_immediately_before_start_is_current_window_evidence(self):
+        text = window_text(3, NEW)
+        lines = text.splitlines()
+        before = "[AgentHost:remote] Initializing (enabled=false, " + lines[1] + "\n"
+        reordered = before + lines[0] + "\n" + lines[2] + "\n"
+        self.assertEqual(guard.window_connections(reordered)[1:3],
+                         (("example-host", "dev"), "bbbbbbbb"))
+        disabled = before + '[AgentHost:remote] Disabled via "chat.agentHost.enabled" or web runtime. Not connecting.\n' + lines[0] + "\n" + lines[2] + "\n"
+        self.assertEqual(guard.window_connections(disabled)[1:3],
+                         (("example-host", "dev"), "bbbbbbbb"))
+        # Do not borrow an arbitrary older initialization or handshake.
+        self.assertIsNone(guard.window_connections(
+            before + "unrelated event\n" + lines[0] + "\n" + lines[2] + "\n"))
+        self.assertIsNone(guard.window_connections(before + lines[0] + "\n"))
+
     def test_success_cancels_earlier_conflict_for_same_thread(self):
         failure = f"Request failed thread {TID} already has an active writer method=thread/resume"
         self.assertEqual(guard.latest_conflicts(failure), {TID})
