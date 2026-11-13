@@ -262,3 +262,11 @@ GitHub clone 有仓库大小参考值时，创建 `BackgroundTask` 可提供 `es
 由Kian的 `com.kian.codex_reset_reminder` LaunchAgent在北京时间23:00检查；失败后每五分钟重试至午夜，成功后当日不再重复检查。启用 `services.codex_reset_reminder.enabled`、`codex_reset_reminder.enabled` 和工作日历，`language` 支持 `zh/en`。安装并登录Codex CLI，可通过 `codex_reset_reminder.codex_binary` 指定绝对路径。脚本短暂启动本机app-server，只调用初始化及只读 `account/rateLimits/read`；不新建聊天、不运行模型任务、不兑换卡、不提取认证token，也不需要Codex聊天自动任务。
 
 未知卡片详情、登录失败或日历错误停止而不猜测；按账户/卡/到期时间去重，飞书确认成功后才写私有回执。`python3 automation/scripts/codex_reset_reminder.py --dry-run` 实时读取并展示计划，不发送或确认卡片；`--snapshot` 仍可接收新鲜宿主工具JSON用于诊断，不得用旧快照代替当前资格。安装器随其他Kian服务迁移此LaunchAgent。Mac休眠或断网可能延迟或错过23点检查窗口，已过期卡直接跳过；实际发送仍限定工作日10:00–24:00。
+
+### GPU 空闲提醒
+
+启用 `services.gpu_idle_monitor.enabled`，安装 Kian 每分钟检查一次的 LaunchAgent。Agent 用 `python3 automation/scripts/gpu_idle_monitor.py add --host SSH_ALIAS --label '机器名称'` 注册一次性监控。`--min-free` 默认 `all`（全部空闲），指定 `--min-free 1` 等整数可只等待部分卡；`list` 查看私有监控状态，`cancel WATCH_ID` 取消对应监控。沿用 SSH 和飞书凭据，不使用 Codex 自主任务。
+
+同一张物理 GPU 必须连续满足：**没有任何 GPU 进程（包括计算和图形进程）**、已用显存 ≤256 MiB、GPU 利用率 ≤1%，默认持续 180 秒（`--stable-seconds`，最小 60；显存阈值用 `--max-memory-mib`）。少量显存允许驱动基线分配，需要时可收紧。按 GPU UUID 跟踪，不能用不同卡轮流空闲凑时长；再次忙碌、NVIDIA 数据缺失/异常、GPU 清单变化或采样间隔超过 150 秒都重置连续性。MIG 已开启的父 GPU 不视为可用。通过宿主机只读 SSH 查询 `nvidia-smi -q -x`，不会把利用率为零但进程仍占显存的卡当成空闲。
+
+达到指定数量后发送一张飞书卡片，本次监控随即结束。发送失败保留任务，下轮重新确认 GPU 状态后重试，沿用固定消息 UUID；只有发送成功才记完成。这类资源提醒不受工作日/夜间静默限制。不预占 GPU、不杀进程、不启动作业；使用前仍需确认。Mac 须保持运行和联网，休眠/断网会延长确认时间；注册时已经空闲也须等待完整确认窗口。状态只保存在私有 `state/gpu-idle-watches.json`，不提交 Git。

@@ -81,6 +81,7 @@ required = {
   "codex_reset_reminder": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_reset_reminder.enabled", "work_calendar.enabled"],
   "image_cleanup_dashboard": [],
   "repo_inbox": [],
+  "gpu_idle_monitor": ["feishu.app_id", "feishu.app_secret", "feishu.open_id"],
   "codex_activity_monitor": ["feishu.app_id", "feishu.app_secret", "feishu.open_id", "codex_activity_monitor.targets"],
 }[service]
 
@@ -166,7 +167,7 @@ remove_legacy_service() {
   echo "Removed legacy $label"
 }
 
-for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor codex_reset_reminder image_cleanup_dashboard repo_inbox; do
+for service in bridge realtime daily qr reminders public_watch codex_lock_guard codex_activity_monitor gpu_idle_monitor codex_reset_reminder image_cleanup_dashboard repo_inbox; do
   plist="$LAUNCH_AGENTS/com.kian.$service.plist"
   launchctl bootout "$DOMAIN" "$plist" >/dev/null 2>&1 || true
   if [[ "$(read_config services.$service.enabled false)" == "true" ]]; then

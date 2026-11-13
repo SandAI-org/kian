@@ -7,6 +7,7 @@
     "reminders": { "enabled": false, "poll_interval_seconds": 60 },
     "codex_lock_guard": { "enabled": false },
     "codex_reset_reminder": { "enabled": false },
+    "gpu_idle_monitor": { "enabled": false },
     "codex_activity_monitor": { "enabled": false, "interval_seconds": 60 },
     "image_cleanup_dashboard": { "enabled": false },
     "repo_inbox": { "enabled": false },
