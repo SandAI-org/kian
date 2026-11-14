@@ -50,6 +50,37 @@ class PublicRepoMonitorRulesTest(unittest.TestCase):
         self.assertEqual([monitor.event_priority(e) for e in monitor.pending_events(batch)], [(0, 0), (1, -13)])
         self.assertEqual(monitor.event_priority(monitor.pending_events(remaining)[0]), (1, -8))
 
+    def test_web_article_follows_permanent_method_preserving_redirect(self):
+        import http.server
+        import threading
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == '/article':
+                    self.send_response(308)
+                    self.send_header('Location', '/article/')
+                    self.end_headers()
+                else:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(b'<h1>Research article</h1>')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            self.assertEqual(monitor.web_page_get(
+                'http://127.0.0.1:{0}/article'.format(server.server_port)),
+                '<h1>Research article</h1>')
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_html_blog_discovery_deduplicates_and_excludes_navigation(self):
         source = {"index_url": "https://example.test/research", "link_pattern": r"^/research/[^/]+$"}
         document = '''<a href="/research/new"><img></a>

@@ -32,7 +32,13 @@ INBOX_CONFIG = {}
 STATE_FILE = STATE_DIR / "public-watch-state.json"
 LOCK_FILE = STATE_DIR / "public-watch.lock"
 PINS_DIR = STATE_DIR / "public-watch-pins"
-OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class _RedirectHandler(urllib.request.HTTPRedirectHandler):
+    def http_error_308(self, request, response, code, message, headers):
+        # Python 3.9 lacks 308 support; 307 has the same method-preserving behavior.
+        return self.http_error_302(request, response, 307, message, headers)
+
+
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RedirectHandler())
 
 LEVEL_THRESHOLDS = {
     "detailed": {"pr": 4, "issue": 4},
