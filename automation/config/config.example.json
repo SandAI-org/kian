@@ -109,6 +109,12 @@
     "token_from_owner": "example-owner",
     "sources": [
       {
+        "id": "thinking-machines-blog",
+        "name": "Thinking Machines",
+        "index_url": "https://thinkingmachines.ai/blog/",
+        "link_pattern": "^/blog/[^/]+/?$"
+      },
+      {
         "id": "anthropic-research",
         "name": "Anthropic Research",
         "index_url": "https://www.anthropic.com/research",

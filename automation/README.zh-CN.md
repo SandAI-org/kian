@@ -272,3 +272,6 @@ GitHub clone 有仓库大小参考值时，创建 `BackgroundTask` 可提供 `es
 达到指定数量后发送一张飞书卡片，本次监控随即结束。发送失败保留任务，下轮重新确认 GPU 状态后重试，沿用固定消息 UUID；只有发送成功才记完成。这类资源提醒不受工作日/夜间静默限制。不预占 GPU、不杀进程、不启动作业；使用前仍需确认。Mac 须保持运行和联网，休眠/断网会延长确认时间；注册时已经空闲也须等待完整确认窗口。状态只保存在私有 `state/gpu-idle-watches.json`，不提交 Git。
 
 手动清锁兼容 VS Code 将 remoteAuthority 初始化写在本地扩展宿主启动之前的日志顺序；中间只允许已知的 AgentHost Disabled 行，不从任意历史记录借用机器身份或握手。仍要求当前在线窗口、已被替代的旧持锁后端、workspace、空闲任务和 pidfd 等原有检查；中止活跃任务须另获用户明确授权。
+
+
+Thinking Machines Connectionism（`https://thinkingmachines.ai/blog/`）作为独立研究博客来源接入，`id: thinking-machines-blog`，`link_pattern: ^/blog/[^/]+/?$`。复用每小时采集、研究博客阅读室、每日总结和日历/断网发送规则。注册时旧文章建立基线；用户明确指定的当前文章可单独补入一次，不重放全部历史。
