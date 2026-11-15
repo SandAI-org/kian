@@ -1,0 +1,5 @@
+# These upstream distributions are runtime assets, not local build outputs.
+!katex/dist/
+!katex/dist/**
+!markdown-it/dist/
+!markdown-it/dist/**
