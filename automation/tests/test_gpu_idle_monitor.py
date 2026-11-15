@@ -77,13 +77,20 @@ class TestGpuAvailability(unittest.TestCase):
         self.assertEqual(self.job['idle_since'], {})
         self.assertFalse(m.evaluate(self.job, [gpu()], 240))
 
-    def test_xml_includes_graphics_process_and_rejects_unknown_readings(self):
-        xml = '''<nvidia_smi_log><attached_gpus>1</attached_gpus><gpu><uuid>u</uuid><minor_number>0</minor_number><fb_memory_usage><used>4 MiB</used></fb_memory_usage><utilization><gpu_util>0 %</gpu_util></utilization><processes><process_info><type>G</type><pid>9</pid></process_info></processes></gpu></nvidia_smi_log>'''
-        self.assertEqual(m.parse_snapshot(xml)[0]['processes'], 1)
-        with self.assertRaises(ValueError):
-            m.parse_snapshot(xml.replace('4 MiB', 'N/A'))
-        with self.assertRaises(ValueError):
-            m.parse_snapshot(xml.replace('<attached_gpus>1', '<attached_gpus>2'))
+    def test_process_query_includes_graphics_and_rejects_unknown_or_missing_devices(self):
+        metrics = '0, GPU-test, 00000000:01:00.0, 4, 0, Disabled\n'
+        pids = 'Attached GPUs : 1\nGPU 00000000:01:00.0\n    Processes\n        Process ID : 9\n        Type : G\n'
+        self.assertEqual(m.parse_snapshot(metrics, pids)[0]['processes'], 1)
+        idle = 'Attached GPUs : 1\nGPU 00000000:01:00.0\n    Processes : None\n'
+        self.assertEqual(m.parse_snapshot(metrics, idle)[0]['processes'], 0)
+        for bad_metrics, bad_pids in [(metrics.replace(', 4,', ', N/A,'), pids),
+                                      (metrics, pids.replace('Attached GPUs : 1', 'Attached GPUs : 2')),
+                                      (metrics, idle.replace('None', 'N/A')),
+                                      (metrics.replace('01:00.0', '02:00.0'), pids)]:
+            with self.assertRaises(ValueError):
+                m.parse_snapshot(bad_metrics, bad_pids)
+        self.assertTrue(m.parse_snapshot(metrics.replace('Disabled', 'Enabled'), idle)[0]['mig'])
+
 
 
 if __name__ == '__main__':

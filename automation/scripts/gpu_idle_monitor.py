@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """One-shot, persistent GPU availability watches delivered through Kian/Feishu."""
 import argparse
+import csv
 import fcntl
 import json
 import math
 import re
+import shlex
 import subprocess
 import time
 import uuid
-import xml.etree.ElementTree as ET
 
 from automation_common import STATE_DIR
 
@@ -25,40 +26,52 @@ COPY = {
 }
 
 
-def parse_snapshot(raw):
-    root = ET.fromstring(raw)
-    cards = []
-    for gpu in root.findall('gpu'):
-        processes = gpu.find('processes')
-        if processes is None or (processes.text or '').strip() == 'N/A':
+def parse_snapshot(gpu_csv, processes_text):
+    sections = re.split(r'^GPU ([0-9a-fA-F:.]+)\s*$', processes_text, flags=re.M)
+    attached = re.search(r'Attached GPUs\s*:\s*(\d+)', processes_text)
+    processes = {}
+    for bus, block in zip(sections[1::2], sections[2::2]):
+        pids = re.findall(r'^\s*Process ID\s*:\s*(\d+)\s*$', block, re.M)
+        if not pids and not re.search(r'^\s*Processes\s*:\s*None\s*$', block, re.M):
             raise ValueError('GPU process information unavailable')
-        memory = float(gpu.findtext('fb_memory_usage/used').split()[0])
-        utilization = float(gpu.findtext('utilization/gpu_util').split()[0])
-        ident = gpu.findtext('uuid')
-        index = gpu.findtext('minor_number')
-        if not ident or index is None or not math.isfinite(memory) or not math.isfinite(utilization):
+        if bus.lower() in processes:
+            raise ValueError('Duplicate GPU process section')
+        processes[bus.lower()] = len(pids)
+    cards = []
+    for row in csv.reader(gpu_csv.splitlines()):
+        if len(row) != 6:
+            raise ValueError('Incomplete GPU metrics')
+        index, ident, bus, memory, utilization, mig = [v.strip() for v in row]
+        memory, utilization = float(memory), float(utilization)
+        if (not index.isdigit() or not ident.startswith('GPU-') or bus.lower() not in processes or
+                not math.isfinite(memory) or memory < 0 or
+                not math.isfinite(utilization) or not 0 <= utilization <= 100 or
+                mig not in {'Enabled', 'Disabled'}):
             raise ValueError('Incomplete GPU snapshot')
         cards.append(dict(uuid=ident, index=index, memory_mib=memory, utilization=utilization,
-                          processes=len(processes.findall('process_info')),
-                          mig=gpu.findtext('mig_mode/current_mig') == 'Enabled'))
-    if (not cards or len({g['uuid'] for g in cards}) != len(cards) or
-            int(root.findtext('attached_gpus', str(len(cards)))) != len(cards)):
+                          processes=processes[bus.lower()], mig=mig == 'Enabled'))
+    if (not cards or not attached or int(attached[1]) != len(cards) or
+            len(processes) != len(cards) or len({g['uuid'] for g in cards}) != len(cards)):
         raise ValueError('Missing or duplicate GPUs')
     return cards
 
 
 def snapshot(host):
+    code = """import subprocess,json
+metrics=subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,pci.bus_id,memory.used,utilization.gpu,mig.mode.current','--format=csv,noheader,nounits'],text=True,timeout=10)
+pids=subprocess.check_output(['nvidia-smi','-q','-d','PIDS'],text=True,timeout=10)
+print('KIAN_GPU_SNAPSHOT='+json.dumps([metrics,pids]))
+"""
     result = subprocess.run(
         ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
-         '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=2', host, 'nvidia-smi -q -x'],
+         '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=2', host,
+         shlex.join(['python3', '-c', code])],
         capture_output=True, text=True, timeout=35, check=True)
-    # Some hosts prepend an SSH login banner to stdout.
-    offset = result.stdout.find('<?xml')
-    if offset < 0:
-        offset = result.stdout.find('<nvidia_smi_log')
-    if offset < 0:
-        raise ValueError('No NVIDIA XML snapshot')
-    return parse_snapshot(result.stdout[offset:])
+    lines = [line.split('=', 1)[1] for line in result.stdout.splitlines()
+             if line.startswith('KIAN_GPU_SNAPSHOT=')]
+    if len(lines) != 1:
+        raise ValueError('No complete NVIDIA snapshot')
+    return parse_snapshot(*json.loads(lines[0]))
 
 
 def evaluate(job, cards, now):
@@ -106,7 +119,7 @@ def check_jobs(state, persist, probe, sender, now=None):
             cards = probe(job['host'])
             ready = evaluate(job, cards, time.time() if now is None else now)
             job.pop('last_error', None)
-        except (subprocess.SubprocessError, OSError, ValueError, AttributeError, ET.ParseError):
+        except (subprocess.SubprocessError, OSError, ValueError, AttributeError):
             job['idle_since'] = {}
             job.pop('last_sample', None)
             job['stable_free_indices'] = []
