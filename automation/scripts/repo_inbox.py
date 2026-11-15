@@ -34,6 +34,10 @@ def connect():
     db.execute('CREATE TABLE IF NOT EXISTS event_dates (event_id TEXT PRIMARY KEY, event_at TEXT NOT NULL, date_source TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS source_dates_cache (url TEXT PRIMARY KEY, payload TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS event_favorites (event_id TEXT PRIMARY KEY, saved_at TEXT NOT NULL)')
+    db.execute('CREATE TABLE IF NOT EXISTS reading_guides (id TEXT PRIMARY KEY, source_key TEXT NOT NULL, title TEXT NOT NULL, markdown TEXT NOT NULL, updated_at TEXT NOT NULL)')
+    db.execute('CREATE TABLE IF NOT EXISTS guide_assets (guide_id TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL, content BLOB NOT NULL, PRIMARY KEY(guide_id,name))')
+    db.execute('CREATE TABLE IF NOT EXISTS library_entries (source_key TEXT PRIMARY KEY, event_id TEXT NOT NULL, metadata TEXT NOT NULL)')
+    db.execute('CREATE TABLE IF NOT EXISTS event_aliases (id TEXT PRIMARY KEY, event_id TEXT NOT NULL)')
     try:
         with db:
             yield db
@@ -62,6 +66,7 @@ def event_id(channel, repo, markdown):
 
 
 def archive(groups, channel, captured_at=None):
+    from reading_library import source_key
     now = datetime.now(timezone.utc).isoformat()
     added = 0
     with connect() as db:
@@ -73,6 +78,12 @@ def archive(groups, channel, captured_at=None):
                 title, summary, url, kind = fields(md)
                 if event_channel == 'papers':
                     kind = 'paper'
+                    imported = db.execute('SELECT event_id FROM library_entries WHERE source_key=?', (source_key(url),)).fetchone()
+                    if imported:
+                        db.execute('INSERT OR IGNORE INTO event_aliases VALUES (?,?)', (identity, imported['event_id']))
+                        identity = imported['event_id']
+                        if summary:
+                            db.execute("UPDATE events SET summary=? WHERE id=? AND summary=''", (summary, identity))
                 cursor = db.execute('''INSERT OR IGNORE INTO events
                     (id,channel,repo,source_name,markdown,title,summary,url,kind,required,score,captured_at,imported_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
@@ -99,12 +110,22 @@ def import_pending():
 
 
 def snapshot():
+    from reading_library import source_key
     with connect() as db:
         events = [dict(r) for r in db.execute('''SELECT events.*,event_dates.event_at,event_dates.date_source,
             CASE WHEN event_favorites.event_id IS NULL THEN 0 ELSE 1 END AS is_favorite,
             event_favorites.saved_at AS favorited_at FROM events
             LEFT JOIN event_dates ON events.id=event_dates.event_id
             LEFT JOIN event_favorites ON events.id=event_favorites.event_id ORDER BY imported_at DESC,id''')]
+        guides = {}
+        for row in db.execute('SELECT id,source_key,title,updated_at FROM reading_guides ORDER BY updated_at DESC'):
+            guide = dict(row)
+            guides.setdefault(guide.pop('source_key'), []).append(dict(guide, href='/guide/' + guide['id']))
+        library = {r['event_id']: json.loads(r['metadata']) for r in db.execute('SELECT event_id,metadata FROM library_entries')}
+        for event in events:
+            event['guides'] = guides.get(source_key(event['url']), [])
+            if event['id'] in library:
+                event['library'] = library[event['id']]
     return {'events': events, 'observed_at': datetime.now(timezone.utc).isoformat()}
 
 
@@ -136,6 +157,7 @@ def unread_groups(groups, channel):
     channel = 'public' if channel == 'all' else channel
     with connect() as db:
         read_ids = {row['id'] for row in db.execute('SELECT id FROM events WHERE is_read=1')}
+        read_ids.update(row['id'] for row in db.execute('SELECT event_aliases.id FROM event_aliases JOIN events ON events.id=event_aliases.event_id WHERE events.is_read=1'))
     result = []
     for group in groups:
         events = [event for event in group.get('events', [])

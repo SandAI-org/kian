@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 import secrets
 from urllib.parse import urlsplit
+import re
 from automation_common import load_config
 import repo_inbox
+import reading_library
 
 ASSETS = Path(__file__).with_name('repo_inbox_web')
 
@@ -22,7 +24,8 @@ def make_handler(port, language='zh', repositories=()):
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
-            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+            styles = "'self' 'unsafe-inline'" if re.fullmatch(r'/guide/[a-f0-9]{64}', urlsplit(self.path).path) else "'self'"
+            self.send_header('Content-Security-Policy', f"default-src 'self'; script-src 'self'; style-src {styles}; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
             self.end_headers()
             self.wfile.write(data)
 
@@ -35,7 +38,24 @@ def make_handler(port, language='zh', repositories=()):
             route = urlsplit(self.path).path
             if route == '/api/inbox':
                 return self.reply(200, dict(repo_inbox.snapshot(), token=token, language=language, repositories=[{"repo": repo, "channel": "owned"} for repo in repositories]))
+            match = re.fullmatch(r'/api/guide/([a-f0-9]{64})', route)
+            if match:
+                guide = reading_library.get_guide(match[1])
+                return self.reply(200, dict(guide, token=token)) if guide else self.reply(404, {'error': 'Not found'})
+            match = re.fullmatch(r'/guide-assets/([a-f0-9]{64})/([A-Za-z0-9_.-]+)', route)
+            if match:
+                asset = reading_library.get_asset(*match.groups())
+                return self.reply(200, asset[1], asset[0]) if asset else self.reply(404, {'error': 'Not found'})
+            if re.fullmatch(r'/guide/[a-f0-9]{64}', route):
+                return self.reply(200, (ASSETS / 'guide.html').read_bytes(), 'text/html; charset=utf-8')
+            if route.startswith('/vendor/'):
+                target = (ASSETS / route.lstrip('/')).resolve()
+                if not target.is_relative_to((ASSETS / 'vendor').resolve()) or not target.is_file():
+                    return self.reply(404, {'error': 'Not found'})
+                mime = {'.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf'}.get(target.suffix)
+                return self.reply(200, target.read_bytes(), mime) if mime else self.reply(404, {'error': 'Not found'})
             assets = {'/': ('index.html', 'text/html; charset=utf-8'), '/favicon.svg': ('favicon.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/timeline.js': ('timeline.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+            assets.update({'/guide.js': ('guide.js', 'text/javascript; charset=utf-8'), '/guide.css': ('guide.css', 'text/css; charset=utf-8')})
             if route not in assets:
                 return self.reply(404, {'error': 'Not found'})
             name, mime = assets[route]
