@@ -265,7 +265,7 @@ GitHub clone 有仓库大小参考值时，创建 `BackgroundTask` 可提供 `es
 
 ### GPU 空闲提醒
 
-启用 `services.gpu_idle_monitor.enabled`，安装 Kian 每分钟检查一次的 LaunchAgent。Agent 用 `python3 automation/scripts/gpu_idle_monitor.py add --host SSH_ALIAS --label '机器名称'` 注册一次性监控。`--min-free` 默认 `all`（全部空闲），指定 `--min-free 1` 等整数可只等待部分卡；`list` 查看私有监控状态，`cancel WATCH_ID` 取消对应监控。沿用 SSH 和飞书凭据，不使用 Codex 自主任务。
+启用 `services.gpu_idle_monitor.enabled`，安装 Kian 每分钟检查一次的 LaunchAgent。Agent 用 `python3 automation/scripts/gpu_idle_monitor.py add --host SSH_ALIAS --label '机器名称'` 注册一次性监控。`--min-free` 默认 `all`（全部空闲）。自然语言未指定数量（包括“再监控一下”）时始终等全部卡，不能擅自继承上次的单卡条件；只有用户明确要求部分空闲时才指定 `--min-free 1` 等整数；`list` 查看私有监控状态，`cancel WATCH_ID` 取消对应监控。沿用 SSH 和飞书凭据，不使用 Codex 自主任务。
 
 同一张物理 GPU 必须连续满足：**没有任何 GPU 进程（包括计算和图形进程）**、已用显存 ≤256 MiB、GPU 利用率 ≤1%，默认持续 180 秒（`--stable-seconds`，最小 60；显存阈值用 `--max-memory-mib`）。少量显存允许驱动基线分配，需要时可收紧。按 GPU UUID 跟踪，不能用不同卡轮流空闲凑时长；再次忙碌、NVIDIA 数据缺失/异常、GPU 清单变化或采样间隔超过 150 秒都重置连续性。MIG 已开启的父 GPU 不视为可用。通过宿主机只读 SSH 查询 `nvidia-smi -q -x`，不会把利用率为零但进程仍占显存的卡当成空闲。
 
