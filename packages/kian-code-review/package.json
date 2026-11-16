@@ -1,0 +1,181 @@
+{
+  "name": "kian-code-review",
+  "displayName": "Kian Review",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "strivin0311",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "SCM Providers"
+  ],
+  "main": "./src/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "activationEvents": [
+    "onView:kianReview.files"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "l10n": "./l10n",
+  "scripts": {
+    "test": "node --test test/git.test.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "kianReview.branches",
+        "title": "%branches%",
+        "category": "Kian Review",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "kianReview.commit",
+        "title": "%commit%",
+        "category": "Kian Review",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "kianReview.refresh",
+        "title": "%refresh%",
+        "category": "Kian Review",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kianReview.repository",
+        "title": "%repository%",
+        "category": "Kian Review",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "kianReview.filter",
+        "title": "%filter%",
+        "category": "Kian Review",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "kianReview.swap",
+        "title": "%swap%",
+        "category": "Kian Review",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "kianReview.open",
+        "title": "%open%",
+        "category": "Kian Review",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "kianReview.copyRelative",
+        "title": "%copyRelative%",
+        "category": "Kian Review",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "kianReview.copyAbsolute",
+        "title": "%copyAbsolute%",
+        "category": "Kian Review",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "kianReview.openWorkingFile",
+        "title": "%openWorkingFile%",
+        "category": "Kian Review",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "kianReview.show",
+        "title": "%show%",
+        "category": "Kian Review",
+        "icon": "$(git-compare)"
+      }
+    ],
+    "views": {
+      "scm": [
+        {
+          "id": "kianReview.files",
+          "name": "Kian Review",
+          "icon": "media/review.svg",
+          "contextualTitle": "Kian Review"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "kianReview.files",
+        "contents": "%welcome%"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "kianReview.branches",
+          "when": "view == kianReview.files",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kianReview.commit",
+          "when": "view == kianReview.files",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kianReview.refresh",
+          "when": "view == kianReview.files",
+          "group": "navigation@2"
+        },
+        {
+          "command": "kianReview.filter",
+          "when": "view == kianReview.files",
+          "group": "navigation@3"
+        },
+        {
+          "command": "kianReview.repository",
+          "when": "view == kianReview.files",
+          "group": "comparison"
+        },
+        {
+          "command": "kianReview.swap",
+          "when": "view == kianReview.files",
+          "group": "comparison"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "kianReview.copyRelative",
+          "when": "view == kianReview.files && viewItem == reviewFile",
+          "group": "inline@1"
+        },
+        {
+          "command": "kianReview.open",
+          "when": "view == kianReview.files && viewItem == reviewFile",
+          "group": "review"
+        },
+        {
+          "command": "kianReview.copyRelative",
+          "when": "view == kianReview.files && viewItem == reviewFile",
+          "group": "review"
+        },
+        {
+          "command": "kianReview.copyAbsolute",
+          "when": "view == kianReview.files && viewItem == reviewFile",
+          "group": "review"
+        },
+        {
+          "command": "kianReview.openWorkingFile",
+          "when": "view == kianReview.files && viewItem == reviewFile",
+          "group": "review"
+        }
+      ]
+    }
+  }
+}

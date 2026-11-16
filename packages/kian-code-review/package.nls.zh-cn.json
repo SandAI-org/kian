@@ -1,0 +1,15 @@
+{
+  "branches": "比较分支",
+  "commit": "查看提交",
+  "refresh": "刷新比较",
+  "repository": "选择仓库",
+  "filter": "筛选文件",
+  "swap": "交换比较方向",
+  "open": "打开差异",
+  "copyRelative": "复制相对路径",
+  "copyAbsolute": "复制绝对路径",
+  "openWorkingFile": "打开工作区文件",
+  "show": "显示代码审阅",
+  "description": "轻量分支和提交审阅，按需打开原生单文件 diff。",
+  "welcome": "[比较分支](command:kianReview.branches)\n[查看提交](command:kianReview.commit)"
+}

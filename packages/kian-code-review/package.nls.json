@@ -1,0 +1,15 @@
+{
+  "branches": "Compare Branches",
+  "commit": "Review Commit",
+  "refresh": "Refresh Comparison",
+  "repository": "Select Repository",
+  "filter": "Filter Files",
+  "swap": "Swap Base and Compare",
+  "open": "Open Diff",
+  "copyRelative": "Copy Relative Path",
+  "copyAbsolute": "Copy Absolute Path",
+  "openWorkingFile": "Open Working File",
+  "show": "Show Review",
+  "description": "Lightweight branch and commit review with lazy native file diffs.",
+  "welcome": "[Compare branches](command:kianReview.branches)\n[Review a commit](command:kianReview.commit)"
+}
