@@ -184,6 +184,8 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.10.12)
 
+  packages/kian-code-review: {}
+
   packages/weixin-adapter:
     devDependencies:
       '@types/node':
