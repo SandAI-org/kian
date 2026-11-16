@@ -2,6 +2,16 @@ const assert = require('node:assert/strict');
 const vscode = require('vscode');
 const { execFileSync } = require('node:child_process');
 
+async function waitVisible(view) {
+  if (view.visible) return;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { listener.dispose(); reject(new Error('Review tree did not become visible')); }, 5000);
+    const listener = view.onDidChangeVisibility(event => {
+      if (event.visible) { clearTimeout(timeout); listener.dispose(); resolve(); }
+    });
+  });
+}
+
 async function run() {
   const extension = vscode.extensions.getExtension('strivin0311.kian-code-review');
   const { provider } = await extension.activate();
@@ -11,6 +21,9 @@ async function run() {
   const before = execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: root });
   await vscode.commands.executeCommand('kianReview.compare', { root, left: 'main', right: 'feature' });
   assert.equal(provider.result.files.length, 3);
+  await waitVisible(provider.view);
+  assert.equal(provider.view.visible, true);
+  for (const node of provider.getChildren()) assert.ok(provider.getTreeItem(node));
   assert.equal(vscode.window.tabGroups.all.flatMap(g => g.tabs).filter(tab => tab.input instanceof vscode.TabInputTextDiff).length, 0);
   const tree = provider.getChildren();
   const leaf = tree.find(node => node.file?.path === 'demo.py');
@@ -36,6 +49,26 @@ async function run() {
     assert.equal((await vscode.workspace.openTextDocument(emptyUri)).getText(), '');
   }
   assert.deepEqual(execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: root }), before);
+  // Exercise the interactive command path, including its final mode picker.
+  const originalPickRef = provider.pickRef;
+  const originalQuickPick = vscode.window.showQuickPick;
+  const originalSelectRepository = provider.selectRepository;
+  const refs = ['main', 'feature'];
+  provider.pickRef = async () => refs.shift();
+  provider.selectRepository = async () => true;
+  vscode.window.showQuickPick = async () => ({ mode: 'merge-base' });
+  try {
+    await vscode.commands.executeCommand('workbench.action.closeSidebar');
+    await vscode.commands.executeCommand('kianReview.branches');
+    await waitVisible(provider.view);
+    assert.equal(provider.result.mode, 'merge-base');
+    assert.equal(provider.view.visible, true);
+    assert.equal(provider.result.files.length, 3);
+  } finally {
+    provider.pickRef = originalPickRef;
+    provider.selectRepository = originalSelectRepository;
+    vscode.window.showQuickPick = originalQuickPick;
+  }
   console.log('KIAN_REVIEW_EXTENSION_HOST_PASSED');
 }
 

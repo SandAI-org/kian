@@ -38,6 +38,7 @@ class ReviewProvider {
   }
 
   async compareBranches() {
+    await vscode.commands.executeCommand('kianReview.files.focus');
     if (!await this.selectRepository()) return;
     const left = await this.pickRef(t('Base / left branch'), this.input?.left);
     if (!left) return;
@@ -51,6 +52,7 @@ class ReviewProvider {
   }
 
   async compareCommit() {
+    await vscode.commands.executeCommand('kianReview.files.focus');
     if (!await this.selectRepository()) return;
     let skip = 0;
     while (true) {
@@ -78,7 +80,9 @@ class ReviewProvider {
       this.input = input; this.result = result;
       for (const file of result.files) file.comparison = { ...result, files: undefined, repo };
       this.rebuild();
+      this.view.description = input.mode === 'commit' ? t('Commit · first parent') : input.mode === 'merge-base' ? t('PR / merge base') : t('Branch tips');
       await this.context.workspaceState.update('comparison', { root: repo.rootUri.toString(), input });
+      this.output?.appendLine(`${result.mode}: ${result.leftHash || 'empty'} -> ${result.rightHash}; ${result.files.length} files`);
     } finally {
       if (generation === this.generation) this.updateMessage();
     }
@@ -144,15 +148,23 @@ async function activate(context) {
   const gitExtension = vscode.extensions.getExtension('vscode.git');
   const exports = await gitExtension.activate(); const api = exports.getAPI(1);
   const provider = new ReviewProvider(context, api);
+  provider.output = vscode.window.createOutputChannel('Kian Review');
   const view = vscode.window.createTreeView('kianReview.files', { treeDataProvider: provider, showCollapseAll: true });
   provider.view = view; provider.updateMessage();
-  context.subscriptions.push(view, provider.events,
+  context.subscriptions.push(view, provider.events, provider.output,
     vscode.workspace.registerTextDocumentContentProvider('kian-review-empty', { provideTextDocumentContent: () => '' }));
   const register = (name, fn) => context.subscriptions.push(vscode.commands.registerCommand(`kianReview.${name}`, async (...args) => {
     try {
       if (!vscode.workspace.isTrusted) throw new Error(t('Open a trusted Git repository first.'));
-      return await fn(...args);
-    } catch (error) { vscode.window.showErrorMessage(t('Kian Review: {0}', error.message)); }
+      const result = await fn(...args);
+      if (['branches', 'commit', 'refresh', 'compare'].includes(name) && provider.result) {
+        await vscode.commands.executeCommand('kianReview.files.focus');
+      }
+      return result;
+    } catch (error) {
+      provider.output.appendLine(error.stack || error.message);
+      vscode.window.showErrorMessage(t('Kian Review: {0}', error.message));
+    }
   }));
   register('branches', () => provider.compareBranches());
   register('commit', () => provider.compareCommit());
