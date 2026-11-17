@@ -462,6 +462,11 @@ async function run() {
     assert.equal(provider.reviewSession.notesScope, legacyScope);
     assert.deepEqual((await review.state(provider.reviewSession)).notes, legacyNotes);
     assert.equal((await review.state(provider.reviewSession)).files['demo.py'].reviewed, true);
+    await provider.refresh({ left: 'main', right: 'feature', mode: 'merge-base' });
+    vscode.window.showQuickPick = async items => items.find(item => item.link?.number === 3);
+    await review.connectPR();
+    assert.notEqual(provider.reviewSession.notesScope, legacyScope);
+    assert.equal((await review.state(provider.reviewSession)).notes.length, 0);
     let chooseClosed = false;
     vscode.window.showQuickPick = async items => {
       if (!chooseClosed) { chooseClosed = true; return items.find(item => item.action === 'state'); }

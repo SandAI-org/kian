@@ -217,7 +217,9 @@ class ReviewService {
     if (!reviewKey && !original.pr) {
       try {
         const [left, right] = await Promise.all([p.git.resolve(original.left), p.git.resolve(original.right)]);
-        if (left === pr.base.sha && right === pr.head.sha) reviewKey = original.reviewKey || [original.left, original.right];
+        const manualKey = original.reviewKey || [original.left, original.right];
+        const claimed = Object.entries(scopes).some(([key, value]) => key !== scopeKey(link) && key.startsWith(repo.rootUri.toString() + ':') && JSON.stringify(value) === JSON.stringify(manualKey));
+        if (!claimed && left === pr.base.sha && right === pr.head.sha) reviewKey = manualKey;
       } catch (error) { if (error.code !== 128) throw error; }
     }
     reviewKey ||= ['github-pr', link.repository.toLowerCase(), link.number];
