@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -286,7 +286,7 @@
       {
         "key": "enter",
         "command": "editor.action.submitComment",
-        "when": "commentEditorFocused && commentController == kianReview.notes && !inComposition && !suggestWidgetVisible"
+        "when": "commentEditorFocused && commentController == kianReview.notes && !inComposition"
       },
       {
         "key": "shift+enter",
