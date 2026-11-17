@@ -64,6 +64,18 @@ class ReadingLibraryTest(unittest.TestCase):
         inbox.mark_read([events[0]['id']], False)
         self.assertEqual(inbox.unread_groups(groups, 'papers'), groups)
 
+    def test_private_pdf_is_explicitly_registered_and_independent_of_original_path(self):
+        source = self.root / 'private.pdf'
+        source.write_bytes(b'%PDF-1.7\nprivate fixture')
+        identity = library.save_document(source)
+        self.assertEqual(library.save_document(source), identity)
+        source.unlink()
+        self.assertEqual(library.get_document(identity), b'%PDF-1.7\nprivate fixture')
+        self.assertIsNone(library.get_document('0' * 64))
+        source.write_text('not a PDF')
+        with self.assertRaises(ValueError):
+            library.save_document(source)
+
     def test_invalid_import_cannot_partially_write_or_register_credentials(self):
         with self.assertRaises(ValueError):
             library.import_entries([self.entry, dict(self.entry, url='file:///etc/passwd')])
@@ -105,6 +117,10 @@ class ReadingLibraryTest(unittest.TestCase):
     def test_web_guide_and_asset_are_allowlisted_and_read_writes_still_need_token(self):
         library.import_entries([self.entry])
         guide = library.save_guide(self.entry['url'], 'Guide', '# Test', [('figure.png', 'image/png', b'image')])
+        pdf = self.root / 'source.pdf'
+        pdf.write_bytes(b'%PDF-1.7\nregistered source')
+        document = library.save_document(pdf)
+        pdf.unlink()
         server = ThreadingHTTPServer(('127.0.0.1', 0), dashboard.make_handler(0))
         port = server.server_port
         server.RequestHandlerClass = dashboard.make_handler(port)
@@ -113,7 +129,7 @@ class ReadingLibraryTest(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         base = 'http://127.0.0.1:' + str(port)
-        for route, mime in [('/guide/'+guide, 'text/html'), ('/api/guide/'+guide, 'application/json'), ('/guide-assets/'+guide+'/figure.png', 'image/png'), ('/guide.js', 'text/javascript'), ('/vendor/markdown-it/dist/browser/markdown-it.umd.min.js', 'text/javascript'), ('/vendor/katex/dist/katex.min.js', 'text/javascript'), ('/vendor/markdown-it-texmath/texmath.js', 'text/javascript')]:
+        for route, mime in [('/library-document/'+document+'.pdf', 'application/pdf'), ('/guide/'+guide, 'text/html'), ('/api/guide/'+guide, 'application/json'), ('/guide-assets/'+guide+'/figure.png', 'image/png'), ('/guide.js', 'text/javascript'), ('/vendor/markdown-it/dist/browser/markdown-it.umd.min.js', 'text/javascript'), ('/vendor/katex/dist/katex.min.js', 'text/javascript'), ('/vendor/markdown-it-texmath/texmath.js', 'text/javascript')]:
             with urllib.request.urlopen(base+route) as response:
                 self.assertIn(mime, response.headers['Content-Type'])
                 if route.startswith('/api/'):
@@ -122,7 +138,7 @@ class ReadingLibraryTest(unittest.TestCase):
                     self.assertNotIn('source_key', data)
                 if route.startswith('/guide/'):
                     self.assertIn("script-src 'self'", response.headers['Content-Security-Policy'])
-        for route in ['/api/guide/'+'f'*64, '/guide-assets/'+guide+'/secret.txt', '/vendor/../../reading_library.py', '/guide-assets/'+guide+'/../../reading_library.py']:
+        for route in ['/library-document/'+'f'*64+'.pdf', '/library-document/../../etc/passwd', '/api/guide/'+'f'*64, '/guide-assets/'+guide+'/secret.txt', '/vendor/../../reading_library.py', '/guide-assets/'+guide+'/../../reading_library.py']:
             with self.assertRaises(urllib.error.HTTPError) as error:
                 urllib.request.urlopen(base+route)
             self.assertEqual(error.exception.code, 404)

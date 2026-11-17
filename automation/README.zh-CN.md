@@ -280,10 +280,12 @@ Thinking Machines Connectionism（`https://thinkingmachines.ai/blog/`）作为�
 
 ### 统一阅读资料库与 Markdown 导读
 
-阅读室同时管理手动收录的论文／书籍，以及文章、PR、issue 的导读。原始 PDF 不在阅读室保存或提供下载。已读和收藏独立，打开导读不自动标记已读。同一原文的各次更新都显示 **阅读导读** 链接；独立导读页展示 Markdown 表格、代码、公式和登记配图，提供目录及明确的已读／收藏操作。原有折叠、历史与提醒规则保持不变。
+仅本地文档可显式运行 `python3 automation/scripts/reading_library.py document /absolute/path/document.pdf --title TITLE`（可选 `--favorite`）。将不超过10 MiB的指定PDF复制到私有SQLite，以内容SHA-256去重，通过`/library-document/<sha256>.pdf`提供本机原文入口，再用该URL登记导读。新条目默认未读、不进入提醒队列；重复导入相同内容保留个人状态，原文件移动不影响已登记副本，内容改变则是新来源。服务端不接受文件系统路径访问；原文PDF及全文提取不提交Context。
+
+阅读室同时管理手动收录的论文／书籍，以及文章、PR、issue 的导读。公开论文使用原文链接；明确导入的私有PDF可在本机保存。已读和收藏独立，打开导读不自动标记已读。同一原文的各次更新都显示 **阅读导读** 链接；独立导读页展示 Markdown 表格、代码、公式和登记配图，提供目录及明确的已读／收藏操作。原有折叠、历史与提醒规则保持不变。
 
 Agent 使用 `automation/scripts/reading_library.py import manifest.json` 登记条目。JSON 数组必填 `title`、公开 HTTP(S) `url`、布尔 `is_read` 和 `is_favorite`；可选 `channel`（默认 `papers`）、`repo`、`source_name`、`kind`、`summary`、`categories`、`versions`、`provenance`，以及已确认的 `read_at`。按规范化原文链接匹配（arXiv 版本、PDF、HTML、papers.cool 入口共用身份），保留已有已读／收藏，初始化状态只应用一次。论文监控后来发现同一篇时复用导入条目及其已读提醒门控；PR 后续更新仍为独立事件。
 
-登记／更新导读：`python3 automation/scripts/reading_library.py guide --source URL --title TITLE --markdown /absolute/path/README.md`。默认 `--key reading` 更新既有导读；确有独立导读才使用另一个稳定 key。网页不显示 Markdown front matter。Markdown 所在目录下相对引用的 PNG/JPEG/WebP 配图复制到私有数据库并改写成登记资产 URL。登记前将本地 PDF 链接改成固定版本在线原文，并保留 `#page=N`；不会开放任意本地文件。禁用原始 HTML，不加载外部图片，渲染库及字体带固定版本和许可证随 Kian 保存。Mermaid 代码块暂按可读源码展示。
+登记／更新导读：`python3 automation/scripts/reading_library.py guide --source URL --title TITLE --markdown /absolute/path/README.md`。默认 `--key reading` 更新既有导读；确有独立导读才使用另一个稳定 key。网页不显示 Markdown front matter。Markdown 所在目录下相对引用的 PNG/JPEG/WebP 配图复制到私有数据库并改写成登记资产 URL。公开论文登记前将本地 PDF 链接改成固定版本在线原文，并保留 `#page=N`；私有文档使用上面的已登记本机URL；不会开放任意本地文件。禁用原始 HTML，不加载外部图片，渲染库及字体带固定版本和许可证随 Kian 保存。Mermaid 代码块暂按可读源码展示。
 
 可跨环境复用的导读正文放在 `ai-agent-contexts/research/reading-guides/<source-slug>/README.md`；既有 PR／issue 报告保留 `research/open-source/items/` 唯一路径。SQLite 保存私有阅读状态和导读／配图展示副本。Context 记录、网页已读／收藏，以及调研 TODO／watch 状态分别维护。完整 agent 流程见共享导读协议。备份 `state/repo-inbox.sqlite3` 应使用 SQLite backup API（含导读及配图），不能只复制使用 WAL 的在线数据库单文件。

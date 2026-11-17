@@ -46,6 +46,10 @@ def make_handler(port, language='zh', repositories=()):
             if match:
                 asset = reading_library.get_asset(*match.groups())
                 return self.reply(200, asset[1], asset[0]) if asset else self.reply(404, {'error': 'Not found'})
+            match = re.fullmatch(r'/library-document/([a-f0-9]{64})\.pdf', route)
+            if match:
+                document = reading_library.get_document(match[1])
+                return self.reply(200, document, 'application/pdf') if document else self.reply(404, {'error': 'Not found'})
             if re.fullmatch(r'/guide/[a-f0-9]{64}', route):
                 return self.reply(200, (ASSETS / 'guide.html').read_bytes(), 'text/html; charset=utf-8')
             if route.startswith('/vendor/'):

@@ -36,6 +36,7 @@ def connect():
     db.execute('CREATE TABLE IF NOT EXISTS event_favorites (event_id TEXT PRIMARY KEY, saved_at TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS reading_guides (id TEXT PRIMARY KEY, source_key TEXT NOT NULL, title TEXT NOT NULL, markdown TEXT NOT NULL, updated_at TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS guide_assets (guide_id TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL, content BLOB NOT NULL, PRIMARY KEY(guide_id,name))')
+    db.execute('CREATE TABLE IF NOT EXISTS library_documents (id TEXT PRIMARY KEY, content BLOB NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS library_entries (source_key TEXT PRIMARY KEY, event_id TEXT NOT NULL, metadata TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS event_aliases (id TEXT PRIMARY KEY, event_id TEXT NOT NULL)')
     try:

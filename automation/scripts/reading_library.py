@@ -66,6 +66,24 @@ def get_asset(identity, name):
     return (row['mime'], row['content']) if row else None
 
 
+def save_document(path):
+    if path.suffix.lower() != '.pdf' or path.stat().st_size > 10 * 1024 * 1024:
+        raise ValueError('Import a PDF of at most 10 MiB')
+    content = path.read_bytes()
+    if not content.startswith(b'%PDF-') or len(content) > 10 * 1024 * 1024:
+        raise ValueError('Invalid PDF document')
+    identity = hashlib.sha256(content).hexdigest()
+    with repo_inbox.connect() as db:
+        db.execute('INSERT OR IGNORE INTO library_documents VALUES (?,?)', (identity, content))
+    return identity
+
+
+def get_document(identity):
+    with repo_inbox.connect() as db:
+        row = db.execute('SELECT content FROM library_documents WHERE id=?', (identity,)).fetchone()
+    return row['content'] if row else None
+
+
 def register_markdown(url, title, path, key='reading'):
     markdown = path.read_text()
     markdown = re.sub(r'\A---\n.*?\n---\n', '', markdown, count=1, flags=re.S)
@@ -146,6 +164,10 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     imports = commands.add_parser('import', help='Import an explicit JSON item manifest; safe to repeat')
     imports.add_argument('manifest', type=Path)
+    document = commands.add_parser('document', help='Explicitly import a private local PDF; no arbitrary file serving')
+    document.add_argument('path', type=Path)
+    document.add_argument('--title', required=True)
+    document.add_argument('--favorite', action='store_true')
     guide = commands.add_parser('guide', help='Register a Markdown guide for an existing source URL')
     guide.add_argument('--source', required=True)
     guide.add_argument('--title', required=True)
@@ -154,6 +176,13 @@ def main():
     args = parser.parse_args()
     if args.command == 'import':
         print(json.dumps(import_entries(json.loads(args.manifest.read_text())), ensure_ascii=False, indent=2))
+    elif args.command == 'document':
+        from automation_common import load_config
+        identity = save_document(args.path)
+        port = int(load_config().get('repo_inbox', {}).get('port', 8768))
+        url = f'http://127.0.0.1:{port}/library-document/{identity}.pdf'
+        print(json.dumps(import_entries([dict(title=args.title, url=url, is_read=False,
+            is_favorite=args.favorite, repo='library:documents', source_name='Local documents', kind='article')]), ensure_ascii=False, indent=2))
     else:
         identity = register_markdown(args.source, args.title, args.markdown, key=args.key)
         print('/guide/' + identity)
