@@ -264,6 +264,8 @@ async function activate(context) {
   register('open', node => provider.open(node));
   register('addPrivateNote', () => provider.review.addAtSelection());
   register('savePrivateNote', reply => provider.review.addReply(reply));
+  register('saveEditedPrivateNote', comment => provider.review.finishEdit(comment, true));
+  register('cancelEditPrivateNote', comment => provider.review.finishEdit(comment, false));
   register('resolvePrivateNote', thread => provider.review.threadAction(thread, 'resolve'));
   register('reopenPrivateNote', thread => provider.review.threadAction(thread, 'reopen'));
   register('copyPrompts', () => provider.review.copyPrompts());

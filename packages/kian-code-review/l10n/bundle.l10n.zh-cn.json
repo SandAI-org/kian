@@ -124,5 +124,6 @@
   "Invalid include pattern": "包含条件无效",
   "Invalid exclude pattern": "排除条件无效",
   "Comma separates OR conditions. Glob: *.py, src/**, *.{cu,cpp}. Plain text matches substrings.": "逗号分隔“或”条件；支持 *.py、src/**、*.{cu,cpp}，普通文本匹配路径片段。",
-  "Regular expressions, case insensitive. Commas outside groups separate OR conditions. Escape a literal comma with \\,.": "正则匹配不区分大小写；分组外逗号表示“或”，匹配逗号本身请写 \\,。"
+  "Regular expressions, case insensitive. Commas outside groups separate OR conditions. Escape a literal comma with \\,.": "正则匹配不区分大小写；分组外逗号表示“或”，匹配逗号本身请写 \\,。",
+  "A private prompt must contain text and be at most 65536 characters.": "私有问题不能为空，且最多为65536个字符。"
 }

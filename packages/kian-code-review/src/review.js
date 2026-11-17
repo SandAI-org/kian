@@ -12,7 +12,7 @@ class ReviewService {
   constructor(context, provider) {
     this.provider = provider;
     this.store = new ReviewStore(path.join(context.globalStorageUri.fsPath, 'reviews'));
-    this.documents = new Map(); this.threads = new Map(); this.threadNotes = new WeakMap();
+    this.documents = new Map(); this.threads = new Map(); this.threadNotes = new WeakMap(); this.commentNotes = new WeakMap();
     this.controller = vscode.comments.createCommentController('kianReview.notes', t('Kian Review · Private notes'));
     this.controller.options = { prompt: t('Add a private question'), placeHolder: t('Private prompt for your agent; nothing is posted to GitHub.') };
     this.controller.commentingRangeProvider = { provideCommentingRanges: doc => this.documents.has(doc.uri.toString())
@@ -60,7 +60,9 @@ class ReviewService {
       new vscode.Range(note.anchor.start, 0, note.anchor.end, 0), []);
     this.threads.set(key, thread); this.threadNotes.set(thread, { id: note.id, session });
     const body = new vscode.MarkdownString(); body.appendText(note.text);
-    thread.comments = [{ body, mode: vscode.CommentMode.Preview, author: { name: t('Private prompt') }, label: note.published ? t('Published') : t('Local only') }];
+    const comment = { body, mode: vscode.CommentMode.Preview, contextValue: 'kianPrivateNote', author: { name: t('Private prompt') }, label: note.published ? t('Published') : t('Local only') };
+    this.commentNotes.set(comment, { id: note.id, session, thread });
+    thread.comments = [comment];
     thread.contextValue = note.resolved ? 'kianNoteResolved' : 'kianNoteOpen';
     thread.label = note.resolved ? t('Resolved') : t('Private question');
     thread.state = note.resolved ? vscode.CommentThreadState.Resolved : vscode.CommentThreadState.Unresolved;
@@ -88,10 +90,17 @@ class ReviewService {
     const note = await this.store.read(session.notesScope, 'notes', id);
     if (!note) return;
     if (action === 'edit') {
-      const text = await vscode.window.showInputBox({ prompt: t('Edit private prompt'), value: note.text, ignoreFocusOut: true });
-      if (!text?.trim()) return;
-      if (text.length > 65536) throw new Error(t('A private prompt must be at most 65536 characters.'));
-      note.text = text.trim();
+      await vscode.window.showTextDocument(vscode.Uri.parse(note.anchor.uri), { preview: true,
+        selection: new vscode.Range(note.anchor.start, 0, note.anchor.end, 0) });
+      const thread = this.threads.get(session.notesScope + ':' + id) || this.showThread(note, session);
+      const comment = thread.comments[0];
+      if (comment.mode !== vscode.CommentMode.Editing) {
+        comment.body = note.text;
+        comment.mode = vscode.CommentMode.Editing;
+        thread.comments = [comment];
+      }
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+      return;
     } else if (action === 'resolve' || action === 'reopen') note.resolved = action === 'resolve';
     else if (action === 'open') {
       const uri = vscode.Uri.parse(note.anchor.uri);
@@ -100,6 +109,24 @@ class ReviewService {
     } else return;
     await this.store.write(session.notesScope, 'notes', note.id, note);
     if (this.threads.has(session.notesScope + ':' + id)) this.showThread(note, session);
+    await this.provider.view.update();
+  }
+  async finishEdit(comment, save) {
+    const entry = this.commentNotes.get(comment);
+    if (!entry) return;
+    const note = await this.store.read(entry.session.notesScope, 'notes', entry.id);
+    if (!note) return;
+    if (save) {
+      const text = typeof comment.body === 'string' ? comment.body : comment.body.value;
+      if (!text.trim() || text.length > 65536) {
+        const draft = { ...comment, mode: vscode.CommentMode.Editing };
+        this.commentNotes.set(draft, entry); entry.thread.comments = [draft];
+        throw new Error(t('A private prompt must contain text and be at most 65536 characters.'));
+      }
+      note.text = text.trim();
+      await this.store.write(entry.session.notesScope, 'notes', note.id, note);
+    }
+    this.showThread(note, entry.session, entry.thread).collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     await this.provider.view.update();
   }
   async threadAction(thread, action) {

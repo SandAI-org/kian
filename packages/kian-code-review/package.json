@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -179,6 +179,16 @@
         "title": "%connectPR%",
         "category": "Kian Review",
         "icon": "$(github)"
+      },
+      {
+        "command": "kianReview.saveEditedPrivateNote",
+        "title": "%savePrivateNote%",
+        "category": "Kian Review"
+      },
+      {
+        "command": "kianReview.cancelEditPrivateNote",
+        "title": "%cancelEditPrivateNote%",
+        "category": "Kian Review"
       }
     ],
     "views": {
@@ -279,6 +289,26 @@
         {
           "command": "kianReview.reopenPrivateNote",
           "when": "false"
+        },
+        {
+          "command": "kianReview.saveEditedPrivateNote",
+          "when": "false"
+        },
+        {
+          "command": "kianReview.cancelEditPrivateNote",
+          "when": "false"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "kianReview.saveEditedPrivateNote",
+          "group": "inline@1",
+          "when": "commentController == kianReview.notes && comment == kianPrivateNote"
+        },
+        {
+          "command": "kianReview.cancelEditPrivateNote",
+          "group": "inline@2",
+          "when": "commentController == kianReview.notes && comment == kianPrivateNote"
         }
       ]
     },

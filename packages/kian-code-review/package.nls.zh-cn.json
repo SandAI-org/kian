@@ -24,5 +24,6 @@
   "resolvePrivateNote": "解决私有问题",
   "reopenPrivateNote": "重新打开私有问题",
   "copyPrompts": "复制未解决的问题",
-  "connectPR": "连接GitHub PR"
+  "connectPR": "连接GitHub PR",
+  "cancelEditPrivateNote": "取消编辑"
 }

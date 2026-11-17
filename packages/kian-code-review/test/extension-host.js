@@ -112,6 +112,35 @@ async function run() {
   const note = reviewState.notes.at(-1);
   assert.equal(note.anchor.path, 'demo.py'); assert.equal(note.anchor.start, 0);
   assert.equal(noteThread.comments.length, 1);
+  const inputBoxOriginal = vscode.window.showInputBox;
+  vscode.window.showInputBox = async () => { throw new Error('Editing must use the inline comment editor'); };
+  try {
+    await review.noteAction(note.id, 'edit');
+    assert.equal(noteThread.comments[0].mode, vscode.CommentMode.Editing);
+    assert.equal(noteThread.comments[0].body, note.text);
+    assert.equal(noteThread.collapsibleState, vscode.CommentThreadCollapsibleState.Expanded);
+    assert.equal(vscode.window.activeTextEditor.document.uri.toString(), note.anchor.uri);
+    let inlineEditor;
+    for (let i = 0; i < 60; i++) {
+      inlineEditor = vscode.workspace.textDocuments.find(doc => doc.uri.scheme === 'comment' && doc.getText() === note.text);
+      if (inlineEditor) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.ok(inlineEditor, 'The native multiline comment editor must be created');
+    const edited = 'Explain this line.\nKeep `code`, **literal stars** and _underscores_.';
+    noteThread.comments[0].body = new vscode.MarkdownString(edited);
+    await vscode.commands.executeCommand('kianReview.saveEditedPrivateNote', noteThread.comments[0]);
+    let notes = (await review.state(provider.reviewSession)).notes;
+    assert.equal(notes.length, 1); assert.equal(notes[0].id, note.id); assert.equal(notes[0].text, edited);
+    assert.deepEqual(notes[0].anchor, note.anchor);
+    assert.equal(noteThread.comments[0].mode, vscode.CommentMode.Preview);
+    await review.noteAction(note.id, 'edit');
+    assert.equal(noteThread.comments[0].body, edited);
+    noteThread.comments[0].body = 'discard this draft';
+    await vscode.commands.executeCommand('kianReview.cancelEditPrivateNote', noteThread.comments[0]);
+    assert.equal((await review.state(provider.reviewSession)).notes[0].text, edited);
+    assert.equal(noteThread.comments[0].mode, vscode.CommentMode.Preview);
+  } finally { vscode.window.showInputBox = inputBoxOriginal; }
   const clipboardSaved = await vscode.env.clipboard.readText();
   try {
     await review.copyPrompts();
