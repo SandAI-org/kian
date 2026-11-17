@@ -158,7 +158,8 @@ class ReviewService {
     if (!input?.pr) { await p.refresh(); this.updateInfo = { available: false }; return; }
     const api = await this.github(true); if (!api) return;
     const pr = await this.fetchPR(api, input.pr);
-    await p.refresh({ ...input, left: pr.base.sha, right: pr.head.sha });
+    await p.refresh({ ...input, left: pr.base.sha, right: pr.head.sha,
+      pr: { ...input.pr, baseRef: pr.base.ref, headRef: pr.head.ref, url: pr.html_url } });
     this.updateInfo = { available: false }; await p.view.update();
   }
   async checkUpdates() {
@@ -172,7 +173,8 @@ class ReviewService {
         const api = await this.github(false);
         if (!api) throw new Error(t('Sign in to GitHub to check PR updates.'));
         const pr = await api.request(`/repos/${input.pr.repository}/pulls/${input.pr.number}`);
-        available = pr.head.sha !== current.rightHash || pr.base.sha !== current.baseTipHash;
+        available = pr.head.sha !== current.rightHash || pr.base.sha !== current.baseTipHash
+          || pr.base.ref !== input.pr.baseRef || pr.head.ref !== input.pr.headRef;
       } else {
         const [left, right] = await Promise.all([p.git.resolve(input.left), p.git.resolve(input.right)]);
         available = left !== current.baseTipHash || right !== current.rightHash;

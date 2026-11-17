@@ -148,6 +148,15 @@ async function run() {
     await review.publish(note.id); assert.equal(postCount, 1);
     assert.ok((await review.state(provider.reviewSession)).notes.at(-1).published.url);
   } finally { review.github = githubOriginal; vscode.window.showInformationMessage = infoOriginal; provider.input = originalInput; }
+  const fetchOriginal = review.fetchPR;
+  try {
+    provider.input = { ...provider.input, reviewKey: [originalInput.left, originalInput.right], pr: { repository: 'fixture/repository', number: 1, baseRef: 'old-base' } };
+    review.github = async () => ({});
+    review.fetchPR = async () => ({ base: { sha: provider.result.baseTipHash, ref: 'retargeted-base' }, head: { sha: provider.result.rightHash, ref: 'feature' }, html_url: 'https://github.com/fixture/repository/pull/1' });
+    await review.refresh();
+    assert.equal(provider.input.pr.baseRef, 'retargeted-base');
+    assert.equal(provider.getControls().find(c => c.control === 'base').value, 'retargeted-base');
+  } finally { review.fetchPR = fetchOriginal; review.github = githubOriginal; await provider.refresh(originalInput); }
   await review.threadAction(noteThread, 'resolve');
   await provider.refresh({ left: 'main', right: 'feature', mode: 'direct' });
   // Switching mode must no longer reopen repository/ref/mode wizards.
