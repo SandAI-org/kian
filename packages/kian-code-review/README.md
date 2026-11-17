@@ -6,7 +6,7 @@ A VS Code workbench for branch, commit and PR review. It displays metadata until
 
 Mode labels stay compact in every language: **PR**, **Branch Diff**, and **Commit Diff**. Hover over the mode selector for the comparison rule.
 
-Commit Diff shows the pinned history's source branch/revision next to Commit and the actual parent SHA in Base (or Empty tree for a root commit). A source label identifies the history being browsed, not a unique branch owning that commit.
+Commit Diff shows the pinned history's source branch/revision in a separate line below the toolbar, with ellipsis for long names and the full name on hover. Base shows the actual parent SHA (or Empty tree for a root commit). A source label identifies the history being browsed, not a unique branch owning that commit.
 
 Open Source Control (`Cmd+Shift+G`) and find **Kian Review**, or run **Kian Review: Show Review**. The current workspace repository is selected automatically. Repository choices are limited to Magi-family repositories, Odin and Magicore, recognized by folder name or Git remote (including renamed worktrees). Third-party dependencies such as Quack/PyTorch and the Context repository do not clutter the picker.
 

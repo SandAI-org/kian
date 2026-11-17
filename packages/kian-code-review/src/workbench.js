@@ -42,7 +42,7 @@ class ReviewWorkbench {
   async snapshot() {
     const p = this.provider, result = p.result;
     const labels = Object.fromEntries(['Repository', 'Mode', 'Base', 'Compare', 'Commit', 'Branch tips', 'PR / merge base',
-      'Commit · first parent', 'PR', 'Branch Diff', 'Commit Diff', 'First parent (automatic)', 'History', 'Changed files', 'Details', 'Hide details', 'Show details',
+      'History source', 'Commit · first parent', 'PR', 'Branch Diff', 'Commit Diff', 'First parent (automatic)', 'History', 'Changed files', 'Details', 'Hide details', 'Show details',
       'Search commits', 'Filter files', 'Load older commits…', 'Previous Commit (Older)', 'Next Commit (Newer)',
       'Expand All Folders', 'Collapse All Folders', 'Refresh Comparison', 'Swap Base and Compare', 'Copy Relative Path',
       'Copy Compare-side Absolute Path', 'Open Working File', 'Empty tree', 'No commits in this range.', 'No matching files.',
@@ -73,6 +73,7 @@ class ReviewWorkbench {
     if (p.git !== git || p.result !== result) return;
     const position = input.mode === 'commit' ? p.commitHistory.hashes.indexOf(result.rightHash) : -1;
     return { labels, controls: p.getControls(), filter: p.filter, files: result.files.filter(f => `${f.path}\n${f.oldPath}`.toLowerCase().includes(p.filter.toLowerCase())).map(({ path, oldPath, status, added, removed }) => ({ path, oldPath, status, added, removed })),
+      historySource: input.mode === 'commit' ? p.commitHistory.source : null,
       commits: this.history.commits, more: this.history.more, historyKey, mode: input.mode,
       selected: input.mode === 'commit' ? result.rightHash : null, left: result.leftHash, right: result.rightHash,
       key: `${git.root}:${result.leftHash}:${result.rightHash}:${input.mode}:${p.reviewSession.scope}`, root: git.root,

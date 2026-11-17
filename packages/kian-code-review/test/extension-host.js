@@ -205,7 +205,8 @@ async function run() {
     assert.equal(commitState.selected, featureHash);
     assert.equal(provider.commitHistory.source, 'feature');
     assert.equal(commitState.controls.find(c => c.control === 'base').value, mainHash.slice(0, 8));
-    assert.match(commitState.controls.find(c => c.control === 'target').name, /feature/);
+    assert.equal(commitState.historySource, 'feature');
+    assert.equal(commitState.controls.find(c => c.control === 'target').name, 'Commit');
     assert.match(commitState.details.message, /feature/);
     assert.equal(commitState.canPrevious, true);
     assert.equal(commitState.canNext, false);
@@ -311,6 +312,14 @@ async function run() {
     assert.equal(report.horizontalOverflow, false);
     assert.ok(['grid', 'flex'].includes(report.layoutDisplay));
     assert.equal(report.toolbarDisplay, 'flex');
+    const sourceState = await workbench.snapshot();
+    const longSource = 'work/' + 'very-long-branch-name-'.repeat(40);
+    await workbench.webviewView.webview.postMessage({ type: 'state', state: { ...sourceState, historySource: longSource } });
+    report = await probe();
+    assert.equal(report.sourceHidden, false); assert.ok(report.sourceTitle.endsWith(longSource));
+    assert.equal(report.sourceEllipsis, 'ellipsis'); assert.equal(report.horizontalOverflow, false);
+    await workbench.webviewView.webview.postMessage({ type: 'state', state: sourceState });
+    report = await probe(); assert.equal(report.sourceHidden, true);
     report = await probe('advanced-filter'); assert.equal(report.files, 2);
     report = await probe('regex-filter'); assert.equal(report.files, 1);
     report = await probe('invalid-filter'); assert.equal(report.filterError, true); assert.equal(report.files, 1);

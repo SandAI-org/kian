@@ -154,7 +154,7 @@ class ReviewProvider {
       { control: 'repository', name: t('Repository'), value: this.repo ? path.basename(this.repo.rootUri.fsPath) : t('Select repository'), icon: 'repo' },
       { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit Diff') : mode === 'direct' ? t('Branch Diff') : t('PR'), icon: 'git-compare' },
       { control: 'base', name: t('Base'), title: mode === 'commit' ? t('First parent (automatic)') : undefined, value: mode === 'commit' ? this.result?.leftHash?.slice(0, 8) || t('Empty tree') : this.input?.pr?.baseRef || this.input?.left || 'main', icon: 'git-commit' },
-      { control: 'target', name: mode === 'commit' ? `${t('Commit')} · ${this.commitHistory?.source || this.input?.right || 'HEAD'}` : t('Compare'),
+      { control: 'target', name: mode === 'commit' ? t('Commit') : t('Compare'),
         value: mode === 'commit' && this.result ? this.result.rightHash.slice(0, 8) : this.input?.pr?.headRef || this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: mode === 'commit' ? 'git-commit' : 'git-branch' },
     ];
   }

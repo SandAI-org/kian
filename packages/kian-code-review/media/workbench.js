@@ -55,6 +55,7 @@
   const historyToggle = button('☷', () => { historyHidden = !historyHidden; updateDetailsVisibility(); persist(); }, 'icon-button');
   const connect = actionButton('PR', 'Connect PR', 'connectPR');
   navigation.append(previous, next, swap, refresh, connect, historyToggle, detailToggle); header.append(controls, navigation);
+  const historySource = el('div', 'history-source'); historySource.hidden = true;
   const status = el('div', 'status'); status.setAttribute('role', 'status');
   const layout = el('div', 'layout');
   const pane = className => {
@@ -80,7 +81,7 @@
   const collapse = button('⊟', () => { for (const node of filesBody.querySelectorAll('details.folder')) node.open = false; openFolders.clear(); persist(); }, 'icon-button');
   fileTools.append(includeLabel, excludeLabel, regexToggle, expand, collapse); filesPane.heading.after(fileTools);
   const filterError = el('div', 'filter-error'); filterError.hidden = true; filterError.setAttribute('role', 'status'); fileTools.after(filterError);
-  const footer = el('footer'); app.append(header, status, layout, footer);
+  const footer = el('footer'); app.append(header, historySource, status, layout, footer);
   const updateBanner = el('div', 'update-banner'), updateText = el('span');
   const updateRefresh = actionButton('↻', 'Refresh Comparison', 'refresh'); updateBanner.append(updateText, updateRefresh); status.after(updateBanner);
   const tabs = el('div', 'detail-tabs');
@@ -254,6 +255,9 @@
       const control = controlButtons[c.control];
       if (control) { control.label.textContent = c.name; control.value.textContent = c.value; control.node.title = c.control === 'repository' ? state.root || c.value : c.title || c.value; }
     }
+    historySource.hidden = !state.historySource;
+    historySource.textContent = state.historySource ? `${tr('History source')}: ${state.historySource}` : '';
+    historySource.title = historySource.textContent;
     modeCaption.textContent = tr('Mode');
     for (const [i, label] of ['PR', 'Branch Diff', 'Commit Diff'].entries()) {
       mode.options[i].textContent = tr(label);
