@@ -1,0 +1,18 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'kian-review-fixture-'));
+const root = path.join(parent, 'magiattn'); fs.mkdirSync(root);
+const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+fs.writeFileSync(path.join(root, 'demo.py'), 'print("main")\n');
+fs.writeFileSync(path.join(root, 'removed.py'), 'removed\n');
+git('add', '.'); git('commit', '-qm', 'initial'); git('checkout', '-qb', 'feature');
+fs.writeFileSync(path.join(root, 'demo.py'), 'print("feature")\n');
+fs.unlinkSync(path.join(root, 'removed.py')); fs.writeFileSync(path.join(root, 'added.py'), 'added\n');
+fs.mkdirSync(path.join(root, 'deep/nested'), { recursive: true });
+fs.writeFileSync(path.join(root, 'deep/nested/file.py'), 'print("nested")\n');
+git('add', '.'); git('commit', '-qm', 'feature'); git('checkout', '-q', 'main');
+const worktree = path.join(parent, 'feature-worktree'); git('worktree', 'add', '-q', worktree, 'feature');
+console.log(JSON.stringify({ root, worktree, parent }));

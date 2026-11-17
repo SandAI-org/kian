@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -99,6 +99,42 @@
         "title": "%show%",
         "category": "Kian Review",
         "icon": "$(git-compare)"
+      },
+      {
+        "command": "kianReview.mode",
+        "title": "%mode%",
+        "category": "Kian Review",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "kianReview.base",
+        "title": "%base%",
+        "category": "Kian Review",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "kianReview.target",
+        "title": "%target%",
+        "category": "Kian Review",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "kianReview.expand",
+        "title": "%expand%",
+        "category": "Kian Review",
+        "icon": "$(expand-all)"
+      },
+      {
+        "command": "kianReview.collapse",
+        "title": "%collapse%",
+        "category": "Kian Review",
+        "icon": "$(collapse-all)"
+      },
+      {
+        "command": "kianReview.editControl",
+        "title": "%editControl%",
+        "category": "Kian Review",
+        "icon": "$(edit)"
       }
     ],
     "views": {
@@ -148,11 +184,21 @@
           "command": "kianReview.swap",
           "when": "view == kianReview.files",
           "group": "comparison"
+        },
+        {
+          "command": "kianReview.expand",
+          "when": "view == kianReview.files",
+          "group": "navigation@4"
+        },
+        {
+          "command": "kianReview.collapse",
+          "when": "view == kianReview.files",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
         {
-          "command": "kianReview.copyRelative",
+          "command": "kianReview.copyAbsolute",
           "when": "view == kianReview.files && viewItem == reviewFile",
           "group": "inline@1"
         },
@@ -175,6 +221,11 @@
           "command": "kianReview.openWorkingFile",
           "when": "view == kianReview.files && viewItem == reviewFile",
           "group": "review"
+        },
+        {
+          "command": "kianReview.editControl",
+          "when": "view == kianReview.files && viewItem == reviewControl",
+          "group": "inline@1"
         }
       ]
     }

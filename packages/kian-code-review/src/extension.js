@@ -1,6 +1,6 @@
 const vscode = require('vscode');
 const path = require('node:path');
-const { GitRepository, buildTree } = require('./git');
+const { GitRepository, buildTree, isMagiRepository } = require('./git');
 const t = (...args) => vscode.l10n.t(...args);
 
 class ReviewProvider {
@@ -8,12 +8,22 @@ class ReviewProvider {
     this.context = context; this.gitApi = gitApi; this.generation = 0;
     this.events = new vscode.EventEmitter(); this.onDidChangeTreeData = this.events.event;
     this.root = buildTree([]); this.filter = ''; this.input = null; this.repo = null;
+    this.folderState = vscode.TreeItemCollapsibleState.Collapsed;
+    this.foldRevision = 0;
+    this.saved = { ...context.workspaceState.get('comparisons', {}) };
+    const legacy = context.workspaceState.get('comparison');
+    if (legacy && !this.saved[legacy.root]) this.saved[legacy.root] = { input: legacy.input };
   }
 
-  async selectRepository() {
-    const repos = this.gitApi.repositories;
-    if (!repos.length) throw new Error(t('Open a trusted Git repository first.'));
-    const item = repos.length === 1 ? { repo: repos[0] } : await vscode.window.showQuickPick(
+  async selectRepository(force = false) {
+    const repos = this.gitApi.repositories.filter(isMagiRepository);
+    if (!repos.length) throw new Error(t('Open a Magi, Odin or Magicore repository first.'));
+    if (!force && this.repo && repos.includes(this.repo)) return true;
+    const primary = vscode.workspace.workspaceFolders?.map(folder =>
+      repos.filter(repo => folder.uri.fsPath === repo.rootUri.fsPath || folder.uri.fsPath.startsWith(repo.rootUri.fsPath + path.sep))
+        .sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length)[0]).find(Boolean);
+    const automatic = !force && (primary || (repos.length === 1 ? repos[0] : undefined));
+    const item = automatic ? { repo: automatic } : await vscode.window.showQuickPick(
       repos.map(repo => ({ label: path.basename(repo.rootUri.fsPath), description: repo.rootUri.fsPath, repo })),
       { placeHolder: t('Select repository') });
     if (!item) return false;
@@ -21,16 +31,21 @@ class ReviewProvider {
       this.generation++; this.repo = item.repo;
       this.git = new GitRepository(this.repo.rootUri.fsPath, this.gitApi.git.path);
       this.input = null; this.result = null; this.root = buildTree([]); this.filter = '';
+      const saved = this.saved[this.repo.rootUri.toString()];
+      this.branchInput = saved?.branchInput;
+      this.commitInput = saved?.commitInput;
+      this.input = saved?.input || null;
       this.events.fire();
     }
     return true;
   }
 
   async pickRef(prompt, current) {
-    const refs = await this.git.refs();
+    const [refs, commits] = await Promise.all([this.git.refs(), this.git.commits(0, current || 'HEAD')]);
     const item = await vscode.window.showQuickPick([
       { label: t('Enter a branch, tag or commit…'), custom: true },
       ...refs.map(ref => ({ label: ref.name, description: ref.hash, ref: ref.name })),
+      ...commits.map(c => ({ label: c.subject, description: `${c.hash.slice(0, 8)} · ${c.author} · ${c.date}`, ref: c.hash })),
     ], { placeHolder: prompt, matchOnDescription: true });
     if (!item) return;
     if (!item.custom) return item.ref;
@@ -40,48 +55,77 @@ class ReviewProvider {
   async compareBranches() {
     await vscode.commands.executeCommand('kianReview.files.focus');
     if (!await this.selectRepository()) return;
-    const left = await this.pickRef(t('Base / left branch'), this.input?.left);
-    if (!left) return;
-    const right = await this.pickRef(t('Compare / right branch'), this.input?.right);
-    if (!right) return;
-    const mode = await vscode.window.showQuickPick([
-      { label: t('Branch tips'), description: t('Compare the two complete committed versions'), mode: 'direct' },
-      { label: t('PR / merge base'), description: t('Changes from the common ancestor to the right branch'), mode: 'merge-base' },
-    ], { placeHolder: t('Comparison mode') });
-    if (mode) await this.refresh({ left, right, mode: mode.mode });
+    const input = await this.defaultBranches();
+    // The branch button toggles tip/PR modes; returning from commit restores it.
+    if (this.input?.mode === 'merge-base') input.mode = 'direct';
+    else if (this.input?.mode === 'direct') input.mode = 'merge-base';
+    await this.refresh(input);
   }
 
   async compareCommit() {
     await vscode.commands.executeCommand('kianReview.files.focus');
     if (!await this.selectRepository()) return;
-    let skip = 0;
-    while (true) {
-      const commits = await this.git.commits(skip);
-      const item = await vscode.window.showQuickPick([
-        { label: t('Enter a commit or revision…'), custom: true },
-        ...commits.map(c => ({ label: c.subject, description: `${c.hash.slice(0, 8)} · ${c.author} · ${c.date}`, hash: c.hash })),
-        ...(commits.length === 200 ? [{ label: t('Load older commits…'), more: true }] : []),
-      ], { placeHolder: t('Commit vs first parent (initial commits compare with empty)'), matchOnDescription: true });
-      if (!item) return;
-      if (item.more) { skip += commits.length; continue; }
-      const right = item.custom ? await vscode.window.showInputBox({ prompt: t('Commit or revision'), value: 'HEAD' }) : item.hash;
-      if (right) await this.refresh({ right, mode: 'commit' });
-      return;
-    }
+    await this.refresh(this.commitInput || { right: this.input?.right || 'HEAD', mode: 'commit' });
+  }
+
+  async defaultBranches() {
+    if (this.input && this.input.mode !== 'commit') return { ...this.input };
+    if (this.branchInput) return { ...this.branchInput };
+    const refs = await this.git.refs();
+    const left = ['main', 'origin/main', 'master', 'origin/master'].find(name => refs.some(ref => ref.name === name)) || 'HEAD';
+    return { left, right: this.repo.state.HEAD?.name || 'HEAD', mode: 'merge-base' };
+  }
+
+  async changeSide(side) {
+    if (!await this.selectRepository()) return;
+    const input = this.input || await this.defaultBranches();
+    const value = await this.pickRef(side === 'left' ? t('Base / left branch') : t('Compare / right branch'), input[side] || this.result?.leftHash || 'HEAD');
+    if (!value) return;
+    await this.refresh({ ...input, [side]: value, mode: side === 'left' && input.mode === 'commit' ? 'direct' : input.mode });
+  }
+
+  async chooseMode() {
+    if (!await this.selectRepository()) return;
+    const item = await vscode.window.showQuickPick([
+      { label: t('Branch tips'), mode: 'direct' },
+      { label: t('PR / merge base'), mode: 'merge-base' },
+      { label: t('Commit · first parent'), mode: 'commit' },
+    ], { placeHolder: t('Comparison mode') });
+    if (!item) return;
+    await this.refresh(item.mode === 'commit' ? this.commitInput || { right: this.input?.right || 'HEAD', mode: 'commit' }
+      : { ...await this.defaultBranches(), mode: item.mode });
+  }
+
+  getControls() {
+    const mode = this.input?.mode;
+    return [
+      { control: 'repository', name: t('Repository'), value: this.repo ? path.basename(this.repo.rootUri.fsPath) : t('Select repository'), icon: 'repo' },
+      { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit · first parent') : mode === 'direct' ? t('Branch tips') : t('PR / merge base'), icon: 'git-compare' },
+      { control: 'base', name: t('Base'), value: mode === 'commit' ? t('First parent (automatic)') : this.input?.left || 'main', icon: 'git-commit' },
+      { control: 'target', name: t('Compare'), value: this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: 'git-branch' },
+    ];
   }
 
   async refresh(input = this.input) {
-    if (!input || !this.git) return this.compareBranches();
+    if (!this.git && !await this.selectRepository()) return;
     const generation = ++this.generation; const repo = this.repo;
+    input = input || this.input || await this.defaultBranches();
+    if (generation !== this.generation) return;
     this.view.message = t('Comparing…');
     try {
       const result = await this.git.compare(input);
       if (generation !== this.generation) return;
       this.input = input; this.result = result;
+      if (input.mode === 'commit') this.commitInput = { ...input };
+      else this.branchInput = { ...input };
       for (const file of result.files) file.comparison = { ...result, files: undefined, repo };
       this.rebuild();
       this.view.description = input.mode === 'commit' ? t('Commit · first parent') : input.mode === 'merge-base' ? t('PR / merge base') : t('Branch tips');
-      await this.context.workspaceState.update('comparison', { root: repo.rootUri.toString(), input });
+      this.saved[repo.rootUri.toString()] = { input, branchInput: this.branchInput, commitInput: this.commitInput };
+      await Promise.all([
+        this.context.workspaceState.update('comparison', { root: repo.rootUri.toString(), input }),
+        this.context.workspaceState.update('comparisons', this.saved),
+      ]);
       this.output?.appendLine(`${result.mode}: ${result.leftHash || 'empty'} -> ${result.rightHash}; ${result.files.length} files`);
     } finally {
       if (generation === this.generation) this.updateMessage();
@@ -103,31 +147,54 @@ class ReviewProvider {
   }
 
   getChildren(node) {
-    if (node?.meta || node?.file) return [];
+    if (node?.control || node?.file) return [];
     const children = [...(node || this.root).children.values()].sort((a, b) =>
       Number(Boolean(b.children)) - Number(Boolean(a.children)) || a.name.localeCompare(b.name));
     if (node) return children;
-    if (!this.result) return [];
-    const left = this.result.leftHash?.slice(0, 8) || t('Empty tree');
-    const right = this.result.rightHash.slice(0, 8);
-    return [{ meta: true, name: `${this.input.left || left} → ${this.input.right.length > 16 ? right : this.input.right}` }, ...children];
+    return [...this.getControls(), ...children];
+  }
+
+  getParent(node) {
+    if (node.control) return;
+    const parts = (node.file?.path || node.path).split('/');
+    parts.pop(); if (!parts.length) return;
+    let parent = this.root;
+    for (const name of parts) parent = parent.children.get(name);
+    return parent;
+  }
+
+  async fold(expand) {
+    this.folderState = expand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+    this.foldRevision++;
+    this.events.fire();
   }
 
   getTreeItem(node) {
-    const item = new vscode.TreeItem(node.name, node.children ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
-    if (node.meta) {
-      item.description = this.result.mode === 'commit' ? t('Commit · first parent') : this.result.mode === 'merge-base' ? t('PR / merge base') : t('Branch tips');
-      item.tooltip = `${this.repo.rootUri.fsPath}\n${this.result.leftHash || t('Empty tree')} → ${this.result.rightHash}`;
-      if (this.result.parentCount > 1) item.tooltip += '\n' + t('Merge commit: compared with first parent.');
-      item.iconPath = new vscode.ThemeIcon('git-compare'); return item;
+    const item = new vscode.TreeItem(node.name, node.children ? this.folderState : vscode.TreeItemCollapsibleState.None);
+    if (node.control) {
+      item.id = `control:${node.control}`; item.contextValue = 'reviewControl';
+      item.description = node.value;
+      item.tooltip = node.control === 'repository' ? this.repo?.rootUri.fsPath || node.value : node.value;
+      if (node.control === 'base' && this.result) item.tooltip += '\n' + (this.result.leftHash || t('Empty tree'));
+      if (node.control === 'target' && this.result) item.tooltip += '\n' + this.result.rightHash + '\n' + (this.result.rightWorktree || t('No matching historical worktree; paths refer to the current workspace.'));
+      item.iconPath = new vscode.ThemeIcon(node.icon);
+      item.command = { command: `kianReview.${node.control}`, title: node.name };
+      return item;
     }
-    if (node.children) { item.iconPath = new vscode.ThemeIcon('folder'); return item; }
+    if (node.children) {
+      item.id = `folder:${this.foldRevision}:${node.path}`;
+      item.description = t('{0} files · +{1} / −{2}', node.stats.count, node.stats.added, node.stats.removed);
+      if (node.stats.binary) item.description += ' · ' + t('{0} binary', node.stats.binary);
+      item.iconPath = new vscode.ThemeIcon('folder'); return item;
+    }
     const f = node.file;
-    item.id = `${f.comparison.rightHash}:${f.path}`;
-    item.resourceUri = vscode.Uri.joinPath(f.comparison.repo.rootUri, f.path);
+    item.id = `${f.comparison.leftHash || 'empty'}:${f.comparison.rightHash}:${f.path}`;
+    item.resourceUri = vscode.Uri.file(path.join(f.comparison.rightWorktree || f.comparison.repo.rootUri.fsPath, f.path));
     item.contextValue = 'reviewFile';
     item.description = `${f.status} · ${f.added === null ? t('Binary') : `+${f.added ?? 0} / −${f.removed ?? 0}`}`;
     item.tooltip = f.path + (f.oldPath !== f.path ? `\n${f.oldPath} → ${f.path}` : '');
+    item.tooltip += '\n' + item.resourceUri.fsPath;
+    if (!f.comparison.rightWorktree) item.tooltip += '\n' + t('No matching historical worktree; paths refer to the current workspace.');
     item.command = { command: 'kianReview.open', title: t('Open diff'), arguments: [node] };
     return item;
   }
@@ -149,7 +216,7 @@ async function activate(context) {
   const exports = await gitExtension.activate(); const api = exports.getAPI(1);
   const provider = new ReviewProvider(context, api);
   provider.output = vscode.window.createOutputChannel('Kian Review');
-  const view = vscode.window.createTreeView('kianReview.files', { treeDataProvider: provider, showCollapseAll: true });
+  const view = vscode.window.createTreeView('kianReview.files', { treeDataProvider: provider });
   provider.view = view; provider.updateMessage();
   context.subscriptions.push(view, provider.events, provider.output,
     vscode.workspace.registerTextDocumentContentProvider('kian-review-empty', { provideTextDocumentContent: () => '' }));
@@ -157,7 +224,7 @@ async function activate(context) {
     try {
       if (!vscode.workspace.isTrusted) throw new Error(t('Open a trusted Git repository first.'));
       const result = await fn(...args);
-      if (['branches', 'commit', 'refresh', 'compare'].includes(name) && provider.result) {
+      if (['branches', 'commit', 'refresh', 'compare', 'repository', 'mode', 'base', 'target'].includes(name) && provider.result) {
         await vscode.commands.executeCommand('kianReview.files.focus');
       }
       return result;
@@ -169,12 +236,23 @@ async function activate(context) {
   register('branches', () => provider.compareBranches());
   register('commit', () => provider.compareCommit());
   register('refresh', () => provider.refresh());
-  register('repository', () => provider.selectRepository());
+  register('repository', async () => { if (await provider.selectRepository(true)) await provider.refresh(); });
+  register('mode', () => provider.chooseMode());
+  register('base', () => provider.changeSide('left'));
+  register('target', () => provider.changeSide('right'));
+  register('expand', () => provider.fold(true));
+  register('collapse', () => provider.fold(false));
+  register('editControl', node => node?.control && vscode.commands.executeCommand(`kianReview.${node.control}`));
   register('open', node => provider.open(node));
   register('copyRelative', node => node?.file && vscode.env.clipboard.writeText(node.file.path));
-  register('copyAbsolute', node => node?.file && vscode.env.clipboard.writeText(vscode.Uri.joinPath(node.file.comparison.repo.rootUri, node.file.path).fsPath));
+  register('copyAbsolute', async node => {
+    if (!node?.file) return;
+    const c = node.file.comparison;
+    await vscode.env.clipboard.writeText(path.join(c.rightWorktree || c.repo.rootUri.fsPath, node.file.path));
+    if (!c.rightWorktree) vscode.window.showInformationMessage(t('Copied the current workspace path; no worktree matches the reviewed revision.'));
+  });
   register('openWorkingFile', async node => {
-    if (node?.file) await vscode.commands.executeCommand('vscode.open', vscode.Uri.joinPath(node.file.comparison.repo.rootUri, node.file.path));
+    if (node?.file) await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(node.file.comparison.rightWorktree || node.file.comparison.repo.rootUri.fsPath, node.file.path)));
   });
   register('filter', async () => {
     const value = await vscode.window.showInputBox({ prompt: t('Filter file paths (empty clears filter)'), value: provider.filter });
@@ -192,18 +270,13 @@ async function activate(context) {
     await provider.refresh({ left, right, mode }); return provider.result;
   });
   register('show', () => vscode.commands.executeCommand('kianReview.files.focus'));
-  const saved = context.workspaceState.get('comparison');
-  if (saved) {
-    const restore = async () => {
-      if (provider.input) return;
-      const repo = api.repositories.find(r => r.rootUri.toString() === saved.root);
-      if (repo) {
-        provider.repo = repo; provider.git = new GitRepository(repo.rootUri.fsPath, api.git.path);
-        try { await provider.refresh(saved.input); } catch { provider.updateMessage(); }
-      }
-    };
-    context.subscriptions.push(api.onDidOpenRepository(restore)); await restore();
-  }
+  const initialize = async () => {
+    if (provider.repo || !api.repositories.some(isMagiRepository)) return;
+    try { if (await provider.selectRepository()) await provider.refresh(); }
+    catch (error) { provider.output.appendLine(error.stack || error.message); provider.updateMessage(); }
+  };
+  context.subscriptions.push(api.onDidOpenRepository(initialize));
+  await initialize();
   return { provider };
 }
 

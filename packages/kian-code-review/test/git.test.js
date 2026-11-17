@@ -4,7 +4,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { GitRepository, buildTree } = require('../src/git');
+const { GitRepository, buildTree, isMagiRepository } = require('../src/git');
 
 test('real Git comparisons preserve the worktree and all path/status semantics', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kian-review-'));
@@ -38,9 +38,21 @@ test('real Git comparisons preserve the worktree and all path/status semantics',
   assert.equal(pr.files.find(f => f.path === 'nested/制表\t换行\n.py').added, 1);
   assert.equal(pr.files.find(f => f.path === 'removed.py').status, 'D');
   assert.equal(git('status', '--porcelain=v1', '-z'), before);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'kian-review-worktree-'));
+  t.after(() => fs.rmSync(worktree, { recursive: true, force: true }));
+  git('worktree', 'add', '-q', worktree, 'feature');
+  const linked = await repo.compare({ left: 'main', right: 'feature' });
+  assert.equal(fs.realpathSync(linked.rightWorktree), fs.realpathSync(worktree));
+  assert.equal(fs.realpathSync(linked.leftWorktree), fs.realpathSync(root));
+  const pinned = await repo.compare({ left: 'main', right: feature });
+  assert.equal(pinned.rightWorktree, linked.rightWorktree);
+  git('branch', 'not-checked-out', 'feature');
+  assert.equal((await repo.compare({ left: 'main', right: 'not-checked-out' })).rightWorktree, null);
   const commit = await repo.compare({ right: feature, mode: 'commit' });
   assert.deepEqual(commit.files.map(f => f.path), pr.files.map(f => f.path));
   assert.equal(buildTree(pr.files).children.get('nested').children.size, 2);
+  assert.equal(buildTree(pr.files).children.get('nested').stats.added, 1);
+  assert.equal(buildTree(pr.files).stats.binary, 1);
   assert.ok((await repo.refs()).some(ref => ref.name === 'feature'));
   assert.ok((await repo.commits()).length > 0);
   await assert.rejects(repo.resolve('--help'));
@@ -51,4 +63,13 @@ test('real Git comparisons preserve the worktree and all path/status semantics',
   const replacement = buildTree([{ path: 'entry', status: 'D' }, { path: 'entry/file.py', status: 'A' }]);
   assert.equal(replacement.children.size, 2);
   assert.equal(replacement.children.get('entry').children.size, 1);
+});
+
+test('repository filtering recognizes Magi paths and renamed worktrees through their remotes', () => {
+  const repo = (name, url) => ({ rootUri: { fsPath: '/workspace/' + name }, state: { remotes: url ? [{ fetchUrl: url }] : [] } });
+  assert.ok(isMagiRepository(repo('magiattn')));
+  assert.ok(isMagiRepository(repo('odin')));
+  assert.ok(isMagiRepository(repo('pr394-review', 'git@github.com:SandAI-org/MagiAttention.git')));
+  assert.ok(isMagiRepository(repo('training', 'https://github.com/world-sim-dev/magicore.git')));
+  for (const name of ['quack', 'pytorch', 'ai-agent-contexts', 'kian']) assert.equal(isMagiRepository(repo(name)), false);
 });

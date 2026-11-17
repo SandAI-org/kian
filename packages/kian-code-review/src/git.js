@@ -25,11 +25,21 @@ class GitRepository {
     }).filter(ref => !ref.symbolic);
   }
 
-  async commits(skip = 0) {
-    const output = await this.exec(['log', '-200', `--skip=${skip}`, '--format=%H%x00%s%x00%an%x00%as', 'HEAD', '--']);
+  async commits(skip = 0, ref = 'HEAD') {
+    const hash = await this.resolve(ref);
+    const output = await this.exec(['log', '-200', `--skip=${skip}`, '--format=%H%x00%s%x00%an%x00%as', hash, '--']);
     return output.trimEnd().split('\n').filter(Boolean).map(line => {
       const [hash, subject, author, date] = line.split('\0'); return { hash, subject, author, date };
     });
+  }
+
+  async worktrees() {
+    const output = await this.exec(['worktree', 'list', '--porcelain', '-z']);
+    return output.split('\0\0').filter(Boolean).map(block => {
+      const fields = block.split('\0');
+      const value = key => fields.find(field => field.startsWith(key + ' '))?.slice(key.length + 1);
+      return { path: value('worktree'), head: value('HEAD'), branch: value('branch'), prunable: fields.some(f => f.startsWith('prunable')) };
+    }).filter(w => w.path && w.head && !w.prunable);
   }
 
   async compare({ left, right, mode = 'direct' }) {
@@ -65,22 +75,46 @@ class GitRepository {
       const newPath = /^[RC]/.test(status) ? fields[i++] : oldPath;
       files.push({ status, oldPath, path: newPath, ...stats.get(newPath) });
     }
-    return { leftHash, rightHash, files, mode, parentCount };
+    const [worktrees, leftRef, rightRef] = await Promise.all([
+      this.worktrees(),
+      leftHash ? this.exec(['rev-parse', '--symbolic-full-name', mode === 'direct' && left ? left : leftHash]) : '',
+      this.exec(['rev-parse', '--symbolic-full-name', right]),
+    ]);
+    const locate = (hash, ref) => {
+      const name = ref.trim();
+      const matches = worktrees.filter(w => w.head === hash && (!name.startsWith('refs/heads/') || w.branch === name));
+      return (matches.find(w => w.path === this.root) || matches[0])?.path || null;
+    };
+    return { leftHash, rightHash, files, mode, parentCount,
+      leftWorktree: leftHash ? locate(leftHash, leftRef) : null, rightWorktree: locate(rightHash, rightRef) };
   }
 }
 
 function buildTree(files) {
-  const root = { children: new Map() };
+  const root = { children: new Map(), stats: { added: 0, removed: 0, binary: 0, count: 0 } };
+  const accumulate = (node, file) => {
+    node.stats.added += file.added || 0; node.stats.removed += file.removed || 0;
+    node.stats.binary += Number(file.added === null); node.stats.count++;
+  };
   for (const file of files) {
     const parts = file.path.split('/'); let parent = root;
+    accumulate(parent, file);
     for (let i = 0; i < parts.length - 1; i++) {
       const name = parts[i];
-      if (!parent.children.has(name)) parent.children.set(name, { name, children: new Map(), path: parts.slice(0, i + 1).join('/') });
+      if (!parent.children.has(name)) parent.children.set(name, { name, children: new Map(), stats: { added: 0, removed: 0, binary: 0, count: 0 }, path: parts.slice(0, i + 1).join('/') });
       parent = parent.children.get(name);
+      accumulate(parent, file);
     }
     parent.children.set(`file:${parts.at(-1)}`, { name: parts.at(-1), file });
   }
   return root;
 }
 
-module.exports = { GitRepository, buildTree };
+function isMagiRepository(repo) {
+  const supported = name => /^(magi|odin(?:$|[-_]))/i.test(name);
+  if (supported(require('node:path').basename(repo.rootUri.fsPath))) return true;
+  return (repo.state.remotes || []).some(remote => [remote.fetchUrl, remote.pushUrl].some(url =>
+    url && supported(url.replace(/\.git\/?$/, '').split(/[/:]/).at(-1))));
+}
+
+module.exports = { GitRepository, buildTree, isMagiRepository };

@@ -1,15 +1,21 @@
 {
-  "branches": "Compare Branches",
-  "commit": "Review Commit",
+  "branches": "Branch / PR Mode",
+  "commit": "Commit Mode",
   "refresh": "Refresh Comparison",
   "repository": "Select Repository",
   "filter": "Filter Files",
   "swap": "Swap Base and Compare",
   "open": "Open Diff",
   "copyRelative": "Copy Relative Path",
-  "copyAbsolute": "Copy Absolute Path",
+  "copyAbsolute": "Copy Compare-side Absolute Path",
   "openWorkingFile": "Open Working File",
   "show": "Show Review",
   "description": "Lightweight branch and commit review with lazy native file diffs.",
-  "welcome": "[Compare branches](command:kianReview.branches)\n[Review a commit](command:kianReview.commit)"
+  "welcome": "[Compare branches](command:kianReview.branches)\n[Review a commit](command:kianReview.commit)",
+  "mode": "Select Mode",
+  "base": "Select Base",
+  "target": "Select Compare",
+  "expand": "Expand All Folders",
+  "collapse": "Collapse All Folders",
+  "editControl": "Change Selection"
 }

@@ -4,14 +4,17 @@ A small VS Code extension for branch and commit review. It displays only paths a
 
 ## Use
 
-Open Source Control (`Cmd+Shift+G`) and find **Kian Review**, or run **Kian Review: Show Review**. Toolbar actions compare branches, review a commit, refresh, and filter paths. Select a repository when prompted; with several repositories the selection is explicit.
+Open Source Control (`Cmd+Shift+G`) and find **Kian Review**, or run **Kian Review: Show Review**. The current workspace repository is selected automatically. Repository choices are limited to Magi-family repositories, Odin and Magicore, recognized by folder name or Git remote (including renamed worktrees). Third-party dependencies such as Quack/PyTorch and the Context repository do not clutter the picker.
 
-- **Compare Branches**: choose the base and compare refs, then Branch tips (two complete revisions) or PR / merge base (ancestor to compare ref). Local/remote branches, tags and custom commit IDs are supported. Remote refs reflect your last fetch; the extension never fetches automatically.
-- **Review Commit**: pick a recent commit, load older commits, or enter a revision. Initial commits compare with empty; merge commits compare with the **first parent**, not a combined diff.
-- Folders start collapsed. Expand only what you need; the view toolbar also supports collapsing the file tree. This does not construct diff editors.
-- Click a file to open its native diff in a preview tab. Double-click its editor tab to keep it. Hover a file row to use the copy button (repository-relative path). Right-click for absolute path or open working file. Deleted files still support path copying. A renamed file copies its new path; its tooltip also shows the old path.
-- Refresh resolves refs again. The displayed comparison uses immutable hashes until refreshed, so a branch moving does not silently change an already opened diff.
-- Uncommitted/untracked changes are intentionally excluded. The working file action opens the **current** checkout, which may differ from the reviewed revision.
+Four clickable rows stay above the files: **Repository**, **Mode**, **Base**, and **Compare**. Click a row or its edit icon to change only that selection; it immediately refreshes the comparison. Base/Compare pickers include branches, tags, recent commits and custom revisions. The repository selector is explicit when clicked, rather than reopening on every action.
+
+- **Branch / PR Mode** toggles tip-to-tip and merge-base comparisons with one click. Returning from Commit Mode restores the previous branch pair and its mode.
+- **Commit Mode** opens the last selected commit (initially the current Compare revision/HEAD) against its first parent without a wizard. Click Compare to select another commit. Initial commits compare with empty. Selecting an explicit Base leaves first-parent mode and uses an ordinary revision comparison.
+- State is remembered per repository, separately for branch and commit modes. Refresh resolves references again; an already displayed diff keeps its immutable hashes. Local remote-tracking refs reflect the last fetch; no automatic fetch occurs.
+- Folders start collapsed. **Expand All Folders** and **Collapse All Folders** change only the tree, never open diffs or load code. Folder rows aggregate descendant file counts and added/deleted lines; binary entries are counted separately.
+- Click a file for one native preview diff. The inline copy button now copies the **Compare-side absolute path**. Right-click retains relative-path copying and open-working-file actions.
+- For linked worktrees in the same Git repository, comparisons work across their committed branches/commits. Absolute paths prefer the worktree actually checked out at the Compare revision. If no worktree matches, the current workspace path is copied with an explicit notice. A checkout can contain local edits: these paths locate files for an agent, not immutable historical content. Deleted paths need not currently exist; renamed entries copy the new path.
+- Uncommitted/untracked changes, differences between arbitrary unrelated repositories, and live worktree-to-worktree dirty changes are excluded.
 
 ## Language support and limits
 
@@ -21,7 +24,7 @@ Binary files use VS Code's native diff behavior; they are not decoded into a cus
 
 ## Develop and package
 
-No runtime npm dependencies or build step. Run `node --test test/git.test.js`. `test/extension-host.js` exports a VS Code Extension Host integration runner and expects a disposable repository with main/feature branches and demo.py/added.py/removed.py fixtures. It checks lazy opening, clipboard, added/deleted sides, and unchanged Git status; run it in isolated user-data and extension directories.
+No runtime npm dependencies or build step. Run `node --test test/git.test.js`. `test/extension-host.js` exports a VS Code Extension Host integration runner and uses a disposable Magi repository created with `node test/create-fixture.js` (the printed JSON identifies its root and linked feature worktree). It checks lazy opening, clipboard/worktree paths, controls/mode persistence, folder stats/folding, stale-request protection, added/deleted sides, and unchanged Git status; run it in isolated user-data and extension directories.
 
 Run `npm run package:vsix` in this package. It uses the pinned packaging tool and writes `dist/kian-code-review-<version>.vsix`; this ignored directory is the fixed local artifact location, not Downloads. Install the resulting VSIX with **Extensions: Install from VSIX…**. For SSH/Dev Containers install it **in the remote environment**, because Git and repository files live there. Reload that window if VS Code requests it.
 
