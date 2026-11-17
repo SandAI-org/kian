@@ -153,7 +153,10 @@
   window.addEventListener('message', event => {
     if (!event.data || !['state', 'error', 'fold'].includes(event.data.type)) return;
     busy = false; app.classList.remove('busy');
-    if (event.data.type === 'error') { status.textContent = event.data.message; status.classList.add('error'); return; }
+    if (event.data.type === 'error') {
+      if (state?.mode) mode.value = state.mode;
+      status.textContent = event.data.message; status.classList.add('error'); return;
+    }
     if (event.data.type === 'fold') { (event.data.expand ? expand : collapse).click(); return; }
     state = event.data.state;
     status.classList.remove('error'); status.textContent = state.summary || tr('Choose branches or a commit from the toolbar.');

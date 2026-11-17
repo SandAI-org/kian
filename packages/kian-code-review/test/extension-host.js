@@ -68,6 +68,15 @@ async function run() {
   state = await workbench.snapshot(); workbench.state = state;
   assert.equal(state.commits.length, 2);
   assert.equal(state.canPrevious, true);
+  const beforeFailure = { input: provider.input, result: provider.result, branch: provider.branchInput };
+  const originalCompare = provider.git.compare;
+  try {
+    provider.git.compare = async () => { throw new Error('fixture read timed out'); };
+    await assert.rejects(provider.refresh({ left: 'main', right: 'feature', mode: 'merge-base' }), /timed out/);
+    assert.equal(provider.input, beforeFailure.input);
+    assert.equal(provider.result, beforeFailure.result);
+    assert.equal(provider.branchInput, beforeFailure.branch);
+  } finally { provider.git.compare = originalCompare; }
   await workbench.receive({ type: 'action', action: 'previous', key: state.key });
   assert.equal(provider.result.leftHash, null);
   state = await workbench.snapshot(); workbench.state = state;
@@ -220,6 +229,11 @@ async function run() {
     assert.equal(report.horizontalOverflow, false);
     assert.ok(['grid', 'flex'].includes(report.layoutDisplay));
     assert.equal(report.toolbarDisplay, 'flex');
+    await probe('pending-mode');
+    await workbench.webviewView.webview.postMessage({ type: 'error', message: 'fixture timeout' });
+    report = await probe();
+    assert.equal(report.modeValue, provider.input.mode);
+    assert.equal(report.busy, false); assert.equal(report.statusText, 'fixture timeout');
     const safeState = await workbench.snapshot();
     const unsafeText = '<img src=x onerror="throw Error(1)">';
     await workbench.webviewView.webview.postMessage({ type: 'state', state: { ...safeState,

@@ -60,5 +60,6 @@
   "Parents": "父提交",
   "Author": "作者",
   "Date": "日期",
-  "Working tree path": "实体工作区路径"
+  "Working tree path": "实体工作区路径",
+  "Git timed out after {0} seconds per attempt (retried once). The previous comparison is unchanged. Try again.": "Git 每次执行超过 {0} 秒，自动重试一次后仍超时。原比较已保留，可稍后重试。"
 }

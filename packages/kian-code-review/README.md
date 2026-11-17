@@ -23,7 +23,7 @@ On a wide bottom panel, **History** stays left, **Changed files** occupies the c
 
 Historical files use the built-in Git extension's `git:` documents and normal diff editor. Existing syntax highlighting and language support continue to apply; Pylance virtual-document support depends on its version/settings. Cross-file definitions may refer to the current workspace, not a complete historical environment. This extension does not promise historical semantic isolation.
 
-Binary files use VS Code's native diff behavior; they are not decoded into a custom text viewer. Submodule entries are not expanded into a nested repository comparison. Large single-file diffs can still be expensive; this design removes the simultaneous multi-file editor workload, not all editor costs. Git operations have a 30-second timeout and 32 MiB metadata limit. Only trusted, disk-backed Git workspaces are supported. No proposed APIs are used.
+Binary files use VS Code's native diff behavior; they are not decoded into a custom text viewer. Submodule entries are not expanded into a nested repository comparison. Large single-file diffs can still be expensive; this design removes the simultaneous multi-file editor workload, not all editor costs. Git operations have a 30-second timeout per attempt and 32 MiB metadata limit. A read that times out retries once; invalid revisions and other Git errors do not retry. Failures keep the previous comparison and restore the displayed mode. The Kian Review output channel records the repository, command, elapsed time, exit code/signal, timeout status and attempt count. Only trusted, disk-backed Git workspaces are supported. No proposed APIs are used.
 
 ## Develop and package
 

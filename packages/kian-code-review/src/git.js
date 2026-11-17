@@ -3,14 +3,26 @@ const { promisify } = require('node:util');
 const run = promisify(execFile);
 
 class GitRepository {
-  constructor(root, git = 'git') { this.root = root; this.git = git; }
+  constructor(root, git = 'git') { this.root = root; this.git = git; this.timeout = 30000; }
 
   async exec(args) {
-    const { stdout } = await run(this.git, ['--no-pager', ...args], {
-      cwd: this.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 30000,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
-    });
-    return stdout;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const start = Date.now();
+      try {
+        const { stdout } = await run(this.git, ['--no-pager', ...args], {
+          cwd: this.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: this.timeout,
+          env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
+        });
+        return stdout;
+      } catch (error) {
+        const timedOut = error.killed === true && error.signal === 'SIGTERM' && error.code === null;
+        error.git = { root: this.root, args, attempt, elapsedMs: Date.now() - start,
+          timeoutMs: this.timeout, timedOut, code: error.code, signal: error.signal, killed: error.killed,
+          stderr: error.stderr || '' };
+        if (timedOut && attempt === 1) continue;
+        throw error;
+      }
+    }
   }
 
   async resolve(ref) {

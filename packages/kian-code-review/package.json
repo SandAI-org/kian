@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {

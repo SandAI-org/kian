@@ -1,7 +1,7 @@
 const vscode = require('vscode');
 const path = require('node:path');
 const { GitRepository, isMagiRepository } = require('./git');
-const { ReviewWorkbench } = require('./workbench');
+const { ReviewWorkbench, errorMessage, logError } = require('./workbench');
 const t = (...args) => vscode.l10n.t(...args);
 
 class ReviewProvider {
@@ -244,8 +244,8 @@ async function activate(context) {
       }
       return result;
     } catch (error) {
-      provider.output.appendLine(error.stack || error.message);
-      vscode.window.showErrorMessage(t('Kian Review: {0}', error.message));
+      logError(provider.output, error);
+      vscode.window.showErrorMessage(t('Kian Review: {0}', errorMessage(error)));
     }
   }));
   register('branches', () => provider.compareBranches());
@@ -289,7 +289,7 @@ async function activate(context) {
   const initialize = async () => {
     if (provider.repo || !api.repositories.some(isMagiRepository)) return;
     try { if (await provider.selectRepository()) await provider.refresh(); }
-    catch (error) { provider.output.appendLine(error.stack || error.message); provider.updateMessage(); }
+    catch (error) { logError(provider.output, error); provider.updateMessage(); }
   };
   context.subscriptions.push(api.onDidOpenRepository(initialize));
   await initialize();

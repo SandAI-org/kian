@@ -77,3 +77,29 @@ test('repository filtering recognizes Magi paths and renamed worktrees through t
   assert.ok(isMagiRepository(repo('training', 'https://github.com/world-sim-dev/magicore.git')));
   for (const name of ['quack', 'pytorch', 'ai-agent-contexts', 'kian']) assert.equal(isMagiRepository(repo(name)), false);
 });
+
+test('read timeouts retry once; permanent failures do not retry and preserve diagnostics', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kian-review-timeout-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const executable = path.join(root, 'git-fixture');
+  const counter = path.join(root, 'attempts');
+  const script = body => fs.writeFileSync(executable, `#!/bin/sh\ncounter=${JSON.stringify(counter)}\nattempt=0\nif [ -f "$counter" ]; then read -r attempt < "$counter"; fi\nattempt=$((attempt+1))\nprintf '%s\\n' "$attempt" > "$counter"\n${body}`, { mode: 0o755 });
+  const repo = new GitRepository(root, executable); repo.timeout = 2000;
+  script('if [ "$attempt" -eq 1 ]; then exec sleep 10; else printf recovered; fi');
+  assert.equal(await repo.exec(['status']), 'recovered');
+  assert.equal(fs.readFileSync(counter, 'utf8').trim(), '2');
+  fs.unlinkSync(counter);
+  script('exec sleep 10');
+  await assert.rejects(repo.exec(['status']), error => {
+    assert.equal(error.git.timedOut, true); assert.equal(error.git.attempt, 2);
+    assert.equal(error.git.signal, 'SIGTERM'); assert.equal(error.git.root, root);
+    assert.deepEqual(error.git.args, ['status']); return true;
+  });
+  fs.unlinkSync(counter);
+  script("printf 'fatal: bad revision' >&2\nexit 128");
+  await assert.rejects(repo.exec(['status']), error => {
+    assert.equal(error.code, 128); assert.equal(error.git.timedOut, false);
+    assert.equal(error.git.attempt, 1); assert.match(error.git.stderr, /bad revision/); return true;
+  });
+  assert.equal(fs.readFileSync(counter, 'utf8').trim(), '1');
+});

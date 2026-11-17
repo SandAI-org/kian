@@ -2,6 +2,16 @@ const vscode = require('vscode');
 const crypto = require('node:crypto');
 const t = (...args) => vscode.l10n.t(...args);
 
+function errorMessage(error) {
+  return error.git?.timedOut ? t('Git timed out after {0} seconds per attempt (retried once). The previous comparison is unchanged. Try again.', error.git.timeoutMs / 1000)
+    : error.message;
+}
+
+function logError(output, error) {
+  output?.appendLine(error.stack || error.message);
+  if (error.git) output?.appendLine(JSON.stringify(error.git));
+}
+
 class ReviewWorkbench {
   constructor(context, provider) {
     this.context = context; this.provider = provider; this.message = ''; this.description = '';
@@ -75,8 +85,8 @@ class ReviewWorkbench {
   }
 
   error(error) {
-    this.provider.output?.appendLine(error.stack || error.message);
-    this.webviewView?.webview.postMessage({ type: 'error', message: t('Kian Review: {0}', error.message) });
+    logError(this.provider.output, error);
+    this.webviewView?.webview.postMessage({ type: 'error', message: t('Kian Review: {0}', errorMessage(error)) });
   }
 
   async receive(message) {
@@ -114,4 +124,4 @@ class ReviewWorkbench {
   }
 }
 
-module.exports = { ReviewWorkbench };
+module.exports = { ReviewWorkbench, errorMessage, logError };
