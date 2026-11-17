@@ -252,7 +252,7 @@
     status.classList.remove('error'); status.textContent = state.summary || tr('Choose branches or a commit from the toolbar.');
     for (const c of state.controls) {
       const control = controlButtons[c.control];
-      if (control) { control.label.textContent = c.name; control.value.textContent = c.value; control.node.title = c.control === 'repository' ? state.root || c.value : c.value; }
+      if (control) { control.label.textContent = c.name; control.value.textContent = c.value; control.node.title = c.control === 'repository' ? state.root || c.value : c.title || c.value; }
     }
     modeCaption.textContent = tr('Mode');
     for (const [i, label] of ['PR', 'Branch Diff', 'Commit Diff'].entries()) {

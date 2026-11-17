@@ -83,7 +83,7 @@ class ReviewProvider {
       if (source === 'HEAD' || error.code !== 128) throw error;
       source = 'HEAD'; hash = await this.git.resolve(source);
     }
-    await this.loadCommitHistory(hash);
+    await this.loadCommitHistory(hash, this.branchInput?.pr?.headRef && source === this.branchInput.right ? this.branchInput.pr.headRef : source);
     let skip = 0;
     while (true) {
       const commits = await this.git.commits(skip, hash);
@@ -101,10 +101,12 @@ class ReviewProvider {
     }
   }
 
-  async loadCommitHistory(hash) {
-    if (this.commitHistory?.tip === hash && this.commitHistory.root === this.git.root) return;
+  async loadCommitHistory(hash, source = hash) {
+    if (source === 'HEAD') source = this.repo.state.HEAD?.name || 'HEAD';
+    if (/^[0-9a-f]{40,64}$/i.test(source)) source = source.slice(0, 8);
+    if (this.commitHistory?.tip === hash && this.commitHistory.root === this.git.root) { this.commitHistory.source = source; return; }
     const hashes = (await this.git.exec(['rev-list', '--topo-order', hash, '--'])).trim().split('\n').filter(Boolean);
-    this.commitHistory = { tip: hash, root: this.git.root, hashes };
+    this.commitHistory = { tip: hash, source, root: this.git.root, hashes };
   }
 
   async navigateCommit(direction) {
@@ -151,8 +153,8 @@ class ReviewProvider {
     return [
       { control: 'repository', name: t('Repository'), value: this.repo ? path.basename(this.repo.rootUri.fsPath) : t('Select repository'), icon: 'repo' },
       { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit Diff') : mode === 'direct' ? t('Branch Diff') : t('PR'), icon: 'git-compare' },
-      { control: 'base', name: t('Base'), value: mode === 'commit' ? t('First parent (automatic)') : this.input?.pr?.baseRef || this.input?.left || 'main', icon: 'git-commit' },
-      { control: 'target', name: mode === 'commit' ? t('Commit') : t('Compare'),
+      { control: 'base', name: t('Base'), title: mode === 'commit' ? t('First parent (automatic)') : undefined, value: mode === 'commit' ? this.result?.leftHash?.slice(0, 8) || t('Empty tree') : this.input?.pr?.baseRef || this.input?.left || 'main', icon: 'git-commit' },
+      { control: 'target', name: mode === 'commit' ? `${t('Commit')} · ${this.commitHistory?.source || this.input?.right || 'HEAD'}` : t('Compare'),
         value: mode === 'commit' && this.result ? this.result.rightHash.slice(0, 8) : this.input?.pr?.headRef || this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: mode === 'commit' ? 'git-commit' : 'git-branch' },
     ];
   }
@@ -169,11 +171,11 @@ class ReviewProvider {
       let commit;
       if (input.mode === 'commit') {
         if (!this.commitHistory || this.commitHistory.root !== this.git.root || !this.commitHistory.hashes.includes(result.rightHash)) {
-          const source = this.branchInput?.right || this.repo.state.HEAD?.name || 'HEAD';
+          let source = this.branchInput?.right || this.repo.state.HEAD?.name || 'HEAD';
           let tip;
           try { tip = await this.git.resolve(source); }
-          catch (error) { if (error.code !== 128) throw error; tip = result.rightHash; }
-          await this.loadCommitHistory(tip);
+          catch (error) { if (error.code !== 128) throw error; tip = result.rightHash; source = result.rightHash; }
+          await this.loadCommitHistory(tip, this.branchInput?.pr?.headRef && source === this.branchInput.right ? this.branchInput.pr.headRef : source);
           if (!this.commitHistory.hashes.includes(result.rightHash)) await this.loadCommitHistory(result.rightHash);
         }
         const [subject, author, date] = (await this.git.exec(['show', '-s', '--format=%s%x00%an%x00%as', result.rightHash, '--'])).trimEnd().split('\0');

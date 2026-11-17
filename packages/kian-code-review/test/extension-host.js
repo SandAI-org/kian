@@ -79,6 +79,8 @@ async function run() {
   } finally { provider.git.compare = originalCompare; }
   await workbench.receive({ type: 'action', action: 'previous', key: state.key });
   assert.equal(provider.result.leftHash, null);
+    assert.equal(provider.commitHistory.source, 'feature');
+    assert.equal(provider.getControls().find(c => c.control === 'base').value, 'Empty tree');
   state = await workbench.snapshot(); workbench.state = state;
   assert.equal(state.canPrevious, false); assert.equal(state.canNext, true);
   await workbench.receive({ type: 'mode', mode: 'merge-base', key: state.key });
@@ -201,6 +203,9 @@ async function run() {
     assert.equal(initialHistory.hashes[0], featureHash);
     const commitState = await workbench.snapshot();
     assert.equal(commitState.selected, featureHash);
+    assert.equal(provider.commitHistory.source, 'feature');
+    assert.equal(commitState.controls.find(c => c.control === 'base').value, mainHash.slice(0, 8));
+    assert.match(commitState.controls.find(c => c.control === 'target').name, /feature/);
     assert.match(commitState.details.message, /feature/);
     assert.equal(commitState.canPrevious, true);
     assert.equal(commitState.canNext, false);
@@ -216,6 +221,8 @@ async function run() {
     assert.equal(commitPicks, 1);
     assert.equal(provider.result.rightHash, mainHash);
     assert.equal(provider.result.leftHash, null);
+    assert.equal(provider.commitHistory.source, 'feature');
+    assert.equal(provider.getControls().find(c => c.control === 'base').value, 'Empty tree');
     await vscode.commands.executeCommand('kianReview.previousCommit');
     assert.equal(provider.result.rightHash, mainHash); // Oldest boundary is a no-op.
     provider.commitHistory = null; // Restoring an old selection must retain newer history entries.
