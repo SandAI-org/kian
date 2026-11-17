@@ -66,7 +66,11 @@ class ReviewWorkbench {
       if (p.git !== git || p.result !== result) return;
       this.history = { key: historyKey, source, exclude, git, commits, more: commits.length === 200 };
     }
-    const body = await git.exec(['show', '-s', '--format=%B%x00%an%x00%aI%x00%P', result.rightHash, '--']);
+    if (this.commitDetails?.git !== git || this.commitDetails.hash !== result.rightHash) {
+      const body = await git.exec(['show', '-s', '--format=%B%x00%an%x00%aI%x00%P', result.rightHash, '--']);
+      this.commitDetails = { git, hash: result.rightHash, body };
+    }
+    const body = this.commitDetails.body;
     if (p.git !== git || p.result !== result) return;
     const [message, author, date, parents] = body.trimEnd().split('\0');
     const review = await p.review.state(p.reviewSession);
@@ -84,16 +88,31 @@ class ReviewWorkbench {
   }
 
   async update() {
-    const revision = ++this.revision;
-    if (!this.webviewView || !this.visible) return;
-    try {
-      const state = await this.snapshot();
-      if (!state || revision !== this.revision || !this.webviewView) return;
-      this.state = state;
-      await this.webviewView.webview.postMessage({ type: 'state', state });
-    } catch (error) {
-      if (revision === this.revision) this.error(error);
-    }
+    this.revision++;
+    if (this.updating) return this.updating;
+    this.updating = this.flushUpdates();
+    try { await this.updating; }
+    finally { this.updating = null; }
+  }
+
+  async flushUpdates() {
+    let revision;
+    do {
+      revision = this.revision;
+      if (!this.webviewView || !this.visible) return;
+      const start = Date.now();
+      try {
+        const state = await this.snapshot();
+        if (!state || revision !== this.revision || !this.webviewView) continue;
+        this.state = state;
+        await this.webviewView.webview.postMessage({ type: 'state', state });
+      } catch (error) {
+        if (revision === this.revision) this.error(error);
+      } finally {
+        const elapsed = Date.now() - start;
+        if (elapsed > 500) this.provider.output?.appendLine(`Review snapshot: ${elapsed} ms`);
+      }
+    } while (revision !== this.revision);
   }
 
   error(error) {

@@ -285,6 +285,32 @@ async function run() {
     assert.equal(review.updateInfo.available, true); assert.equal(provider.result, pinnedResult);
   } finally { provider.git.resolve = resolveOriginal; }
   await review.checkUpdates(); assert.equal(review.updateInfo.available, false);
+  // Overlapping refresh notifications must not run snapshots concurrently.
+  if (workbench.updating) await workbench.updating;
+  const snapshotOriginal = workbench.snapshot.bind(workbench);
+  let activeSnapshots = 0, maxSnapshots = 0, snapshots = 0, releaseSnapshot;
+  const snapshotGate = new Promise(resolve => { releaseSnapshot = resolve; });
+  workbench.snapshot = async () => {
+    snapshots++; activeSnapshots++; maxSnapshots = Math.max(maxSnapshots, activeSnapshots);
+    try { await snapshotGate; return await snapshotOriginal(); }
+    finally { activeSnapshots--; }
+  };
+  try {
+    const updates = [workbench.update(), workbench.update(), workbench.update()];
+    releaseSnapshot(); await Promise.all(updates);
+    assert.equal(maxSnapshots, 1); assert.equal(snapshots, 2);
+  } finally { workbench.snapshot = snapshotOriginal; }
+  const execOriginal = provider.git.exec.bind(provider.git);
+  let shows = 0;
+  provider.git.exec = async (args, options) => { if (args[0] === 'show') shows++; return execOriginal(args, options); };
+  workbench.commitDetails = null;
+  try { await workbench.snapshot(); await workbench.snapshot(); assert.equal(shows, 1); }
+  finally { provider.git.exec = execOriginal; }
+  const updateOriginal = provider.view.update;
+  let pollsRendered = 0;
+  provider.view.update = async () => { pollsRendered++; };
+  try { await review.checkUpdates(); await review.checkUpdates(); assert.equal(pollsRendered, 0); }
+  finally { provider.view.update = updateOriginal; }
   // Instrument the production renderer only inside this disposable test webview.
   const fs = require('node:fs');
   const renderer = fs.readFileSync(extension.extensionPath + '/media/workbench.js', 'utf8');

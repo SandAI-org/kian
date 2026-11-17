@@ -8,6 +8,8 @@ Mode labels stay compact in every language: **PR**, **Branch Diff**, and **Commi
 
 Commit Diff shows the pinned history's source branch/revision in a separate line below the toolbar, with ellipsis for long names and the full name on hover. Base shows the actual parent SHA (or Empty tree for a root commit). A source label identifies the history being browsed, not a unique branch owning that commit.
 
+Overlapping view updates are coalesced; unchanged background checks do not redraw the view. Commit details are reused while their immutable revision is unchanged. The Kian Review output channel records comparison duration and snapshots taking over 500 ms, to help distinguish Git work from view loading.
+
 Open Source Control (`Cmd+Shift+G`) and find **Kian Review**, or run **Kian Review: Show Review**. The current workspace repository is selected automatically. Repository choices are limited to Magi-family repositories, Odin and Magicore, recognized by folder name or Git remote (including renamed worktrees). Third-party dependencies such as Quack/PyTorch and the Context repository do not clutter the picker.
 
 The responsive workbench uses a horizontal **Repository / Mode / Base / Compare (or Commit)** toolbar. Click a selection to change only that reference; use the mode menu to switch directly. Base/Compare pickers include branches, tags, recent commits and custom revisions. Repository selection is explicit rather than reopening on every action.

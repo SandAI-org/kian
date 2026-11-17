@@ -166,7 +166,7 @@ class ReviewService {
     const p = this.provider;
     if (this.checking || !p.view.visible || !p.result || p.input.mode === 'commit') return;
     this.checking = true;
-    const current = p.result, input = p.input;
+    const current = p.result, input = p.input, previous = this.updateInfo;
     try {
       let available;
       if (input.pr) {
@@ -182,7 +182,7 @@ class ReviewService {
       if (p.result === current) this.updateInfo = { available };
     } catch (error) { if (p.result === current) this.updateInfo = { ...this.updateInfo, error: error.message }; }
     finally { this.checking = false; }
-    if (p.result === current) await p.view.update();
+    if (p.result === current && (previous.available !== this.updateInfo.available || previous.error !== this.updateInfo.error)) await p.view.update();
   }
   async publish(id) {
     const p = this.provider, session = p.reviewSession;

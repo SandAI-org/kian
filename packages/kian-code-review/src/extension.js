@@ -161,7 +161,7 @@ class ReviewProvider {
 
   async refresh(input = this.input) {
     if (!this.git && !await this.selectRepository()) return;
-    const generation = ++this.generation; const repo = this.repo;
+    const generation = ++this.generation; const repo = this.repo; const started = Date.now();
     input = input || this.input || await this.defaultBranches();
     if (generation !== this.generation) return;
     this.view.message = t('Comparing…');
@@ -199,7 +199,7 @@ class ReviewProvider {
         this.context.workspaceState.update('comparison', { root: repo.rootUri.toString(), input }),
         this.context.workspaceState.update('comparisons', this.saved),
       ]);
-      this.output?.appendLine(`${result.mode}: ${result.leftHash || 'empty'} -> ${result.rightHash}; ${result.files.length} files`);
+      this.output?.appendLine(`${result.mode}: ${result.leftHash || 'empty'} -> ${result.rightHash}; ${result.files.length} files; ${Date.now() - started} ms`);
     } finally {
       if (generation === this.generation) this.updateMessage();
     }
