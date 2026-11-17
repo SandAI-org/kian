@@ -87,6 +87,9 @@ async function run() {
     assert.equal(provider.getTreeItem(folder).collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
     assert.equal(tabs(), previousTabs);
     assert.equal(provider.context.workspaceState.get('comparisons')[provider.repo.rootUri.toString()].branchInput.right, 'feature');
+    provider.pickRef = originalPickRef;
+    vscode.window.showQuickPick = async items => items.find(item => item.ref === 'main');
+    assert.equal(await provider.pickRef('fixture', 'deleted-old-branch'), 'main');
     const originalDefaults = provider.defaultBranches;
     let resume, started;
     const waiting = new Promise(resolve => { started = resolve; });

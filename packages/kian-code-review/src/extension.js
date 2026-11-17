@@ -41,7 +41,12 @@ class ReviewProvider {
   }
 
   async pickRef(prompt, current) {
-    const [refs, commits] = await Promise.all([this.git.refs(), this.git.commits(0, current || 'HEAD')]);
+    const history = this.git.commits(0, current || 'HEAD').catch(error => {
+      // A saved branch can disappear after merge/cleanup; keep the selector usable.
+      if (current && current !== 'HEAD' && error.code === 128) return this.git.commits();
+      throw error;
+    });
+    const [refs, commits] = await Promise.all([this.git.refs(), history]);
     const item = await vscode.window.showQuickPick([
       { label: t('Enter a branch, tag or commit…'), custom: true },
       ...refs.map(ref => ({ label: ref.name, description: ref.hash, ref: ref.name })),
