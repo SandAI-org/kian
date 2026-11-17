@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -281,6 +281,21 @@
           "when": "false"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "key": "enter",
+        "command": "editor.action.submitComment",
+        "when": "commentEditorFocused && commentController == kianReview.notes && !inComposition && !suggestWidgetVisible"
+      },
+      {
+        "key": "shift+enter",
+        "command": "type",
+        "args": {
+          "text": "\n"
+        },
+        "when": "commentEditorFocused && commentController == kianReview.notes && !inComposition"
+      }
+    ]
   }
 }
