@@ -68,6 +68,28 @@ code { font-family: var(--vscode-editor-font-family, monospace); }
 .muted { padding: 0; }
 .load-more { margin: 8px 12px; color: var(--vscode-textLink-foreground, #83c1ff); font-size: 11px; }
 footer { padding: 5px 12px; font-size: 10px; color: var(--vscode-descriptionForeground, #9aa5b3); border-top: 1px solid var(--vscode-panel-border, #ffffff16); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-hidden { grid-template-columns: minmax(240px, 1fr) minmax(210px, 28%); }
+.history-hidden .history { display: none; }
+.layout.history-hidden.details-hidden { grid-template-columns: 1fr; }
+.update-banner { padding: 7px 14px; display: flex; align-items: center; gap: 10px; color: var(--vscode-editorWarning-foreground, #dabd7e); background: var(--vscode-inputValidation-warningBackground, #3a3525); }
+.update-banner[hidden] { display: none; }
+.review-check { font-size: 16px; padding: 3px; color: var(--vscode-descriptionForeground, #9aa5b3); }
+.review-check[aria-pressed=true] { color: var(--vscode-gitDecoration-addedResourceForeground, #88c388); }
+.updated .file-name { color: var(--vscode-editorWarning-foreground, #dabd7e); }
+.delta-button { color: var(--vscode-editorWarning-foreground, #dabd7e); font-weight: 600; border: 1px solid currentColor; border-radius: 3px; padding: 1px 4px; }
+.reviewed-lane { border-top: 1px solid var(--vscode-panel-border, #ffffff16); margin-top: 12px; }
+.reviewed-lane > summary { cursor: pointer; color: var(--vscode-descriptionForeground, #9aa5b3); padding: 10px 12px; }
+.detail-tabs { display: flex; gap: 6px; padding: 0 12px 8px; }
+.detail-tabs button { padding: 5px 7px; border-radius: 4px; font-size: 11px; }
+.detail-tabs .active { background: var(--vscode-list-inactiveSelectionBackground, #2b3a4d); }
+.notes-tools, .note-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.notes-tools { padding: 5px 0; }
+.notes-tools button, .note-actions button { color: var(--vscode-textLink-foreground, #83c1ff); font-size: 11px; padding: 4px; }
+.notes-tools .muted { display: flex; align-items: center; gap: 3px; }
+.note-card { border: 1px solid var(--vscode-panel-border, #ffffff16); padding: 9px; margin: 8px 0; border-radius: 5px; }
+.note-anchor { display: block; overflow-wrap: anywhere; font-size: 11px; padding: 0; color: var(--vscode-textLink-foreground, #83c1ff); }
+.note-meta { display: block; font-size: 10px; color: var(--vscode-descriptionForeground, #9aa5b3); margin-top: 5px; }
+.note-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; margin: 9px 0; }
 .busy .controls, .busy .navigation, .busy .commit-row, .busy .file-row, .busy .load-more { pointer-events: none; opacity: .6; }
 @media (max-width: 900px) {
   .toolbar { flex-wrap: wrap; gap: 6px; padding: 8px; }
@@ -77,6 +99,7 @@ footer { padding: 5px 12px; font-size: 10px; color: var(--vscode-descriptionFore
   .layout, .layout.details-hidden { grid-template-columns: minmax(190px, 35%) minmax(220px, 1fr); }
   .details { grid-column: 1 / -1; max-height: 180px; border-top: 1px solid var(--vscode-panel-border, #ffffff16); }
   .layout:not(.details-hidden) { grid-template-rows: minmax(120px, 1fr) minmax(100px, 30%); }
+  .layout.history-hidden { grid-template-columns: 1fr; }
 }
 @media (max-width: 540px) {
   .layout, .layout.details-hidden { display: flex; flex-direction: column; }

@@ -91,6 +91,64 @@ async function run() {
     await workbench.receive({ type: 'file', action: 'copyRelative', path: '../../outside', key: state.key });
     assert.equal(await vscode.env.clipboard.readText(), 'demo.py');
   } finally { await vscode.env.clipboard.writeText(clipboardBefore); }
+  // Review state and private native comments use only the disposable profile's storage.
+  const review = provider.review;
+  const reviewFile = provider.result.files.find(f => f.path === 'demo.py');
+  await review.mark(reviewFile, true);
+  let reviewState = await review.state(provider.reviewSession);
+  assert.equal(reviewState.files['demo.py'].reviewed, true);
+  await provider.open({ file: reviewFile, incremental: true });
+  const incrementalTab = vscode.window.tabGroups.activeTabGroup.activeTab.input;
+  assert.equal(incrementalTab.original.scheme, 'kian-review-cache');
+  assert.equal((await vscode.workspace.openTextDocument(incrementalTab.original)).getText(), 'print("feature")\n');
+  await review.mark(reviewFile, false);
+  await provider.open({ file: reviewFile });
+  const noteUri = vscode.window.tabGroups.activeTabGroup.activeTab.input.modified;
+  const noteThread = review.controller.createCommentThread(noteUri, new vscode.Range(0, 0, 0, 0), []);
+  await review.addReply({ thread: noteThread, text: 'Explain this line.\nCheck the ordering.' });
+  reviewState = await review.state(provider.reviewSession);
+  const note = reviewState.notes.at(-1);
+  assert.equal(note.anchor.path, 'demo.py'); assert.equal(note.anchor.start, 0);
+  assert.equal(noteThread.comments.length, 1);
+  const clipboardSaved = await vscode.env.clipboard.readText();
+  try {
+    await review.copyPrompts();
+    assert.match(await vscode.env.clipboard.readText(), /demo\.py:1/);
+    assert.match(await vscode.env.clipboard.readText(), /Explain this line/);
+  } finally { await vscode.env.clipboard.writeText(clipboardSaved); }
+  await review.threadAction(noteThread, 'resolve');
+  assert.equal((await review.state(provider.reviewSession)).notes.at(-1).resolved, true);
+  await review.threadAction(noteThread, 'reopen');
+  assert.equal((await review.state(provider.reviewSession)).notes.at(-1).resolved, false);
+  const branchNotesScope = provider.reviewSession.notesScope;
+  await provider.refresh({ right: 'feature', mode: 'commit' });
+  assert.equal(provider.reviewSession.notesScope, branchNotesScope);
+  assert.equal((await review.state(provider.reviewSession)).notes.at(-1).id, note.id);
+  await provider.refresh({ left: 'main', right: 'feature', mode: 'merge-base' });
+  const githubOriginal = review.github, infoOriginal = vscode.window.showInformationMessage;
+  const remoteComments = []; let postCount = 0;
+  const originalInput = provider.input;
+  provider.input = { ...provider.input, pr: { repository: 'fixture/repository', number: 1 } };
+  review.github = async () => ({ list: async route => route.endsWith('/issues/1/comments') ? remoteComments : route.endsWith('/files') ? [{ filename: 'demo.py', patch: '@@ -1 +1 @@\n-print("main")\n+print("feature")' }] : [],
+    request: async (route, method, payload) => {
+      if (method === 'POST') {
+        assert.ok(route.endsWith('/pulls/1/comments')); assert.equal(payload.line, 1); assert.equal(payload.side, 'RIGHT');
+        assert.equal(payload.commit_id, provider.result.rightHash);
+        postCount++; remoteComments.push({ body: payload.body, html_url: 'https://github.com/fixture/repository/pull/1#note' }); throw new Error('Response lost after accepted POST');
+      }
+      return { head: { sha: provider.result.rightHash }, base: { sha: provider.result.baseTipHash } };
+    } });
+  try {
+    vscode.window.showInformationMessage = async () => undefined;
+    await review.publish(note.id); assert.equal(postCount, 0);
+    vscode.window.showInformationMessage = async (_message, _options, choice) => choice;
+    await assert.rejects(review.publish(note.id), /Response lost/);
+    assert.equal(postCount, 1);
+    assert.equal((await review.state(provider.reviewSession)).notes.at(-1).published, undefined);
+    await review.publish(note.id); assert.equal(postCount, 1);
+    assert.ok((await review.state(provider.reviewSession)).notes.at(-1).published.url);
+  } finally { review.github = githubOriginal; vscode.window.showInformationMessage = infoOriginal; provider.input = originalInput; }
+  await review.threadAction(noteThread, 'resolve');
   await provider.refresh({ left: 'main', right: 'feature', mode: 'direct' });
   // Switching mode must no longer reopen repository/ref/mode wizards.
   const originalPickRef = provider.pickRef;
@@ -202,6 +260,14 @@ async function run() {
     provider.selectRepository = originalSelectRepository;
     vscode.window.showQuickPick = originalQuickPick;
   }
+  const resolveOriginal = provider.git.resolve;
+  const pinnedResult = provider.result;
+  try {
+    provider.git.resolve = async function(ref) { return ref === provider.input.right ? 'f'.repeat(40) : resolveOriginal.call(this, ref); };
+    await review.checkUpdates();
+    assert.equal(review.updateInfo.available, true); assert.equal(provider.result, pinnedResult);
+  } finally { provider.git.resolve = resolveOriginal; }
+  await review.checkUpdates(); assert.equal(review.updateInfo.available, false);
   // Instrument the production renderer only inside this disposable test webview.
   const fs = require('node:fs');
   const renderer = fs.readFileSync(extension.extensionPath + '/media/workbench.js', 'utf8');
@@ -235,6 +301,15 @@ async function run() {
     assert.equal(report.modeValue, provider.input.mode);
     assert.equal(report.busy, false); assert.equal(report.statusText, 'fixture timeout');
     const safeState = await workbench.snapshot();
+    await probe('mark-reviewed');
+    await until(() => workbench.state?.review.files['demo.py']?.reviewed);
+    report = await probe(); assert.equal(report.unreadFiles, 3); assert.equal(report.reviewedFiles, 1);
+    await probe('mark-unread');
+    await until(() => !workbench.state?.review.files['demo.py']?.reviewed);
+    report = await probe(); assert.equal(report.unreadFiles, 4); assert.equal(report.reviewedFiles, 0);
+    await workbench.webviewView.webview.postMessage({ type: 'state', state: { ...safeState, review: { ...safeState.review,
+      files: { ...safeState.review.files, 'demo.py': { ...safeState.review.files['demo.py'], updated: true, targetChanged: true } } } } });
+    report = await probe(); assert.equal(report.deltaButtons, 1);
     const unsafeText = '<img src=x onerror="throw Error(1)">';
     await workbench.webviewView.webview.postMessage({ type: 'state', state: { ...safeState,
       commits: safeState.commits.map(c => ({ ...c, subject: unsafeText })), details: { ...safeState.details, message: unsafeText } } });

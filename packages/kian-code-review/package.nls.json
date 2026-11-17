@@ -18,5 +18,11 @@
   "expand": "Expand All Folders",
   "collapse": "Collapse All Folders",
   "previousCommit": "Previous Commit (Older)",
-  "nextCommit": "Next Commit (Newer)"
+  "nextCommit": "Next Commit (Newer)",
+  "addPrivateNote": "Add Private Question at Selection",
+  "savePrivateNote": "Save Locally",
+  "resolvePrivateNote": "Resolve Private Question",
+  "reopenPrivateNote": "Reopen Private Question",
+  "copyPrompts": "Copy Unresolved Prompts",
+  "connectPR": "Connect GitHub PR"
 }

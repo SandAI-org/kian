@@ -1,0 +1,88 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { GitRepository } = require('../src/git');
+const { ReviewStore, scopeKey, reviewStatus, promptsMarkdown } = require('../src/review-store');
+const { GitHubAPI, parsePullRequest, parseRepository, patchContains, patchContainsRange } = require('../src/github');
+
+test('review acknowledgements follow file contents, retain baselines and isolate comparisons', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kian-review-state-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const repoRoot = path.join(root, 'repo'); await fs.mkdir(repoRoot);
+  const git = (...args) => execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
+  const write = (name, text) => fs.writeFile(path.join(repoRoot, name), text);
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  await write('a.py', 'base\n'); await write('b.py', 'base\n'); git('add', '.'); git('commit', '-qm', 'base');
+  git('checkout', '-qb', 'feature'); await write('a.py', 'base\nreviewed\n'); git('add', '.'); git('commit', '-qm', 'review a');
+  const repo = new GitRepository(repoRoot), store = new ReviewStore(path.join(root, 'state'));
+  const input = { left: 'main', right: 'feature', mode: 'merge-base' };
+  const first = await repo.compare(input), file = first.files[0];
+  const scope = scopeKey(repoRoot, input, first);
+  await store.mark(scope, file, first, repo, true);
+  let record = await store.read(scope, 'files', file.path);
+  const originalBlob = record.rightObject.oid;
+  assert.equal(reviewStatus(file, record).reviewed, true);
+  assert.equal((await fs.readFile(store.objectPath(record.rightObject.oid), 'utf8')), 'base\nreviewed\n');
+  await write('b.py', 'only another file changed\n'); git('add', '.'); git('commit', '-qm', 'change b');
+  const second = await repo.compare(input);
+  assert.equal(reviewStatus(second.files.find(f => f.path === 'a.py'), record).reviewed, true);
+  await write('a.py', 'base\nreviewed\nnew\n'); git('add', '.'); git('commit', '-qm', 'change a');
+  const third = await repo.compare(input), updated = third.files.find(f => f.path === 'a.py');
+  assert.deepEqual([reviewStatus(updated, record).reviewed, reviewStatus(updated, record).updated, reviewStatus(updated, record).targetChanged], [false, true, true]);
+  assert.equal((await fs.readFile(store.objectPath(record.rightObject.oid), 'utf8')), 'base\nreviewed\n');
+  const reloaded = new ReviewStore(path.join(root, 'state'));
+  assert.deepEqual(await reloaded.read(scope, 'files', file.path), record);
+  assert.notEqual(scopeKey(repoRoot, { ...input, left: 'other' }, first), scope);
+  assert.notEqual(scopeKey(repoRoot, { ...input, mode: 'direct' }, first), scope);
+  assert.equal(scopeKey(repoRoot, { ...input, left: 'a', right: 'b', reviewKey: ['main', 'feature'] }, third), scope);
+  assert.equal(reviewStatus({ ...file, leftObject: { ...file.leftObject, oid: 'f'.repeat(40) } }, record).reviewed, false);
+  await store.mark(scope, updated, third, repo, true);
+  record = await store.read(scope, 'files', updated.path);
+  assert.equal(record.rightHash, third.rightHash);
+  await store.mark(scope, updated, third, repo, false);
+  assert.equal(reviewStatus(updated, await store.read(scope, 'files', updated.path)).reviewed, false);
+  const anchor = { path: 'a.py', side: 'RIGHT', ref: third.rightHash, start: 1, end: 2 };
+  const note = await store.addNote(scope, anchor, 'Why?\nPlease explain the ordering.');
+  const markdown = promptsMarkdown([note], repoRoot);
+  assert.match(markdown, /a\.py:2-3/); assert.match(markdown, /  Why\?\n  Please explain/);
+  assert.equal(promptsMarkdown([{ ...note, resolved: true }], repoRoot), '');
+  await store.write(scope, 'notes', note.id, { ...note, resolved: true });
+  assert.equal((await reloaded.entries(scope, 'notes'))[0].resolved, true);
+  assert.throws(store.objectPath.bind(store, '../../outside'));
+  const replacement = git('commit-tree', git('rev-parse', 'feature^{tree}'), '-p', 'main', '-m', 'squashed replacement');
+  git('update-ref', 'refs/heads/feature', replacement);
+  git('reflog', 'expire', '--expire=now', '--all'); git('gc', '--prune=now', '--quiet');
+  await assert.rejects(repo.resolve(first.rightHash));
+  assert.equal(await fs.readFile(store.objectPath(originalBlob), 'utf8'), 'base\nreviewed\n');
+});
+
+test('GitHub API uses an explicit HTTP proxy without sending its token to CONNECT', async t => {
+  const http = require('node:http');
+  const server = http.createServer();
+  server.on('connect', (request, socket) => {
+    assert.equal(request.url, 'api.github.com:443');
+    assert.equal(request.headers.authorization, undefined);
+    socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const api = new GitHubAPI('fixture-token', `http://127.0.0.1:${server.address().port}`);
+  await assert.rejects(api.request('/user'), /proxy connection failed \(407\)/);
+});
+
+test('GitHub destinations and inline anchors are validated', () => {
+  assert.equal(parseRepository('git@github.com:SandAI-org/MagiAttention.git'), 'SandAI-org/MagiAttention');
+  assert.equal(parseRepository('https://github.com/SandAI-org/MagiAttention'), 'SandAI-org/MagiAttention');
+  assert.equal(parsePullRequest('https://evil.example/SandAI-org/MagiAttention/pull/1'), null);
+  assert.deepEqual(parsePullRequest('https://github.com/SandAI-org/MagiAttention/pull/394/files'), { repository: 'SandAI-org/MagiAttention', number: 394 });
+  const patch = '@@ -2,2 +2,3 @@\n context\n-old\n+new\n+extra\n';
+  assert.equal(patchContains(patch, 'LEFT', 3), true);
+  assert.equal(patchContains(patch, 'RIGHT', 4), true);
+  assert.equal(patchContains(patch, 'RIGHT', 99), false);
+  assert.equal(patchContains(undefined, 'RIGHT', 1), false);
+  assert.equal(patchContainsRange(patch, 'RIGHT', 2, 4), true);
+  assert.equal(patchContainsRange(patch + '\n@@ -20 +20 @@\n-last\n+next', 'RIGHT', 2, 20), false);
+});

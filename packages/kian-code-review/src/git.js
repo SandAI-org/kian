@@ -5,12 +5,12 @@ const run = promisify(execFile);
 class GitRepository {
   constructor(root, git = 'git') { this.root = root; this.git = git; this.timeout = 30000; }
 
-  async exec(args) {
+  async exec(args, { encoding = 'utf8' } = {}) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       const start = Date.now();
       try {
         const { stdout } = await run(this.git, ['--no-pager', ...args], {
-          cwd: this.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: this.timeout,
+          cwd: this.root, encoding, maxBuffer: 32 * 1024 * 1024, timeout: this.timeout,
           env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
         });
         return stdout;
@@ -58,6 +58,7 @@ class GitRepository {
   async compare({ left, right, mode = 'direct' }) {
     const rightHash = await this.resolve(right);
     let leftHash = left ? await this.resolve(left) : null;
+    const baseTipHash = leftHash;
     let parentCount;
     if (mode === 'commit') {
       const parents = (await this.exec(['rev-list', '--parents', '-n', '1', rightHash, '--'])).trim().split(' ').slice(1);
@@ -93,12 +94,24 @@ class GitRepository {
       leftHash ? this.exec(['rev-parse', '--symbolic-full-name', mode === 'direct' && left ? left : leftHash]) : '',
       this.exec(['rev-parse', '--symbolic-full-name', right]),
     ]);
+    const trees = await Promise.all([leftHash, rightHash].map(async hash => {
+      if (!hash) return new Map();
+      const entries = await this.exec(['ls-tree', '-r', '-z', '--full-tree', hash, '--']);
+      return new Map(entries.split('\0').filter(Boolean).map(line => {
+        const tab = line.indexOf('\t'); const [mode, type, oid] = line.slice(0, tab).split(' ');
+        return [line.slice(tab + 1), { mode, type, oid }];
+      }));
+    }));
+    for (const file of files) {
+      file.leftObject = trees[0].get(file.oldPath) || null;
+      file.rightObject = trees[1].get(file.path) || null;
+    }
     const locate = (hash, ref) => {
       const name = ref.trim();
       const matches = worktrees.filter(w => w.head === hash && (!name.startsWith('refs/heads/') || w.branch === name));
       return (matches.find(w => w.path === this.root) || matches[0])?.path || null;
     };
-    return { leftHash, rightHash, files, mode, parentCount,
+    return { leftHash, rightHash, files, mode, parentCount, baseTipHash,
       leftWorktree: leftHash ? locate(leftHash, leftRef) : null, rightWorktree: locate(rightHash, rightRef) };
   }
 }

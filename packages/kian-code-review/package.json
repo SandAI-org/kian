@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -29,7 +29,7 @@
   },
   "l10n": "./l10n",
   "scripts": {
-    "test": "node --test test/git.test.js",
+    "test": "node --test test/*.test.js",
     "package:vsix": "node scripts/package.js"
   },
   "contributes": {
@@ -143,6 +143,42 @@
         "category": "Kian Review",
         "icon": "$(arrow-right)",
         "enablement": "kianReview.hasNextCommit"
+      },
+      {
+        "command": "kianReview.addPrivateNote",
+        "title": "%addPrivateNote%",
+        "category": "Kian Review",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "kianReview.savePrivateNote",
+        "title": "%savePrivateNote%",
+        "category": "Kian Review",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "kianReview.resolvePrivateNote",
+        "title": "%resolvePrivateNote%",
+        "category": "Kian Review",
+        "icon": "$(check)"
+      },
+      {
+        "command": "kianReview.reopenPrivateNote",
+        "title": "%reopenPrivateNote%",
+        "category": "Kian Review",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "kianReview.copyPrompts",
+        "title": "%copyPrompts%",
+        "category": "Kian Review",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "kianReview.connectPR",
+        "title": "%connectPR%",
+        "category": "Kian Review",
+        "icon": "$(github)"
       }
     ],
     "views": {
@@ -203,6 +239,46 @@
           "command": "kianReview.collapse",
           "when": "view == kianReview.files",
           "group": "navigation@5"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "kianReview.savePrivateNote",
+          "group": "inline",
+          "when": "commentController == kianReview.notes && commentThreadIsEmpty"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "kianReview.resolvePrivateNote",
+          "group": "navigation@1",
+          "when": "commentController == kianReview.notes && commentThread == kianNoteOpen"
+        },
+        {
+          "command": "kianReview.reopenPrivateNote",
+          "group": "navigation@1",
+          "when": "commentController == kianReview.notes && commentThread == kianNoteResolved"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "kianReview.addPrivateNote",
+          "group": "kianReview",
+          "when": "kianReview.noteDocument && editorTextFocus"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "kianReview.savePrivateNote",
+          "when": "false"
+        },
+        {
+          "command": "kianReview.resolvePrivateNote",
+          "when": "false"
+        },
+        {
+          "command": "kianReview.reopenPrivateNote",
+          "when": "false"
         }
       ]
     }

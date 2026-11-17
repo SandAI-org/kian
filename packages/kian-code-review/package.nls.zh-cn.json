@@ -18,5 +18,11 @@
   "description": "轻量分支和提交审阅，按需打开原生单文件 diff。",
   "welcome": "[比较分支](command:kianReview.branches)\n[查看提交](command:kianReview.commit)",
   "previousCommit": "上一提交（更早）",
-  "nextCommit": "下一提交（更新）"
+  "nextCommit": "下一提交（更新）",
+  "addPrivateNote": "在所选代码行添加私有问题",
+  "savePrivateNote": "保存到本地",
+  "resolvePrivateNote": "解决私有问题",
+  "reopenPrivateNote": "重新打开私有问题",
+  "copyPrompts": "复制未解决的问题",
+  "connectPR": "连接GitHub PR"
 }

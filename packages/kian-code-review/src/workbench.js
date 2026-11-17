@@ -47,7 +47,12 @@ class ReviewWorkbench {
       'Expand All Folders', 'Collapse All Folders', 'Refresh Comparison', 'Swap Base and Compare', 'Copy Relative Path',
       'Copy Compare-side Absolute Path', 'Open Working File', 'Empty tree', 'No commits in this range.', 'No matching files.',
       'Choose branches or a commit from the toolbar.', 'Parents', 'Author', 'Date', 'Binary', 'Working tree path',
-      'No matching historical worktree; paths refer to the current workspace.', 'Select repository'].map(text => [text, t(text)]));
+      'No matching historical worktree; paths refer to the current workspace.', 'Select repository',
+      'Reviewed files', 'Mark reviewed', 'Mark unread', 'Updated since review', 'Since last review', 'Full comparison',
+      'Base changed; the target file is unchanged. Check the full comparison.', 'Private questions', 'Copy prompts', 'Add private question',
+      'Resolve', 'Reopen', 'Edit', 'Resolved', 'Open', 'Submit to GitHub…', 'Published', 'Local only', 'No private questions.',
+      'History visibility', 'Connect PR', 'Updates available', 'Refresh to review the new version. Your current view is unchanged.',
+      'Local refs only; connect a PR to detect updates on GitHub.', 'Update check failed', 'Anchor version changed', 'Show resolved', 'All matching files are reviewed.'].map(text => [text, t(text)]));
     if (!result) return { labels, controls: p.getControls(), files: [], commits: [], key: '', summary: this.message };
     const git = p.git, input = { ...p.input };
     const source = input.mode === 'commit' ? p.commitHistory.tip : result.rightHash;
@@ -61,12 +66,15 @@ class ReviewWorkbench {
     const body = await git.exec(['show', '-s', '--format=%B%x00%an%x00%aI%x00%P', result.rightHash, '--']);
     if (p.git !== git || p.result !== result) return;
     const [message, author, date, parents] = body.trimEnd().split('\0');
+    const review = await p.review.state(p.reviewSession);
+    if (p.git !== git || p.result !== result) return;
     const position = input.mode === 'commit' ? p.commitHistory.hashes.indexOf(result.rightHash) : -1;
     return { labels, controls: p.getControls(), filter: p.filter, files: result.files.filter(f => `${f.path}\n${f.oldPath}`.toLowerCase().includes(p.filter.toLowerCase())).map(({ path, oldPath, status, added, removed }) => ({ path, oldPath, status, added, removed })),
       commits: this.history.commits, more: this.history.more, historyKey, mode: input.mode,
       selected: input.mode === 'commit' ? result.rightHash : null, left: result.leftHash, right: result.rightHash,
-      key: `${git.root}:${result.leftHash}:${result.rightHash}:${input.mode}`, root: git.root,
+      key: `${git.root}:${result.leftHash}:${result.rightHash}:${input.mode}:${p.reviewSession.scope}`, root: git.root,
       canPrevious: position >= 0 && position + 1 < p.commitHistory.hashes.length, canNext: position > 0,
+      review, update: p.review.updateInfo, pr: input.pr,
       details: { message, author, date, parents: parents?.split(' ').filter(Boolean) || [], worktree: result.rightWorktree },
       summary: t('{0} files · +{1} / −{2}', result.files.length, result.files.reduce((n, f) => n + (f.added || 0), 0), result.files.reduce((n, f) => n + (f.removed || 0), 0)) };
   }
@@ -93,13 +101,13 @@ class ReviewWorkbench {
     try {
       if (!message || typeof message !== 'object') return;
       if (message.type === 'ready') return this.update();
-      if (!['action', 'mode', 'commit', 'older', 'file'].includes(message.type)) return;
+      if (!['action', 'mode', 'commit', 'older', 'file', 'note'].includes(message.type)) return;
       if (!vscode.workspace.isTrusted) throw new Error(t('Open a trusted Git repository first.'));
       const p = this.provider;
-      const currentKey = p.result ? `${p.git.root}:${p.result.leftHash}:${p.result.rightHash}:${p.input.mode}` : '';
+      const currentKey = p.result ? `${p.git.root}:${p.result.leftHash}:${p.result.rightHash}:${p.input.mode}:${p.reviewSession.scope}` : '';
       if (message.key !== this.state?.key || message.key !== currentKey) return this.update();
       if (message.type === 'action') {
-        const actions = { repository: 'repository', base: 'base', target: 'target', refresh: 'refresh', swap: 'swap', previous: 'previousCommit', next: 'nextCommit' };
+        const actions = { repository: 'repository', base: 'base', target: 'target', refresh: 'refresh', swap: 'swap', previous: 'previousCommit', next: 'nextCommit', connectPR: 'connectPR', copyPrompts: 'copyPrompts', addNote: 'addPrivateNote' };
         if (Object.hasOwn(actions, message.action)) await vscode.commands.executeCommand(`kianReview.${actions[message.action]}`);
       } else if (message.type === 'mode' && ['direct', 'merge-base', 'commit'].includes(message.mode)) {
         await p.refresh(message.mode === 'commit' ? p.commitInput || { right: p.input?.right || 'HEAD', mode: 'commit' }
@@ -111,9 +119,13 @@ class ReviewWorkbench {
         const commits = await history.git.commits(history.commits.length, history.source, history.exclude);
         if (this.history !== history) return;
         history.commits.push(...commits); history.more = commits.length === 200;
-      } else if (message.type === 'file' && ['open', 'copyRelative', 'copyAbsolute', 'openWorkingFile'].includes(message.action)) {
+      } else if (message.type === 'file' && ['open', 'copyRelative', 'copyAbsolute', 'openWorkingFile', 'reviewed', 'unread', 'incremental'].includes(message.action)) {
         const file = p.result?.files.find(file => file.path === message.path);
-        if (file) await vscode.commands.executeCommand(`kianReview.${message.action}`, { file });
+        if (file && ['reviewed', 'unread'].includes(message.action)) await p.review.mark(file, message.action === 'reviewed');
+        else if (file) await vscode.commands.executeCommand(`kianReview.${message.action === 'incremental' ? 'open' : message.action}`, { file, incremental: message.action === 'incremental' });
+      } else if (message.type === 'note' && ['edit', 'resolve', 'reopen', 'open', 'publish'].includes(message.action)) {
+        if (message.action === 'publish') await p.review.publish(message.id);
+        else await p.review.noteAction(message.id, message.action);
       }
       await this.update();
     } catch (error) { this.error(error); }

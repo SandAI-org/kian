@@ -2,6 +2,7 @@ const vscode = require('vscode');
 const path = require('node:path');
 const { GitRepository, isMagiRepository } = require('./git');
 const { ReviewWorkbench, errorMessage, logError } = require('./workbench');
+const { ReviewService } = require('./review');
 const t = (...args) => vscode.l10n.t(...args);
 
 class ReviewProvider {
@@ -128,7 +129,9 @@ class ReviewProvider {
     const value = side === 'right' && input.mode === 'commit' ? await this.pickCommit(input.right)
       : await this.pickRef(side === 'left' ? t('Base / left branch') : t('Compare / right branch'), input[side] || this.result?.leftHash || 'HEAD');
     if (!value) return;
-    await this.refresh({ ...input, [side]: value, mode: side === 'left' && input.mode === 'commit' ? 'direct' : input.mode });
+    const next = { ...input, [side]: value, mode: side === 'left' && input.mode === 'commit' ? 'direct' : input.mode };
+    delete next.pr; delete next.reviewKey;
+    await this.refresh(next);
   }
 
   async chooseMode() {
@@ -148,9 +151,9 @@ class ReviewProvider {
     return [
       { control: 'repository', name: t('Repository'), value: this.repo ? path.basename(this.repo.rootUri.fsPath) : t('Select repository'), icon: 'repo' },
       { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit · first parent') : mode === 'direct' ? t('Branch tips') : t('PR / merge base'), icon: 'git-compare' },
-      { control: 'base', name: t('Base'), value: mode === 'commit' ? t('First parent (automatic)') : this.input?.left || 'main', icon: 'git-commit' },
+      { control: 'base', name: t('Base'), value: mode === 'commit' ? t('First parent (automatic)') : this.input?.pr?.baseRef || this.input?.left || 'main', icon: 'git-commit' },
       { control: 'target', name: mode === 'commit' ? t('Commit') : t('Compare'),
-        value: mode === 'commit' && this.result ? this.result.rightHash.slice(0, 8) : this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: mode === 'commit' ? 'git-commit' : 'git-branch' },
+        value: mode === 'commit' && this.result ? this.result.rightHash.slice(0, 8) : this.input?.pr?.headRef || this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: mode === 'commit' ? 'git-commit' : 'git-branch' },
     ];
   }
 
@@ -162,6 +165,7 @@ class ReviewProvider {
     this.view.message = t('Comparing…');
     try {
       const result = await this.git.compare(input);
+      const reviewSession = await this.review.prepare(this.git, input, result);
       let commit;
       if (input.mode === 'commit') {
         if (!this.commitHistory || this.commitHistory.root !== this.git.root || !this.commitHistory.hashes.includes(result.rightHash)) {
@@ -176,7 +180,8 @@ class ReviewProvider {
         commit = { subject, author, date };
       }
       if (generation !== this.generation) return;
-      this.input = input; this.result = result; this.currentCommit = commit;
+      this.input = input; this.result = result; this.currentCommit = commit; this.reviewSession = reviewSession;
+      this.review.updateInfo = { available: false };
       const position = input.mode === 'commit' ? this.commitHistory.hashes.indexOf(result.rightHash) : -1;
       await Promise.all([
         vscode.commands.executeCommand('setContext', 'kianReview.hasPreviousCommit', position >= 0 && position + 1 < this.commitHistory.hashes.length),
@@ -216,13 +221,7 @@ class ReviewProvider {
 
   async open(node) {
     const f = node?.file; if (!f) return;
-    const c = f.comparison;
-    const resource = p => vscode.Uri.joinPath(c.repo.rootUri, p);
-    const empty = p => resource(p).with({ scheme: 'kian-review-empty', query: '' });
-    const left = f.status[0] === 'A' || !c.leftHash ? empty(f.path) : this.gitApi.toGitUri(resource(f.oldPath), c.leftHash);
-    const right = f.status[0] === 'D' ? empty(f.path) : this.gitApi.toGitUri(resource(f.path), c.rightHash);
-    await vscode.commands.executeCommand('vscode.diff', left, right,
-      `${f.path} (${c.leftHash?.slice(0, 8) || '∅'} → ${c.rightHash.slice(0, 8)})`, { preview: true });
+    await this.review.open(f, Boolean(node.incremental));
   }
 }
 
@@ -230,10 +229,11 @@ async function activate(context) {
   const gitExtension = vscode.extensions.getExtension('vscode.git');
   const exports = await gitExtension.activate(); const api = exports.getAPI(1);
   const provider = new ReviewProvider(context, api);
+  provider.review = new ReviewService(context, provider);
   provider.output = vscode.window.createOutputChannel('Kian Review');
   const workbench = new ReviewWorkbench(context, provider);
   provider.view = workbench; provider.updateMessage();
-  context.subscriptions.push(workbench, vscode.window.registerWebviewViewProvider('kianReview.files', workbench), provider.events, provider.output,
+  context.subscriptions.push(provider.review, workbench, vscode.window.registerWebviewViewProvider('kianReview.files', workbench), provider.events, provider.output,
     vscode.workspace.registerTextDocumentContentProvider('kian-review-empty', { provideTextDocumentContent: () => '' }));
   const register = (name, fn) => context.subscriptions.push(vscode.commands.registerCommand(`kianReview.${name}`, async (...args) => {
     try {
@@ -250,7 +250,7 @@ async function activate(context) {
   }));
   register('branches', () => provider.compareBranches());
   register('commit', () => provider.compareCommit());
-  register('refresh', () => provider.refresh());
+  register('refresh', () => provider.review.refresh());
   register('repository', async () => { if (await provider.selectRepository(true)) await provider.refresh(); });
   register('mode', () => provider.chooseMode());
   register('base', () => provider.changeSide('left'));
@@ -260,6 +260,12 @@ async function activate(context) {
   register('expand', () => provider.fold(true));
   register('collapse', () => provider.fold(false));
   register('open', node => provider.open(node));
+  register('addPrivateNote', () => provider.review.addAtSelection());
+  register('savePrivateNote', reply => provider.review.addReply(reply));
+  register('resolvePrivateNote', thread => provider.review.threadAction(thread, 'resolve'));
+  register('reopenPrivateNote', thread => provider.review.threadAction(thread, 'reopen'));
+  register('copyPrompts', () => provider.review.copyPrompts());
+  register('connectPR', () => provider.review.connectPR());
   register('copyRelative', node => node?.file && vscode.env.clipboard.writeText(node.file.path));
   register('copyAbsolute', async node => {
     if (!node?.file) return;
@@ -276,7 +282,10 @@ async function activate(context) {
   });
   register('swap', async () => {
     if (provider.input?.mode === 'commit') return provider.compareBranches();
-    if (provider.input) await provider.refresh({ ...provider.input, left: provider.input.right, right: provider.input.left });
+    if (provider.input) {
+      const input = { ...provider.input, left: provider.input.right, right: provider.input.left };
+      delete input.pr; delete input.reviewKey; await provider.refresh(input);
+    }
   });
   // Public read-only command also permits repeatable Extension Host integration tests.
   register('compare', async ({ root, left, right, mode = 'direct' }) => {
