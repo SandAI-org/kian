@@ -74,6 +74,8 @@
   "Connect PR": "连接GitHub PR",
   "Connect a GitHub PR to this review": "将GitHub PR链接关联到本次审阅",
   "Copy prompts": "复制未解决的问题",
+  "Created": "创建",
+  "Edited": "编辑",
   "Edit": "编辑",
   "Edit private prompt": "编辑私有问题",
   "Enter a github.com pull request URL.": "请输入github.com的PR链接。",

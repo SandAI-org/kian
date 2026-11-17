@@ -60,7 +60,7 @@ class ReviewService {
       new vscode.Range(note.anchor.start, 0, note.anchor.end, 0), []);
     this.threads.set(key, thread); this.threadNotes.set(thread, { id: note.id, session });
     const body = new vscode.MarkdownString(); body.appendText(note.text);
-    const comment = { body, mode: vscode.CommentMode.Preview, contextValue: 'kianPrivateNote', author: { name: t('Private prompt') }, label: note.published ? t('Published') : t('Local only') };
+    const comment = { body, timestamp: new Date(note.createdAt), mode: vscode.CommentMode.Preview, contextValue: 'kianPrivateNote', author: { name: t('Private prompt') }, label: note.published ? t('Published') : t('Local only') };
     this.commentNotes.set(comment, { id: note.id, session, thread });
     thread.comments = [comment];
     thread.contextValue = note.resolved ? 'kianNoteResolved' : 'kianNoteOpen';
@@ -123,6 +123,7 @@ class ReviewService {
         this.commentNotes.set(draft, entry); entry.thread.comments = [draft];
         throw new Error(t('A private prompt must contain text and be at most 65536 characters.'));
       }
+      if (note.text !== text.trim()) note.updatedAt = new Date().toISOString();
       note.text = text.trim();
       await this.store.write(entry.session.notesScope, 'notes', note.id, note);
     }

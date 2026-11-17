@@ -9,6 +9,7 @@
       fileSearch.dispatchEvent(new Event('input'));
     }
     if (action === 'select-commit') historyBody.querySelector('.commit-row').click();
+    if (action === 'toggle-resolved') { showResolved = !showResolved; rightTab = 'notes'; renderDetails(); }
     if (action === 'pending-mode') mode.value = 'commit';
     if (action === 'advanced-filter') { regexMode = false; fileSearch.value = '*.py, deep/**'; excludeSearch.value = 'added.py, removed.py'; renderFiles(); }
     if (action === 'regex-filter') { regexMode = true; fileSearch.value = '^(demo|added)\\.py$'; excludeSearch.value = 'added'; renderFiles(); }
@@ -34,5 +35,6 @@
       reviewedFiles: filesBody.querySelectorAll('.reviewed-lane .file-row').length,
       deltaButtons: filesBody.querySelectorAll('.delta-button').length,
       filterError: !filterError.hidden,
+      noteTimes: [...detailBody.querySelectorAll('time')].map(time => ({ datetime: time.dateTime, text: time.textContent, title: time.title })),
     });
   });

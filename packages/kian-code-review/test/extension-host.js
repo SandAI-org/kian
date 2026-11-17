@@ -133,12 +133,17 @@ async function run() {
     let notes = (await review.state(provider.reviewSession)).notes;
     assert.equal(notes.length, 1); assert.equal(notes[0].id, note.id); assert.equal(notes[0].text, edited);
     assert.deepEqual(notes[0].anchor, note.anchor);
+    assert.equal(notes[0].createdAt, note.createdAt);
+    assert.ok(notes[0].updatedAt);
+    const editedAt = notes[0].updatedAt;
+    assert.equal(noteThread.comments[0].timestamp.toISOString(), note.createdAt);
     assert.equal(noteThread.comments[0].mode, vscode.CommentMode.Preview);
     await review.noteAction(note.id, 'edit');
     assert.equal(noteThread.comments[0].body, edited);
     noteThread.comments[0].body = 'discard this draft';
     await vscode.commands.executeCommand('kianReview.cancelEditPrivateNote', noteThread.comments[0]);
     assert.equal((await review.state(provider.reviewSession)).notes[0].text, edited);
+    assert.equal((await review.state(provider.reviewSession)).notes[0].updatedAt, editedAt);
     assert.equal(noteThread.comments[0].mode, vscode.CommentMode.Preview);
   } finally { vscode.window.showInputBox = inputBoxOriginal; }
   const clipboardSaved = await vscode.env.clipboard.readText();
@@ -367,6 +372,10 @@ async function run() {
     assert.equal(report.horizontalOverflow, false);
     assert.ok(['grid', 'flex'].includes(report.layoutDisplay));
     assert.equal(report.toolbarDisplay, 'flex');
+    report = await probe('toggle-resolved');
+    assert.ok(report.noteTimes.length >= 2);
+    assert.ok(report.noteTimes.every(time => time.datetime && time.text.includes('202') && time.title.includes(' · ')));
+    await probe('toggle-resolved');
     const sourceState = await workbench.snapshot();
     const longSource = 'work/' + 'very-long-branch-name-'.repeat(40);
     await workbench.webviewView.webview.postMessage({ type: 'state', state: { ...sourceState, historySource: longSource } });

@@ -219,10 +219,16 @@
     checkbox.addEventListener('change', () => { showResolved = checkbox.checked; renderDetails(); persist(); });
     resolvedLabel.append(checkbox, document.createTextNode(tr('Show resolved'))); tools.append(resolvedLabel); detailBody.append(tools);
     const notes = (state.review?.notes || []).filter(note => showResolved || !note.resolved);
+    const dates = new Intl.DateTimeFormat(document.documentElement.lang || undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
     for (const note of notes) {
       const card = el('article', 'note-card');
       const anchor = button(`${note.anchor.path}:${note.anchor.start + 1}${note.anchor.end > note.anchor.start ? '–' + (note.anchor.end + 1) : ''}`, () => send({ type: 'note', action: 'open', id: note.id }), 'note-anchor');
       card.append(anchor, el('span', 'note-meta', `${note.anchor.side} · ${note.anchor.ref?.slice(0, 8) || '∅'} · ${tr(note.resolved ? 'Resolved' : note.published ? 'Published' : 'Local only')}`));
+      for (const [label, value] of [['Created', note.createdAt], ['Edited', note.updatedAt]]) {
+        if (!value) continue;
+        const time = el('time', 'note-meta', `${tr(label)} · ${dates.format(new Date(value))}`);
+        time.dateTime = value; time.title = `${dates.resolvedOptions().timeZone} · ${value}`; card.append(time);
+      }
       if (note.anchor.head !== state.right) card.append(el('span', 'note-meta', tr('Anchor version changed')));
       card.append(el('pre', 'note-text', note.text));
       const actions = el('div', 'note-actions');

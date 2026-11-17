@@ -6,6 +6,8 @@ A VS Code workbench for branch, commit and PR review. It displays metadata until
 
 Editing a private question opens its original code revision and line, expands the native inline comment editor, and supports multiline text. Save Locally updates the existing question; Cancel Editing discards the draft. The original anchor and resolved state are preserved. Editing does not post or change comments on GitHub.
 
+Each question shows its original creation date/time, including seconds, in the computer's local time zone. Text edits made from this version also show the latest edit time; canceling, saving unchanged text or resolving does not change it. Hover for the time zone and original UTC timestamp. Existing creation times are displayed, but past edit times are not reconstructed.
+
 Mode labels stay compact in every language: **PR**, **Branch Diff**, and **Commit Diff**. Hover over the mode selector for the comparison rule.
 
 Commit Diff shows the pinned history's source branch/revision in a separate line below the toolbar, with ellipsis for long names and the full name on hover. Base shows the actual parent SHA (or Empty tree for a root commit). A source label identifies the history being browsed, not a unique branch owning that commit.
