@@ -5,6 +5,9 @@ Object.assign(copy.zh,{guide:'阅读导读',categories:'原分类'});
 Object.assign(copy.en,{guide:'Reading guide',categories:'Original categories'});
 Object.assign(copy.zh,{expand:'全部展开',shortcuts:'⌘K → 1–9 折叠对应层级及更深内容 · ⌘K → J 全部展开'});
 Object.assign(copy.en,{expand:'Expand all',shortcuts:'⌘K → 1–9 folds that level and deeper · ⌘K → J expands all'});
+Object.assign(copy.zh,{clearUnread:n=>`清除未读 · ${n}`,clearUnreadScope:name=>`将“${name}”全部未读标为已读，包含历史未读，不受搜索筛选影响。`});
+Object.assign(copy.en,{clearUnread:n=>`Mark all read · ${n}`,clearUnreadScope:name=>`Mark all unread in ${name} as read, including older unread, regardless of search filters.`});
+let clearingUnread=false;
 let lang=localStorage.getItem('repo-inbox-language')||'zh',t=copy[lang],items=[],registered=[],token='',channel=new URLSearchParams(location.search).get('channel')||'all',mode=channel==='favorites'?'all':'unread',query='',loaded=false,observed='',collapsed=true,pendingRender=false,historyOpen=false,renderedDay='',foldAt=1;let openTimes=new Set(),closedTimes=new Set(),openRepos=new Set(),closedRepos=new Set(),openItems=new Set(),closedItems=new Set(),limits=new Map();
 const $=id=>document.getElementById(id);function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}function short(n){return new Intl.NumberFormat(lang==='en'?'en-US':'zh-CN').format(n)}
 function isBlog(e){return e.repo.startsWith('source:')}function inChannel(e,key=channel){return key==='favorites'?!!e.is_favorite:key==='all'||key==='papers'&&e.channel==='papers'||key==='blogs'&&isBlog(e)||key==='owned'&&e.channel==='owned'||key==='public'&&e.channel==='public'&&!isBlog(e)}
@@ -94,6 +97,7 @@ function render(){
  const nextScope=JSON.stringify([channel,mode,query]);if(nextScope!==readingScope){$('foldScrollSpace').style.height='0px';readingScope=nextScope}
  renderedDay=InboxTimeline.dayOf({captured_at:new Date().toISOString()});
  applyCopy();renderNav();renderTabs();const scope=items.filter(e=>inChannel(e));
+ const unread=scope.filter(e=>!e.is_read);$('clearUnread').textContent=t.clearUnread(short(unread.length));$('clearUnread').title=t.clearUnreadScope(t[channel]||t.all);$('clearUnread').setAttribute('aria-label',$('clearUnread').title);$('clearUnread').disabled=!loaded||clearingUnread||!unread.length;
  if(channel==='favorites'){$('heading').textContent=t.favoriteHeading;$('intro').textContent=t.favoriteIntro;$('stampLabel').textContent=t.favorites;$('stampBottom').textContent=t.favoriteStamp}
  $('unreadCount').textContent=short(channel==='favorites'?scope.length:scope.filter(e=>!e.is_read).length);
  $('stats').replaceChildren();
@@ -130,3 +134,5 @@ document.addEventListener('keydown',event=>{
  chordUntil=0;
  if(!event.altKey&&(/^[1-9]$/.test(key)||key==='j')){event.preventDefault();foldTo(key==='j'?Infinity:Number(key))}
 },true);
+
+$('clearUnread').onclick=async()=>{if(clearingUnread||!loaded)return;const unread=items.filter(e=>inChannel(e)&&!e.is_read);if(!unread.length)return;clearingUnread=true;render();try{await setRead(unread,true)}finally{clearingUnread=false;render()}};

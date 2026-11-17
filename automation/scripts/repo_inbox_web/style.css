@@ -7,3 +7,5 @@
 .shortcut-hint{font-size:10px;color:var(--muted);margin-top:15px;line-height:1.8}.shortcut-hint+.result-note{margin-top:10px}
 
 .guide-links{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.guide-link{display:inline-flex;padding:8px 13px;border:1px solid #cedacb;border-radius:8px;background:#edf2e8;color:#356a58;text-decoration:none;font-size:13px}.library-categories{font-size:12px;color:#7b8d7d;margin:12px 0;line-height:1.7}
+
+.clear-unread{white-space:nowrap;color:var(--green);border:1px solid var(--line);border-radius:7px}.clear-unread:disabled{opacity:.45;cursor:default}.tools{flex-wrap:wrap}
