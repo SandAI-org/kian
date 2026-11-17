@@ -283,10 +283,10 @@ async function run() {
   const probeCode = fs.readFileSync(extension.extensionPath + '/test/webview-probe.js', 'utf8');
   const html = workbench.webviewView.webview.html;
   const nonce = html.match(/nonce="([a-f0-9]+)"/)[1];
-  const instrumented = renderer.replace('  api.postMessage({ type: \'ready\' });', probeCode + '\n  api.postMessage({ type: \'ready\' });');
+  const instrumented = renderer.replace('  api.postMessage({ type: \'ready\' });', () => probeCode + '\n  api.postMessage({ type: \'ready\' });');
   const messages = [];
   const listener = workbench.webviewView.webview.onDidReceiveMessage(message => messages.push(message));
-  workbench.webviewView.webview.html = html.replace(/<script nonce="[^"]+" src="[^"]+"><\/script>/, `<script nonce="${nonce}">${instrumented}</script>`);
+  workbench.webviewView.webview.html = html.replace(/<script nonce="[^"]+" src="[^"]*workbench\.js"><\/script>/, () => `<script nonce="${nonce}">${instrumented}</script>`);
   const until = async predicate => {
     for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
     throw new Error('Webview renderer did not respond');
@@ -304,6 +304,10 @@ async function run() {
     assert.equal(report.horizontalOverflow, false);
     assert.ok(['grid', 'flex'].includes(report.layoutDisplay));
     assert.equal(report.toolbarDisplay, 'flex');
+    report = await probe('advanced-filter'); assert.equal(report.files, 2);
+    report = await probe('regex-filter'); assert.equal(report.files, 1);
+    report = await probe('invalid-filter'); assert.equal(report.filterError, true); assert.equal(report.files, 1);
+    report = await probe('clear-advanced-filter'); assert.equal(report.filterError, false); assert.equal(report.files, 4);
     await probe('pending-mode');
     await workbench.webviewView.webview.postMessage({ type: 'error', message: 'fixture timeout' });
     report = await probe();

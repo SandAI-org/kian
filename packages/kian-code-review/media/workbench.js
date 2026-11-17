@@ -6,6 +6,8 @@
   let detailsHidden = saved.detailsHidden || false;
   let historyHidden = saved.historyHidden || false, rightTab = saved.rightTab || 'notes', showResolved = saved.showResolved || false;
   let reviewedOpen = saved.reviewedOpen || false;
+  let regexMode = saved.regexMode || false;
+  let lastValidMatcher = () => true;
   const app = document.getElementById('app');
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -14,7 +16,8 @@
     return node;
   };
   const tr = text => state?.labels[text] || text;
-  const persist = () => api.setState({ detailsHidden, historyHidden, rightTab, showResolved, reviewedOpen, openFolders: [...openFolders], treeKey, scrolls: {
+  const persist = () => api.setState({ detailsHidden, historyHidden, rightTab, showResolved, reviewedOpen,
+    includeFilter: fileSearch.value, excludeFilter: excludeSearch.value, regexMode, openFolders: [...openFolders], treeKey, scrolls: {
     history: historyBody.scrollTop, files: filesBody.scrollTop, details: detailBody.scrollTop,
   } });
   const send = message => {
@@ -66,10 +69,17 @@
   const historySearch = el('input', 'search'); historySearch.type = 'search';
   historySearch.addEventListener('input', renderHistory); historyPane.heading.after(historySearch);
   const fileTools = el('div', 'file-tools'), fileSearch = el('input', 'search'); fileSearch.type = 'search';
-  fileSearch.addEventListener('input', renderFiles);
+  const excludeSearch = el('input', 'search'); excludeSearch.type = 'search';
+  fileSearch.value = saved.includeFilter || ''; excludeSearch.value = saved.excludeFilter || '';
+  for (const input of [fileSearch, excludeSearch]) input.addEventListener('input', () => { renderFiles(); persist(); });
+  const regexToggle = button('.*', () => { regexMode = !regexMode; renderFiles(); persist(); }, 'icon-button regex-toggle');
+  const includeLabel = el('label', 'filter-field'), excludeLabel = el('label', 'filter-field');
+  const includeCaption = el('span', 'eyebrow'), excludeCaption = el('span', 'eyebrow');
+  includeLabel.append(includeCaption, fileSearch); excludeLabel.append(excludeCaption, excludeSearch);
   const expand = button('⊞', () => { for (const node of filesBody.querySelectorAll('details.folder')) { node.open = true; openFolders.add(node.dataset.path); } persist(); }, 'icon-button');
   const collapse = button('⊟', () => { for (const node of filesBody.querySelectorAll('details.folder')) node.open = false; openFolders.clear(); persist(); }, 'icon-button');
-  fileTools.append(fileSearch, expand, collapse); filesPane.heading.after(fileTools);
+  fileTools.append(includeLabel, excludeLabel, regexToggle, expand, collapse); filesPane.heading.after(fileTools);
+  const filterError = el('div', 'filter-error'); filterError.hidden = true; filterError.setAttribute('role', 'status'); fileTools.after(filterError);
   const footer = el('footer'); app.append(header, status, layout, footer);
   const updateBanner = el('div', 'update-banner'), updateText = el('span');
   const updateRefresh = actionButton('↻', 'Refresh Comparison', 'refresh'); updateBanner.append(updateText, updateRefresh); status.after(updateBanner);
@@ -111,8 +121,22 @@
 
   function renderFiles() {
     const scroll = filesBody.scrollTop;
+    regexToggle.setAttribute('aria-pressed', String(regexMode)); regexToggle.title = tr('Use regular expressions');
+    regexToggle.setAttribute('aria-label', regexToggle.title);
+    const hint = tr(regexMode ? 'Regular expressions, case insensitive. Commas outside groups separate OR conditions. Escape a literal comma with \\,.' : 'Comma separates OR conditions. Glob: *.py, src/**, *.{cu,cpp}. Plain text matches substrings.');
+    fileSearch.title = hint; excludeSearch.title = hint;
+    let matches;
+    try {
+      matches = window.KianFileFilter.compile(fileSearch.value, excludeSearch.value, regexMode); lastValidMatcher = matches;
+      filterError.hidden = true; fileSearch.removeAttribute('aria-invalid'); excludeSearch.removeAttribute('aria-invalid');
+    }
+    catch (error) {
+      filterError.hidden = false; filterError.textContent = `${tr(error.field === 'exclude' ? 'Invalid exclude pattern' : 'Invalid include pattern')}: ${tr(error.message)}`;
+      fileSearch.setAttribute('aria-invalid', String(error.field === 'include')); excludeSearch.setAttribute('aria-invalid', String(error.field === 'exclude'));
+      matches = lastValidMatcher;
+    }
     filesBody.replaceChildren();
-    const matching = state.files.filter(f => `${f.path}\n${f.oldPath}`.toLowerCase().includes(fileSearch.value.toLowerCase()));
+    const matching = state.files.filter(matches);
     const files = matching.filter(f => !state.review?.files[f.path]?.reviewed);
     const reviewed = matching.filter(f => state.review?.files[f.path]?.reviewed);
     const root = { children: new Map(), files: [], added: 0, removed: 0, count: 0 };
@@ -131,7 +155,7 @@
     const append = (parent, tree) => {
       for (const folder of [...tree.children.values()].sort((a, b) => a.name.localeCompare(b.name))) {
         const details = el('details', 'folder'); details.dataset.path = folder.path;
-        details.open = Boolean(fileSearch.value) || openFolders.has(folder.path);
+        details.open = Boolean(fileSearch.value || excludeSearch.value) || openFolders.has(folder.path);
         details.addEventListener('toggle', () => { if (!details.isConnected) return; if (details.open) openFolders.add(folder.path); else openFolders.delete(folder.path); persist(); });
         const summary = el('summary'); summary.append(el('span', 'folder-name', folder.name), el('span', 'count', String(folder.count)), counts(folder.added, folder.removed));
         const children = el('div', 'folder-children'); append(children, folder); details.append(summary, children); parent.append(details);
@@ -210,7 +234,8 @@
   }
 
   window.addEventListener('message', event => {
-    if (!event.data || !['state', 'error', 'fold'].includes(event.data.type)) return;
+    if (!event.data || !['state', 'error', 'fold', 'focusFilter'].includes(event.data.type)) return;
+    if (event.data.type === 'focusFilter') { fileSearch.focus(); return; }
     busy = false; app.classList.remove('busy');
     if (event.data.type === 'error') {
       if (state?.mode) mode.value = state.mode;
@@ -237,7 +262,8 @@
     previous.title = tr('Previous Commit (Older)'); next.title = tr('Next Commit (Newer)');
     previous.setAttribute('aria-label', previous.title); next.setAttribute('aria-label', next.title);
     for (const [node, key] of [[historyPane.title, 'History'], [filesPane.title, 'Changed files'], [detailsPane.title, 'Details']]) node.textContent = tr(key);
-    for (const [input, key] of [[historySearch, 'Search commits'], [fileSearch, 'Filter files']]) { input.placeholder = tr(key); input.setAttribute('aria-label', tr(key)); }
+    for (const [input, key] of [[historySearch, 'Search commits'], [fileSearch, 'Include files'], [excludeSearch, 'Exclude files']]) { input.placeholder = tr(key); input.setAttribute('aria-label', tr(key)); }
+    includeCaption.textContent = tr('Include files'); excludeCaption.textContent = tr('Exclude files');
     for (const [node, key] of [[expand, 'Expand All Folders'], [collapse, 'Collapse All Folders'], [swap, 'Swap Base and Compare'], [refresh, 'Refresh Comparison']]) { node.title = tr(key); node.setAttribute('aria-label', tr(key)); }
     if (treeKey !== state.key) { if (treeKey && state.key !== saved.treeKey) openFolders.clear(); treeKey = state.key; }
     updateDetailsVisibility(); renderHistory(); renderFiles(); renderDetails();

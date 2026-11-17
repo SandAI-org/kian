@@ -277,8 +277,8 @@ async function activate(context) {
     if (node?.file) await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(node.file.comparison.rightWorktree || node.file.comparison.repo.rootUri.fsPath, node.file.path)));
   });
   register('filter', async () => {
-    const value = await vscode.window.showInputBox({ prompt: t('Filter file paths (empty clears filter)'), value: provider.filter });
-    if (value !== undefined) { provider.filter = value; provider.rebuild(); }
+    await vscode.commands.executeCommand('kianReview.files.focus');
+    provider.view.webviewView?.webview.postMessage({ type: 'focusFilter' });
   });
   register('swap', async () => {
     if (provider.input?.mode === 'commit') return provider.compareBranches();

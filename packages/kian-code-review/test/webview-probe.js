@@ -10,6 +10,10 @@
     }
     if (action === 'select-commit') historyBody.querySelector('.commit-row').click();
     if (action === 'pending-mode') mode.value = 'commit';
+    if (action === 'advanced-filter') { regexMode = false; fileSearch.value = '*.py, deep/**'; excludeSearch.value = 'added.py, removed.py'; renderFiles(); }
+    if (action === 'regex-filter') { regexMode = true; fileSearch.value = '^(demo|added)\\.py$'; excludeSearch.value = 'added'; renderFiles(); }
+    if (action === 'invalid-filter') { fileSearch.value = '['; renderFiles(); }
+    if (action === 'clear-advanced-filter') { regexMode = false; fileSearch.value = ''; excludeSearch.value = ''; renderFiles(); }
     if (action === 'mark-reviewed') [...filesBody.querySelectorAll('.file-row')].find(row => row.querySelector('.file-name').textContent === 'demo.py').querySelector('.review-check').click();
     if (action === 'mark-unread') {
       const lane = filesBody.querySelector('.reviewed-lane'); lane.open = true; lane.querySelector('.review-check').click();
@@ -26,5 +30,6 @@
       unreadFiles: [...filesBody.querySelectorAll('.file-row')].filter(row => !row.closest('.reviewed-lane')).length,
       reviewedFiles: filesBody.querySelectorAll('.reviewed-lane .file-row').length,
       deltaButtons: filesBody.querySelectorAll('.delta-button').length,
+      filterError: !filterError.hidden,
     });
   });

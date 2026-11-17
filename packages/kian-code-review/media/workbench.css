@@ -30,8 +30,12 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin: 
 .count { color: var(--vscode-descriptionForeground, #9aa5b3); font-size: 11px; flex-shrink: 0; }
 .search { background: var(--vscode-input-background, #252a33); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, transparent); padding: 5px 8px; border-radius: 4px; min-width: 0; }
 .history > .search { margin: 0 12px 8px; }
-.file-tools { display: flex; gap: 4px; margin: 0 12px 8px; align-items: center; }
-.file-tools .search { flex: 1; width: 0; }
+.file-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 12px 8px; align-items: flex-end; }
+.filter-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 120px; min-width: 0; }
+.filter-field .search { width: 100%; }
+.regex-toggle { font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; }
+.regex-toggle[aria-pressed=true] { color: var(--vscode-textLink-foreground, #83c1ff); background: var(--vscode-list-inactiveSelectionBackground, #2b3a4d); }
+.filter-error { margin: 0 12px 8px; color: var(--vscode-errorForeground, #f88); font-size: 11px; overflow-wrap: anywhere; }
 .scroll-area { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background, #61708666) transparent; }
 .scroll-area::-webkit-scrollbar { width: 8px; height: 8px; }
 .scroll-area::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background, #61708666); border-radius: 5px; }

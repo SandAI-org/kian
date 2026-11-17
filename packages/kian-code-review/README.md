@@ -19,6 +19,20 @@ On a wide bottom panel, **History** stays left, **Changed files** occupies the c
 - For linked worktrees in the same Git repository, comparisons work across their committed branches/commits. Absolute paths prefer the worktree actually checked out at the Compare revision. If no worktree matches, the current workspace path is copied with an explicit notice. A checkout can contain local edits: these paths locate files for an agent, not immutable historical content. Deleted paths need not currently exist; renamed entries copy the new path.
 - Uncommitted/untracked changes, differences between arbitrary unrelated repositories, and live worktree-to-worktree dirty changes are excluded.
 
+### File filters
+
+**Include files** and **Exclude files** accept comma-separated OR conditions; exclusions win, and a blank include matches everything. Both the new and old paths of renamed files are checked. Defaults are case insensitive:
+
+| Input | Meaning |
+| --- | --- |
+| `attention, comm/` | Path contains either substring |
+| `*.py, *.{cu,cpp}` | Python, CUDA or C++ files at any depth |
+| `src/**` | Anything below a `src` path segment |
+| `src/*.py` | Python files directly in `src` |
+| Exclude `tests/**, docs/**` | Remove matching test and documentation paths |
+
+Toggle **`.*`** to interpret both fields as regular expressions, e.g. include `(^|/)(attention|comm)/`, exclude `test_.*\.py$`. Commas outside groups are still OR separators; commas in `{1,3}`, `[a,b]` and `(a,b)` stay inside their expression. Use `\,` for a literal comma in regex mode, or quote a comma-containing filename in normal mode. This is a small glob subset (`*`, `**`, `?`, `{a,b}`), not every VS Code search feature. Invalid patterns display an error and use the last valid predicate against the current comparison. Folder totals and the reviewed lane use the same filter. Inputs and regex mode survive hiding/reopening the view; the toolbar filter action focuses Include files.
+
 ## File review and private questions
 
 - Click the circle before a file to mark it **reviewed**. It leaves the unread tree and enters the collapsed **Reviewed files** lane; uncheck there to restore it. Acknowledgements belong to the logical repository/reference pair and comparison mode. A single-commit acknowledgement does not silently approve the full PR file.

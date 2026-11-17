@@ -36,7 +36,7 @@ class ReviewWorkbench {
   html(webview) {
     const nonce = crypto.randomBytes(24).toString('hex');
     const asset = name => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', name));
-    return `<!doctype html><html lang="${vscode.env.language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('workbench.css')}"><title>Kian Review</title></head><body><main id="app"></main><script nonce="${nonce}" src="${asset('workbench.js')}"></script></body></html>`;
+    return `<!doctype html><html lang="${vscode.env.language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('workbench.css')}"><title>Kian Review</title></head><body><main id="app"></main><script nonce="${nonce}" src="${asset('file-filter.js')}"></script><script nonce="${nonce}" src="${asset('workbench.js')}"></script></body></html>`;
   }
 
   async snapshot() {
@@ -52,7 +52,10 @@ class ReviewWorkbench {
       'Base changed; the target file is unchanged. Check the full comparison.', 'Private questions', 'Copy prompts', 'Add private question',
       'Resolve', 'Reopen', 'Edit', 'Resolved', 'Open', 'Submit to GitHub…', 'Published', 'Local only', 'No private questions.',
       'History visibility', 'Connect PR', 'Updates available', 'Refresh to review the new version. Your current view is unchanged.',
-      'Local refs only; connect a PR to detect updates on GitHub.', 'Update check failed', 'Anchor version changed', 'Show resolved', 'All matching files are reviewed.'].map(text => [text, t(text)]));
+      'Local refs only; connect a PR to detect updates on GitHub.', 'Update check failed', 'Anchor version changed', 'Show resolved', 'All matching files are reviewed.',
+      'Include files', 'Exclude files', 'Use regular expressions', 'Invalid include pattern', 'Invalid exclude pattern', 'Unclosed glob group',
+      'Comma separates OR conditions. Glob: *.py, src/**, *.{cu,cpp}. Plain text matches substrings.',
+      'Regular expressions, case insensitive. Commas outside groups separate OR conditions. Escape a literal comma with \\,.'].map(text => [text, t(text)]));
     if (!result) return { labels, controls: p.getControls(), files: [], commits: [], key: '', summary: this.message };
     const git = p.git, input = { ...p.input };
     const source = input.mode === 'commit' ? p.commitHistory.tip : result.rightHash;
