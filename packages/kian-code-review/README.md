@@ -23,6 +23,6 @@ Binary files use VS Code's native diff behavior; they are not decoded into a cus
 
 No runtime npm dependencies or build step. Run `node --test test/git.test.js`. `test/extension-host.js` exports a VS Code Extension Host integration runner and expects a disposable repository with main/feature branches and demo.py/added.py/removed.py fixtures. It checks lazy opening, clipboard, added/deleted sides, and unchanged Git status; run it in isolated user-data and extension directories.
 
-Package with `vsce package --no-dependencies`; install the resulting VSIX with **Extensions: Install from VSIX…**. For SSH/Dev Containers install it **in the remote environment**, because Git and repository files live there. Reload that window if VS Code requests it.
+Run `npm run package:vsix` in this package. It uses the pinned packaging tool and writes `dist/kian-code-review-<version>.vsix`; this ignored directory is the fixed local artifact location, not Downloads. Install the resulting VSIX with **Extensions: Install from VSIX…**. For SSH/Dev Containers install it **in the remote environment**, because Git and repository files live there. Reload that window if VS Code requests it.
 
 Source lives in Kian; generated VSIX and raw test logs remain outside Git.

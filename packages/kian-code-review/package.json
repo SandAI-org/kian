@@ -29,7 +29,8 @@
   },
   "l10n": "./l10n",
   "scripts": {
-    "test": "node --test test/git.test.js"
+    "test": "node --test test/git.test.js",
+    "package:vsix": "node scripts/package.js"
   },
   "contributes": {
     "commands": [

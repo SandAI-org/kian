@@ -23,6 +23,6 @@
 
 无运行时 npm 依赖、无编译步骤。执行 `node --test test/git.test.js`。`test/extension-host.js` 提供 Extension Host 测试入口，使用临时 main/feature 仓库及 demo.py／added.py／removed.py fixture，核对按需打开、剪贴板、新增／删除空侧及 Git 状态不变；在独立 user-data／extensions 目录运行。
 
-使用 `vsce package --no-dependencies` 打包，通过“扩展：从 VSIX 安装”安装。SSH／Dev Container 必须安装在远程环境，Git 与文件读取才会发生在对应机器；若提示 Reload，只重载该窗口。
+在本包执行 `npm run package:vsix`，使用固定版本的打包工具，产物统一写入 `dist/kian-code-review-<version>.vsix`。这是 Git 忽略的固定本地产物目录，不再放 Downloads。通过“扩展：从 VSIX 安装”安装。SSH／Dev Container 必须安装在远程环境，Git 与文件读取才会发生在对应机器；若提示 Reload，只重载该窗口。
 
 源码在 Kian 维护；VSIX 和原始测试日志不入 Git。
