@@ -31,6 +31,7 @@ class ReviewProvider {
       this.generation++; this.repo = item.repo;
       this.git = new GitRepository(this.repo.rootUri.fsPath, this.gitApi.git.path);
       this.input = null; this.result = null; this.root = buildTree([]); this.filter = '';
+      this.commitHistory = null;
       const saved = this.saved[this.repo.rootUri.toString()];
       this.branchInput = saved?.branchInput;
       this.commitInput = saved?.commitInput;
@@ -70,7 +71,48 @@ class ReviewProvider {
   async compareCommit() {
     await vscode.commands.executeCommand('kianReview.files.focus');
     if (!await this.selectRepository()) return;
+    if (this.input?.mode === 'commit') return this.changeSide('right');
     await this.refresh(this.commitInput || { right: this.input?.right || 'HEAD', mode: 'commit' });
+  }
+
+  async pickCommit(current) {
+    let source = this.branchInput?.right || this.repo.state.HEAD?.name || 'HEAD';
+    let hash;
+    try { hash = await this.git.resolve(source); }
+    catch (error) {
+      if (source === 'HEAD' || error.code !== 128) throw error;
+      source = 'HEAD'; hash = await this.git.resolve(source);
+    }
+    await this.loadCommitHistory(hash);
+    let skip = 0;
+    while (true) {
+      const commits = await this.git.commits(skip, hash);
+      const item = await vscode.window.showQuickPick([
+        { label: t('Enter a commit SHA or revision…'), custom: true, alwaysShow: true },
+        ...commits.map(c => ({ label: `${c.hash.slice(0, 8)}  ${c.subject}`,
+          description: `${c.author} · ${c.date}`, detail: c.hash === this.result?.rightHash ? t('Current commit') : undefined, hash: c.hash })),
+        ...(commits.length === 200 ? [{ label: t('Load older commits…'), more: true, alwaysShow: true }] : []),
+      ], { placeHolder: t('Select a commit from {0}', source), matchOnDescription: true, matchOnDetail: true });
+      if (!item) return;
+      if (item.more) { skip += commits.length; continue; }
+      if (!item.custom) return item.hash;
+      const value = await vscode.window.showInputBox({ prompt: t('Commit or revision'), value: current || 'HEAD' });
+      return value?.trim() ? this.git.resolve(value.trim()) : undefined;
+    }
+  }
+
+  async loadCommitHistory(hash) {
+    if (this.commitHistory?.tip === hash && this.commitHistory.root === this.git.root) return;
+    const hashes = (await this.git.exec(['rev-list', '--topo-order', hash, '--'])).trim().split('\n').filter(Boolean);
+    this.commitHistory = { tip: hash, root: this.git.root, hashes };
+  }
+
+  async navigateCommit(direction) {
+    if (this.input?.mode !== 'commit' || !this.result) return;
+    const hashes = this.commitHistory?.hashes || [];
+    const index = hashes.indexOf(this.result.rightHash);
+    const hash = index >= 0 ? hashes[index + direction] : undefined;
+    if (hash) await this.refresh({ right: hash, mode: 'commit' });
   }
 
   async defaultBranches() {
@@ -84,7 +126,8 @@ class ReviewProvider {
   async changeSide(side) {
     if (!await this.selectRepository()) return;
     const input = this.input || await this.defaultBranches();
-    const value = await this.pickRef(side === 'left' ? t('Base / left branch') : t('Compare / right branch'), input[side] || this.result?.leftHash || 'HEAD');
+    const value = side === 'right' && input.mode === 'commit' ? await this.pickCommit(input.right)
+      : await this.pickRef(side === 'left' ? t('Base / left branch') : t('Compare / right branch'), input[side] || this.result?.leftHash || 'HEAD');
     if (!value) return;
     await this.refresh({ ...input, [side]: value, mode: side === 'left' && input.mode === 'commit' ? 'direct' : input.mode });
   }
@@ -107,7 +150,8 @@ class ReviewProvider {
       { control: 'repository', name: t('Repository'), value: this.repo ? path.basename(this.repo.rootUri.fsPath) : t('Select repository'), icon: 'repo' },
       { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit · first parent') : mode === 'direct' ? t('Branch tips') : t('PR / merge base'), icon: 'git-compare' },
       { control: 'base', name: t('Base'), value: mode === 'commit' ? t('First parent (automatic)') : this.input?.left || 'main', icon: 'git-commit' },
-      { control: 'target', name: t('Compare'), value: this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: 'git-branch' },
+      { control: 'target', name: mode === 'commit' ? t('Commit') : t('Compare'),
+        value: mode === 'commit' && this.result ? this.result.rightHash.slice(0, 8) : this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: mode === 'commit' ? 'git-commit' : 'git-branch' },
     ];
   }
 
@@ -119,8 +163,26 @@ class ReviewProvider {
     this.view.message = t('Comparing…');
     try {
       const result = await this.git.compare(input);
+      let commit;
+      if (input.mode === 'commit') {
+        if (!this.commitHistory || this.commitHistory.root !== this.git.root || !this.commitHistory.hashes.includes(result.rightHash)) {
+          const source = this.branchInput?.right || this.repo.state.HEAD?.name || 'HEAD';
+          let tip;
+          try { tip = await this.git.resolve(source); }
+          catch (error) { if (error.code !== 128) throw error; tip = result.rightHash; }
+          await this.loadCommitHistory(tip);
+          if (!this.commitHistory.hashes.includes(result.rightHash)) await this.loadCommitHistory(result.rightHash);
+        }
+        const [subject, author, date] = (await this.git.exec(['show', '-s', '--format=%s%x00%an%x00%as', result.rightHash, '--'])).trimEnd().split('\0');
+        commit = { subject, author, date };
+      }
       if (generation !== this.generation) return;
-      this.input = input; this.result = result;
+      this.input = input; this.result = result; this.currentCommit = commit;
+      const position = input.mode === 'commit' ? this.commitHistory.hashes.indexOf(result.rightHash) : -1;
+      await Promise.all([
+        vscode.commands.executeCommand('setContext', 'kianReview.hasPreviousCommit', position >= 0 && position + 1 < this.commitHistory.hashes.length),
+        vscode.commands.executeCommand('setContext', 'kianReview.hasNextCommit', position > 0),
+      ]);
       if (input.mode === 'commit') this.commitInput = { ...input };
       else this.branchInput = { ...input };
       for (const file of result.files) file.comparison = { ...result, files: undefined, repo };
@@ -178,10 +240,13 @@ class ReviewProvider {
     const item = new vscode.TreeItem(node.name, node.children ? this.folderState : vscode.TreeItemCollapsibleState.None);
     if (node.control) {
       item.id = `control:${node.control}`; item.contextValue = 'reviewControl';
+      if (node.control === 'target' && this.input?.mode === 'commit') item.contextValue = 'reviewCommitControl';
       item.description = node.value;
+      if (node.control === 'target' && this.currentCommit) item.description += ' · ' + this.currentCommit.subject;
       item.tooltip = node.control === 'repository' ? this.repo?.rootUri.fsPath || node.value : node.value;
       if (node.control === 'base' && this.result) item.tooltip += '\n' + (this.result.leftHash || t('Empty tree'));
       if (node.control === 'target' && this.result) item.tooltip += '\n' + this.result.rightHash + '\n' + (this.result.rightWorktree || t('No matching historical worktree; paths refer to the current workspace.'));
+      if (node.control === 'target' && this.currentCommit) item.tooltip += `\n${this.currentCommit.subject}\n${this.currentCommit.author} · ${this.currentCommit.date}`;
       item.iconPath = new vscode.ThemeIcon(node.icon);
       item.command = { command: `kianReview.${node.control}`, title: node.name };
       return item;
@@ -245,6 +310,8 @@ async function activate(context) {
   register('mode', () => provider.chooseMode());
   register('base', () => provider.changeSide('left'));
   register('target', () => provider.changeSide('right'));
+  register('previousCommit', () => provider.navigateCommit(1));
+  register('nextCommit', () => provider.navigateCommit(-1));
   register('expand', () => provider.fold(true));
   register('collapse', () => provider.fold(false));
   register('editControl', node => node?.control && vscode.commands.executeCommand(`kianReview.${node.control}`));

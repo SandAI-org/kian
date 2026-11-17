@@ -17,5 +17,7 @@
   "collapse": "全部折叠文件夹",
   "editControl": "更换选择",
   "description": "轻量分支和提交审阅，按需打开原生单文件 diff。",
-  "welcome": "[比较分支](command:kianReview.branches)\n[查看提交](command:kianReview.commit)"
+  "welcome": "[比较分支](command:kianReview.branches)\n[查看提交](command:kianReview.commit)",
+  "previousCommit": "上一提交（更早）",
+  "nextCommit": "下一提交（更新）"
 }

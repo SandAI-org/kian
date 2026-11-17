@@ -90,6 +90,59 @@ async function run() {
     provider.pickRef = originalPickRef;
     vscode.window.showQuickPick = async items => items.find(item => item.ref === 'main');
     assert.equal(await provider.pickRef('fixture', 'deleted-old-branch'), 'main');
+    await provider.refresh({ right: 'feature', mode: 'commit' });
+    const featureHash = provider.result.rightHash;
+    const mainHash = await provider.git.resolve('main');
+    const initialHistory = provider.commitHistory;
+    assert.equal(initialHistory.hashes[0], featureHash);
+    assert.equal(provider.getTreeItem(provider.getControls()[3]).contextValue, 'reviewCommitControl');
+    assert.match(provider.getTreeItem(provider.getControls()[3]).description, /feature/);
+    let commitPicks = 0;
+    vscode.window.showQuickPick = async items => {
+      commitPicks++;
+      assert.ok(items.some(item => item.hash === mainHash));
+      assert.ok(items.filter(item => item.hash).every(item => item.label.includes(item.hash.slice(0, 8)) && item.description.includes(' · ')));
+      assert.ok(items.every(item => !item.ref));
+      return items.find(item => item.hash === mainHash);
+    };
+    await vscode.commands.executeCommand('kianReview.target');
+    assert.equal(commitPicks, 1);
+    assert.equal(provider.result.rightHash, mainHash);
+    assert.equal(provider.result.leftHash, null);
+    await vscode.commands.executeCommand('kianReview.previousCommit');
+    assert.equal(provider.result.rightHash, mainHash); // Oldest boundary is a no-op.
+    provider.commitHistory = null; // Restoring an old selection must retain newer history entries.
+    await provider.refresh(provider.input);
+    await vscode.commands.executeCommand('kianReview.nextCommit');
+    assert.equal(provider.result.rightHash, featureHash);
+    await vscode.commands.executeCommand('kianReview.nextCommit');
+    assert.equal(provider.result.rightHash, featureHash); // Newest boundary is a no-op.
+    await vscode.commands.executeCommand('kianReview.commit');
+    assert.equal(commitPicks, 2); // Repeated toolbar click opens the same list.
+    const selected = provider.input;
+    vscode.window.showQuickPick = async () => undefined;
+    await vscode.commands.executeCommand('kianReview.target');
+    assert.equal(provider.input, selected);
+    const originalCommits = provider.git.commits;
+    const skips = [];
+    try {
+      provider.git.commits = async (skip, hash) => {
+        skips.push([skip, hash]);
+        return skip === 0 ? Array.from({ length: 200 }, () => ({ hash: featureHash, subject: 'fixture', author: 'Test', date: '2026-11-17' }))
+          : [{ hash: mainHash, subject: 'initial', author: 'Test', date: '2026-11-17' }];
+      };
+      vscode.window.showQuickPick = async items => items.find(item => item.more) || items.find(item => item.hash);
+      assert.equal(await provider.pickCommit('feature'), mainHash);
+      assert.deepEqual(skips.map(([skip]) => skip), [0, 200]);
+      assert.equal(skips[0][1], skips[1][1]);
+    } finally { provider.git.commits = originalCommits; }
+    const originalInputBox = vscode.window.showInputBox;
+    try {
+      vscode.window.showQuickPick = async items => items.find(item => item.custom);
+      vscode.window.showInputBox = async () => 'main';
+      assert.equal(await provider.pickCommit('feature'), mainHash);
+    } finally { vscode.window.showInputBox = originalInputBox; }
+    await provider.refresh({ left: 'main', right: 'feature', mode: 'merge-base' });
     const originalDefaults = provider.defaultBranches;
     let resume, started;
     const waiting = new Promise(resolve => { started = resolve; });

@@ -27,7 +27,7 @@ class GitRepository {
 
   async commits(skip = 0, ref = 'HEAD') {
     const hash = await this.resolve(ref);
-    const output = await this.exec(['log', '-200', `--skip=${skip}`, '--format=%H%x00%s%x00%an%x00%as', hash, '--']);
+    const output = await this.exec(['log', '--topo-order', '-200', `--skip=${skip}`, '--format=%H%x00%s%x00%an%x00%as', hash, '--']);
     return output.trimEnd().split('\n').filter(Boolean).map(line => {
       const [hash, subject, author, date] = line.split('\0'); return { hash, subject, author, date };
     });

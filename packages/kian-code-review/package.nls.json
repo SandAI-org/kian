@@ -17,5 +17,7 @@
   "target": "Select Compare",
   "expand": "Expand All Folders",
   "collapse": "Collapse All Folders",
-  "editControl": "Change Selection"
+  "editControl": "Change Selection",
+  "previousCommit": "Previous Commit (Older)",
+  "nextCommit": "Next Commit (Newer)"
 }
