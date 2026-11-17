@@ -51,7 +51,7 @@ class ReviewWorkbench {
       'Reviewed files', 'Mark reviewed', 'Mark unread', 'Updated since review', 'Since last review', 'Full comparison',
       'Base changed; the target file is unchanged. Check the full comparison.', 'Private questions', 'Copy prompts', 'Add private question',
       'Created', 'Edited', 'Resolve', 'Reopen', 'Edit', 'Resolved', 'Open', 'Submit to GitHub…', 'Published', 'Local only', 'No private questions.',
-      'History visibility', 'Connect PR', 'Updates available', 'Refresh to review the new version. Your current view is unchanged.',
+      'History visibility', 'Select PR', 'Connect PR', 'Updates available', 'Refresh to review the new version. Your current view is unchanged.',
       'Local refs only; connect a PR to detect updates on GitHub.', 'Update check failed', 'Anchor version changed', 'Show resolved', 'All matching files are reviewed.',
       'Include files', 'Exclude files', 'Use regular expressions', 'Invalid include pattern', 'Invalid exclude pattern', 'Unclosed glob group',
       'Comma separates OR conditions. Glob: *.py, src/**, *.{cu,cpp}. Plain text matches substrings.',

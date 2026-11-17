@@ -54,6 +54,7 @@
   const detailToggle = button('◫', () => { detailsHidden = !detailsHidden; updateDetailsVisibility(); persist(); }, 'icon-button');
   const historyToggle = button('☷', () => { historyHidden = !historyHidden; updateDetailsVisibility(); persist(); }, 'icon-button');
   const connect = actionButton('PR', 'Connect PR', 'connectPR');
+  connect.classList.add('pr-button');
   navigation.append(previous, next, swap, refresh, connect, historyToggle, detailToggle); header.append(controls, navigation);
   const historySource = el('div', 'history-source'); historySource.hidden = true;
   const status = el('div', 'status'); status.setAttribute('role', 'status');
@@ -254,7 +255,7 @@
     updateText.textContent = state.update?.available ? `${tr('Updates available')} · ${tr('Refresh to review the new version. Your current view is unchanged.')}`
       : state.update?.error ? `${tr('Update check failed')}: ${state.update.error}` : '';
     updateRefresh.title = tr('Refresh Comparison');
-    connect.textContent = state.pr ? `#${state.pr.number}` : 'PR'; connect.title = state.pr?.url || tr('Connect PR');
+    connect.textContent = state.pr ? `PR #${state.pr.number}` : 'PR…'; connect.title = state.pr ? `#${state.pr.number} ${state.pr.title || ''}\n${state.pr.url}` : tr('Select PR');
     updateRefresh.setAttribute('aria-label', updateRefresh.title); connect.setAttribute('aria-label', connect.title);
     status.classList.remove('error'); status.textContent = state.summary || tr('Choose branches or a commit from the toolbar.');
     for (const c of state.controls) {

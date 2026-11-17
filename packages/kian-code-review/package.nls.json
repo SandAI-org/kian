@@ -24,6 +24,6 @@
   "resolvePrivateNote": "Resolve Private Question",
   "reopenPrivateNote": "Reopen Private Question",
   "copyPrompts": "Copy Unresolved Prompts",
-  "connectPR": "Connect GitHub PR",
+  "connectPR": "Select GitHub PR",
   "cancelEditPrivateNote": "Cancel Editing"
 }

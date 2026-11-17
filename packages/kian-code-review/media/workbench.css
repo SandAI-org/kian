@@ -20,6 +20,7 @@ option { background: var(--vscode-dropdown-background, #20242b); }
 .direction { color: var(--vscode-descriptionForeground, #9aa5b3); }
 .navigation { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .icon-button { border-radius: 4px; font-size: 18px; min-width: 27px; height: 28px; text-align: center; }
+.pr-button { font-size: 12px; padding: 0 7px; }
 .status { padding: 5px 15px; font-size: 11px; color: var(--vscode-descriptionForeground, #9aa5b3); min-height: 25px; }
 .status.error { color: var(--vscode-errorForeground, #f88); }
 .layout { display: grid; grid-template-columns: minmax(220px, 27%) minmax(240px, 1fr) minmax(210px, 25%); flex: 1; min-height: 0; border-top: 1px solid var(--vscode-panel-border, #ffffff16); }

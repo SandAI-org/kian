@@ -422,6 +422,68 @@ async function run() {
     assert.equal(vscode.window.tabGroups.all.flatMap(g => g.tabs).length, tabs);
     assert.deepEqual(execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: root }), before);
   } finally { listener.dispose(); }
+  // Select PRs without branch pickers, using real local Git objects and mocked read-only GitHub responses.
+  const pickerOriginal = vscode.window.showQuickPick, inputOriginal = vscode.window.showInputBox;
+  const githubForPicker = review.github;
+  const repository = 'fixture/magiattn';
+  execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${repository}.git`], { cwd: root });
+  try {
+    await provider.repo.status();
+    await provider.refresh({ left: 'main', right: 'feature', mode: 'merge-base' });
+    const legacyScope = provider.reviewSession.notesScope;
+    const left = provider.result.baseTipHash, right = provider.result.rightHash;
+    const pr = number => ({ number, title: `Review feature ${number}`, state: number === 99 ? 'closed' : 'open', user: { login: 'author' },
+      html_url: `https://github.com/${repository}/pull/${number}`, base: { sha: left, ref: 'main', repo: { full_name: repository } },
+      head: { sha: right, ref: 'feature', label: 'author:feature', repo: { full_name: 'author/fork' } } });
+    const routes = [];
+    review.github = async () => ({ request: async (route, method = 'GET') => {
+      assert.equal(method, 'GET'); routes.push(route);
+      if (route.includes('?')) return route.includes('state=all') ? [pr(99)] : route.includes('page=2') ? [pr(31)] : Array.from({ length: 30 }, (_, i) => pr(i + 1));
+      return pr(Number(route.split('/').at(-1)));
+    } });
+    vscode.window.showQuickPick = async () => undefined;
+    const cancelledInput = provider.input;
+    assert.equal(await review.connectPR(), false); assert.equal(provider.input, cancelledInput);
+    vscode.window.showQuickPick = async items => items.find(item => item.link?.number === 1);
+    assert.equal(await review.connectPR(), true);
+    assert.equal(provider.input.mode, 'merge-base'); assert.equal(provider.input.pr.number, 1);
+    assert.equal(provider.getControls().find(c => c.control === 'base').value, 'main');
+    assert.equal(provider.getControls().find(c => c.control === 'target').value, 'feature');
+    assert.equal(provider.reviewSession.notesScope, legacyScope);
+    await review.mark(provider.result.files.find(f => f.path === 'demo.py'), true);
+    const legacyNotes = (await review.state(provider.reviewSession)).notes;
+    vscode.window.showQuickPick = async items => items.find(item => item.link?.number === 2);
+    await review.connectPR();
+    assert.notEqual(provider.reviewSession.notesScope, legacyScope);
+    assert.equal((await review.state(provider.reviewSession)).notes.length, 0);
+    assert.equal((await review.state(provider.reviewSession)).files['demo.py'].reviewed, false);
+    vscode.window.showQuickPick = async items => items.find(item => item.link?.number === 1);
+    await review.connectPR();
+    assert.equal(provider.reviewSession.notesScope, legacyScope);
+    assert.deepEqual((await review.state(provider.reviewSession)).notes, legacyNotes);
+    assert.equal((await review.state(provider.reviewSession)).files['demo.py'].reviewed, true);
+    let chooseClosed = false;
+    vscode.window.showQuickPick = async items => {
+      if (!chooseClosed) { chooseClosed = true; return items.find(item => item.action === 'state'); }
+      return items.find(item => item.link?.number === 99);
+    };
+    await review.connectPR(); assert.equal(provider.input.pr.number, 99);
+    assert.ok(routes.some(route => route.includes('state=all')));
+    vscode.window.showQuickPick = async items => items.find(item => item.action === 'url');
+    vscode.window.showInputBox = async () => '#2';
+    await review.connectPR(); assert.equal(provider.input.pr.number, 2);
+    let chooseMore = false;
+    vscode.window.showQuickPick = async items => {
+      if (!chooseMore) { chooseMore = true; return items.find(item => item.action === 'more'); }
+      return items.find(item => item.link?.number === 31);
+    };
+    await review.connectPR(); assert.equal(provider.input.pr.number, 31);
+    assert.ok(routes.some(route => route.includes('page=2')));
+    assert.deepEqual(execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: root }), before);
+  } finally {
+    review.github = githubForPicker; vscode.window.showQuickPick = pickerOriginal; vscode.window.showInputBox = inputOriginal;
+    execFileSync('git', ['remote', 'remove', 'origin'], { cwd: root }); await provider.repo.status();
+  }
   console.log('KIAN_REVIEW_EXTENSION_HOST_PASSED');
 }
 

@@ -149,36 +149,82 @@ class ReviewService {
     return new GitHubAPI(session.accessToken, proxy, t);
   }
   async fetchPR(api, link) {
+    const p = this.provider, repo = p.repo, git = p.git;
     const pr = await api.request(`/repos/${link.repository}/pulls/${link.number}`);
-    const p = this.provider;
-    const repositories = p.repo.state.remotes.map(r => parseRepository(r.fetchUrl)).filter(Boolean);
+    if (p.repo !== repo || p.git !== git) throw new Error(t('Repository changed; select the PR again.'));
+    const repositories = repo.state.remotes.map(r => parseRepository(r.fetchUrl)).filter(Boolean);
     if (!repositories.some(r => [pr.base.repo.full_name, pr.head.repo?.full_name].some(name => name?.toLowerCase() === r.toLowerCase()))) {
       throw new Error(t('This PR does not belong to the current repository.'));
     }
     for (const [hash, ref] of [[pr.head.sha, `refs/pull/${link.number}/head`], [pr.base.sha, `refs/heads/${pr.base.ref}`]]) {
-      try { await p.git.resolve(hash); }
+      try { await git.resolve(hash); }
       catch (error) {
         if (error.code !== 128) throw error;
-        const remote = p.repo.state.remotes.find(r => parseRepository(r.fetchUrl)?.toLowerCase() === link.repository.toLowerCase());
-        await run(p.git.git, ['fetch', '--no-tags', '--', remote?.fetchUrl || `https://github.com/${link.repository}.git`, ref],
-          { cwd: p.git.root, timeout: 120000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
-        await p.git.resolve(hash);
+        const remote = repo.state.remotes.find(r => parseRepository(r.fetchUrl)?.toLowerCase() === link.repository.toLowerCase());
+        await run(git.git, ['fetch', '--no-tags', '--', remote?.fetchUrl || `https://github.com/${link.repository}.git`, ref],
+          { cwd: git.root, timeout: 120000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+        await git.resolve(hash);
       }
     }
     return pr;
   }
   async connectPR() {
     const p = this.provider;
-    const url = await vscode.window.showInputBox({ prompt: t('Connect a GitHub PR to this review'), value: p.input.pr?.url || '',
-      validateInput: value => parsePullRequest(value) ? null : t('Enter a github.com pull request URL.') });
-    if (!url) return false;
-    const link = parsePullRequest(url); if (!link) return false;
+    if (!await p.selectRepository()) return false;
+    const repo = p.repo;
     const api = await this.github(true); if (!api) return false;
+    const remotes = [...repo.state.remotes].sort((a, b) => (a.name === 'upstream' ? -1 : a.name === 'origin' ? 0 : 1) - (b.name === 'upstream' ? -1 : b.name === 'origin' ? 0 : 1));
+    const repositories = [...new Set(remotes.map(r => parseRepository(r.fetchUrl)).filter(Boolean))];
+    let repository = p.input?.pr?.repository || p.branchInput?.pr?.repository || repositories[0];
+    let state = 'open', page = 1, rows = [], link;
+    while (!link) {
+      const batch = repository ? await api.request(`/repos/${repository}/pulls?state=${state}&sort=updated&direction=desc&per_page=30&page=${page}`) : [];
+      if (p.repo !== repo) return false;
+      rows.push(...batch);
+      const item = await vscode.window.showQuickPick([
+        { label: t('Enter a PR URL or number…'), action: 'url', alwaysShow: true },
+        ...rows.map(pr => ({ label: `#${pr.number}  ${pr.title}`, description: `${pr.user?.login || ''} · ${pr.draft ? t('Draft') : pr.state === 'open' ? t('Open') : t('Closed')}`,
+          detail: `${pr.base.ref} ← ${pr.head.label || pr.head.ref}`, link: { repository, number: pr.number } })),
+        ...(batch.length === 30 ? [{ label: t('Load more PRs…'), action: 'more', alwaysShow: true }] : []),
+        ...(repository ? [{ label: t(state === 'open' ? 'Include closed PRs' : 'Open PRs only'), action: 'state', alwaysShow: true }] : []),
+        ...(repositories.length > 1 ? [{ label: t('Choose GitHub repository…'), action: 'repository', alwaysShow: true }] : []),
+      ], { placeHolder: t('Select PR · {0}', repository || repo.rootUri.fsPath), matchOnDescription: true, matchOnDetail: true });
+      if (!item || p.repo !== repo) return false;
+      if (item.action === 'more') { page++; continue; }
+      if (item.action === 'state') { state = state === 'open' ? 'all' : 'open'; page = 1; rows = []; continue; }
+      if (item.action === 'repository') {
+        const selected = await vscode.window.showQuickPick(repositories, { placeHolder: t('Choose GitHub repository…') });
+        if (!selected) return false;
+        repository = selected; page = 1; rows = []; continue;
+      }
+      if (item.action === 'url') {
+        const parse = value => /^#?[1-9]\d*$/.test(value.trim()) && repository
+          ? { repository, number: Number(value.trim().replace('#', '')) } : parsePullRequest(value);
+        const value = await vscode.window.showInputBox({ prompt: t('Enter a PR URL or number…'),
+          validateInput: value => parse(value) ? null : t('Enter a github.com PR URL or a PR number for this repository.') });
+        if (!value) return false;
+        link = parse(value); if (!link) return false;
+      } else link = item.link;
+    }
+    if (p.repo !== repo) return false;
     const pr = await this.fetchPR(api, link);
+    if (p.repo !== repo) return false;
     const original = await p.defaultBranches();
-    await p.refresh({ left: pr.base.sha, right: pr.head.sha, mode: original.mode,
-      reviewKey: original.reviewKey || [original.left, original.right],
-      pr: { ...link, url: pr.html_url, baseRef: pr.base.ref, headRef: pr.head.ref } });
+    const scopes = { ...p.context.workspaceState.get('pullRequestScopes', {}) };
+    const scopeKey = link => `${repo.rootUri.toString()}:${link.repository.toLowerCase()}#${link.number}`;
+    if (original.pr) scopes[scopeKey(original.pr)] = original.reviewKey || [original.left, original.right];
+    let reviewKey = scopes[scopeKey(link)];
+    if (!reviewKey && !original.pr) {
+      try {
+        const [left, right] = await Promise.all([p.git.resolve(original.left), p.git.resolve(original.right)]);
+        if (left === pr.base.sha && right === pr.head.sha) reviewKey = original.reviewKey || [original.left, original.right];
+      } catch (error) { if (error.code !== 128) throw error; }
+    }
+    reviewKey ||= ['github-pr', link.repository.toLowerCase(), link.number];
+    await p.refresh({ left: pr.base.sha, right: pr.head.sha, mode: 'merge-base', reviewKey,
+      pr: { ...link, url: pr.html_url, title: pr.title, baseRef: pr.base.ref, headRef: pr.head.ref } });
+    scopes[scopeKey(link)] = reviewKey;
+    await p.context.workspaceState.update('pullRequestScopes', scopes);
     this.updateInfo = { available: false }; return true;
   }
   async refresh() {
@@ -187,7 +233,7 @@ class ReviewService {
     const api = await this.github(true); if (!api) return;
     const pr = await this.fetchPR(api, input.pr);
     await p.refresh({ ...input, left: pr.base.sha, right: pr.head.sha,
-      pr: { ...input.pr, baseRef: pr.base.ref, headRef: pr.head.ref, url: pr.html_url } });
+      pr: { ...input.pr, title: pr.title, baseRef: pr.base.ref, headRef: pr.head.ref, url: pr.html_url } });
     this.updateInfo = { available: false }; await p.view.update();
   }
   async checkUpdates() {
