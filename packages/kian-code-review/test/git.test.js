@@ -55,6 +55,10 @@ test('real Git comparisons preserve the worktree and all path/status semantics',
   assert.equal(buildTree(pr.files).stats.binary, 1);
   assert.ok((await repo.refs()).some(ref => ref.name === 'feature'));
   assert.ok((await repo.commits()).length > 0);
+  const range = await repo.commits(0, feature, initial);
+  assert.deepEqual(range.map(c => c.hash), [feature]);
+  assert.deepEqual(range[0].parents, [initial]);
+  assert.deepEqual(await repo.commits(0, initial, feature), []);
   await assert.rejects(repo.resolve('--help'));
   git('checkout', '--', 'both.py'); git('merge', '--no-ff', '-qm', 'merge feature', 'feature');
   const merge = await repo.compare({ right: 'HEAD', mode: 'commit' });

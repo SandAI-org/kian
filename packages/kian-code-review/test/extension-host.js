@@ -14,7 +14,7 @@ async function waitVisible(view) {
 
 async function run() {
   const extension = vscode.extensions.getExtension('strivin0311.kian-code-review');
-  const { provider } = await extension.activate();
+  const { provider, workbench } = await extension.activate();
   const api = vscode.extensions.getExtension('vscode.git').exports.getAPI(1);
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
   await api.openRepository(vscode.Uri.file(root));
@@ -23,9 +23,8 @@ async function run() {
   assert.equal(provider.result.files.length, 4);
   await waitVisible(provider.view);
   assert.equal(provider.view.visible, true);
-  for (const node of provider.getChildren()) assert.ok(provider.getTreeItem(node));
   assert.equal(vscode.window.tabGroups.all.flatMap(g => g.tabs).filter(tab => tab.input instanceof vscode.TabInputTextDiff).length, 0);
-  const tree = provider.getChildren();
+  const tree = provider.result.files.map(file => ({ file }));
   const leaf = tree.find(node => node.file?.path === 'demo.py');
   assert.ok(leaf);
   const oldClipboard = await vscode.env.clipboard.readText();
@@ -50,6 +49,40 @@ async function run() {
     assert.equal((await vscode.workspace.openTextDocument(emptyUri)).getText(), '');
   }
   assert.deepEqual(execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: root }), before);
+  // Exercise the webview host protocol with actual Git data and immutable file keys.
+  await workbench.update();
+  let state = await workbench.snapshot();
+  assert.equal(state.files.length, 4);
+  assert.equal(state.commits.length, 1);
+  assert.equal(state.commits[0].hash, provider.result.rightHash);
+  assert.ok(workbench.webviewView.webview.html.includes("default-src 'none'"));
+  assert.ok(workbench.webviewView.webview.html.includes('workbench.css'));
+  workbench.state = state;
+  const previousInput = provider.input;
+  await workbench.receive({ type: 'commit', hash: state.commits[0].hash, key: 'stale-key' });
+  assert.equal(provider.input, previousInput);
+  await workbench.receive({ type: 'commit', hash: 'not-in-the-loaded-history', key: state.key });
+  assert.equal(provider.input, previousInput);
+  await workbench.receive({ type: 'commit', hash: state.commits[0].hash, key: state.key });
+  assert.equal(provider.input.mode, 'commit');
+  state = await workbench.snapshot(); workbench.state = state;
+  assert.equal(state.commits.length, 2);
+  assert.equal(state.canPrevious, true);
+  await workbench.receive({ type: 'action', action: 'previous', key: state.key });
+  assert.equal(provider.result.leftHash, null);
+  state = await workbench.snapshot(); workbench.state = state;
+  assert.equal(state.canPrevious, false); assert.equal(state.canNext, true);
+  await workbench.receive({ type: 'mode', mode: 'merge-base', key: state.key });
+  assert.equal(provider.input.right, 'feature');
+  state = await workbench.snapshot(); workbench.state = state;
+  const clipboardBefore = await vscode.env.clipboard.readText();
+  try {
+    await workbench.receive({ type: 'file', action: 'copyRelative', path: 'demo.py', key: state.key });
+    assert.equal(await vscode.env.clipboard.readText(), 'demo.py');
+    await workbench.receive({ type: 'file', action: 'copyRelative', path: '../../outside', key: state.key });
+    assert.equal(await vscode.env.clipboard.readText(), 'demo.py');
+  } finally { await vscode.env.clipboard.writeText(clipboardBefore); }
+  await provider.refresh({ left: 'main', right: 'feature', mode: 'direct' });
   // Switching mode must no longer reopen repository/ref/mode wizards.
   const originalPickRef = provider.pickRef;
   const originalQuickPick = vscode.window.showQuickPick;
@@ -68,7 +101,7 @@ async function run() {
     assert.equal(provider.input.mode, 'merge-base');
     assert.equal(provider.input.left, 'main');
     assert.equal(provider.input.right, 'feature');
-    assert.deepEqual(provider.getChildren().slice(0, 4).map(n => n.control), ['repository', 'mode', 'base', 'target']);
+    assert.deepEqual(provider.getControls().map(n => n.control), ['repository', 'mode', 'base', 'target']);
     let picks = 0;
     provider.pickRef = async () => { picks++; return 'HEAD'; };
     await vscode.commands.executeCommand('kianReview.base');
@@ -78,13 +111,8 @@ async function run() {
     assert.equal(picks, 2); assert.equal(provider.input.right, 'feature');
     const tabs = () => vscode.window.tabGroups.all.flatMap(g => g.tabs).filter(tab => tab.input instanceof vscode.TabInputTextDiff).length;
     const previousTabs = tabs();
-    const folder = provider.getChildren().find(n => n.name === 'deep');
-    assert.equal(folder.stats.added, 1); assert.equal(folder.stats.removed, 0);
     await vscode.commands.executeCommand('kianReview.expand');
-    assert.equal(provider.getTreeItem(folder).collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
-    await provider.view.reveal(provider.getChildren(folder)[0], { expand: true, focus: false });
     await vscode.commands.executeCommand('kianReview.collapse');
-    assert.equal(provider.getTreeItem(folder).collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
     assert.equal(tabs(), previousTabs);
     assert.equal(provider.context.workspaceState.get('comparisons')[provider.repo.rootUri.toString()].branchInput.right, 'feature');
     provider.pickRef = originalPickRef;
@@ -95,8 +123,11 @@ async function run() {
     const mainHash = await provider.git.resolve('main');
     const initialHistory = provider.commitHistory;
     assert.equal(initialHistory.hashes[0], featureHash);
-    assert.equal(provider.getTreeItem(provider.getControls()[3]).contextValue, 'reviewCommitControl');
-    assert.match(provider.getTreeItem(provider.getControls()[3]).description, /feature/);
+    const commitState = await workbench.snapshot();
+    assert.equal(commitState.selected, featureHash);
+    assert.match(commitState.details.message, /feature/);
+    assert.equal(commitState.canPrevious, true);
+    assert.equal(commitState.canNext, false);
     let commitPicks = 0;
     vscode.window.showQuickPick = async items => {
       commitPicks++;
@@ -162,6 +193,53 @@ async function run() {
     provider.selectRepository = originalSelectRepository;
     vscode.window.showQuickPick = originalQuickPick;
   }
+  // Instrument the production renderer only inside this disposable test webview.
+  const fs = require('node:fs');
+  const renderer = fs.readFileSync(extension.extensionPath + '/media/workbench.js', 'utf8');
+  const probeCode = fs.readFileSync(extension.extensionPath + '/test/webview-probe.js', 'utf8');
+  const html = workbench.webviewView.webview.html;
+  const nonce = html.match(/nonce="([a-f0-9]+)"/)[1];
+  const instrumented = renderer.replace('  api.postMessage({ type: \'ready\' });', probeCode + '\n  api.postMessage({ type: \'ready\' });');
+  const messages = [];
+  const listener = workbench.webviewView.webview.onDidReceiveMessage(message => messages.push(message));
+  workbench.webviewView.webview.html = html.replace(/<script nonce="[^"]+" src="[^"]+"><\/script>/, `<script nonce="${nonce}">${instrumented}</script>`);
+  const until = async predicate => {
+    for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+    throw new Error('Webview renderer did not respond');
+  };
+  try {
+    await until(() => messages.some(message => message.type === 'ready'));
+    const probe = async action => {
+      const id = String(Math.random());
+      await workbench.webviewView.webview.postMessage({ type: 'probe', id, action });
+      await until(() => messages.some(message => message.type === 'probe-result' && message.id === id));
+      return messages.find(message => message.type === 'probe-result' && message.id === id);
+    };
+    let report = await probe();
+    assert.equal(report.files, 4); assert.equal(report.commits, 1); assert.equal(report.controls, 3);
+    assert.equal(report.horizontalOverflow, false);
+    assert.ok(['grid', 'flex'].includes(report.layoutDisplay));
+    assert.equal(report.toolbarDisplay, 'flex');
+    const safeState = await workbench.snapshot();
+    const unsafeText = '<img src=x onerror="throw Error(1)">';
+    await workbench.webviewView.webview.postMessage({ type: 'state', state: { ...safeState,
+      commits: safeState.commits.map(c => ({ ...c, subject: unsafeText })), details: { ...safeState.details, message: unsafeText } } });
+    report = await probe(); assert.equal(report.injectedElements, 0);
+    await workbench.webviewView.webview.postMessage({ type: 'state', state: safeState });
+    report = await probe('expand'); assert.equal(report.openFolders, report.folders);
+    report = await probe('collapse'); assert.equal(report.openFolders, 0);
+    report = await probe('filter'); assert.equal(report.files, 1);
+    report = await probe('clear-filter'); assert.equal(report.files, 4);
+    report = await probe('hide-details'); assert.equal(report.detailsHidden, true);
+    report = await probe('show-details'); assert.equal(report.detailsHidden, false);
+    const tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs).length;
+    await probe('select-commit');
+    await until(() => provider.input.mode === 'commit');
+    await until(() => workbench.state?.mode === 'commit');
+    report = await probe(); assert.equal(report.selected, 1); assert.equal(report.previousDisabled, false); assert.equal(report.nextDisabled, true);
+    assert.equal(vscode.window.tabGroups.all.flatMap(g => g.tabs).length, tabs);
+    assert.deepEqual(execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: root }), before);
+  } finally { listener.dispose(); }
   console.log('KIAN_REVIEW_EXTENSION_HOST_PASSED');
 }
 

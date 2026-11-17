@@ -1,15 +1,14 @@
 const vscode = require('vscode');
 const path = require('node:path');
-const { GitRepository, buildTree, isMagiRepository } = require('./git');
+const { GitRepository, isMagiRepository } = require('./git');
+const { ReviewWorkbench } = require('./workbench');
 const t = (...args) => vscode.l10n.t(...args);
 
 class ReviewProvider {
   constructor(context, gitApi) {
     this.context = context; this.gitApi = gitApi; this.generation = 0;
     this.events = new vscode.EventEmitter(); this.onDidChangeTreeData = this.events.event;
-    this.root = buildTree([]); this.filter = ''; this.input = null; this.repo = null;
-    this.folderState = vscode.TreeItemCollapsibleState.Collapsed;
-    this.foldRevision = 0;
+    this.filter = ''; this.input = null; this.repo = null;
     this.saved = { ...context.workspaceState.get('comparisons', {}) };
     const legacy = context.workspaceState.get('comparison');
     if (legacy && !this.saved[legacy.root]) this.saved[legacy.root] = { input: legacy.input };
@@ -30,7 +29,7 @@ class ReviewProvider {
     if (this.repo?.rootUri.toString() !== item.repo.rootUri.toString()) {
       this.generation++; this.repo = item.repo;
       this.git = new GitRepository(this.repo.rootUri.fsPath, this.gitApi.git.path);
-      this.input = null; this.result = null; this.root = buildTree([]); this.filter = '';
+      this.input = null; this.result = null; this.filter = '';
       this.commitHistory = null;
       const saved = this.saved[this.repo.rootUri.toString()];
       this.branchInput = saved?.branchInput;
@@ -208,65 +207,11 @@ class ReviewProvider {
   }
 
   rebuild() {
-    this.root = buildTree((this.result?.files || []).filter(f =>
-      `${f.path}\n${f.oldPath}`.toLowerCase().includes(this.filter.toLowerCase())));
     this.events.fire(); this.updateMessage();
   }
 
-  getChildren(node) {
-    if (node?.control || node?.file) return [];
-    const children = [...(node || this.root).children.values()].sort((a, b) =>
-      Number(Boolean(b.children)) - Number(Boolean(a.children)) || a.name.localeCompare(b.name));
-    if (node) return children;
-    return [...this.getControls(), ...children];
-  }
-
-  getParent(node) {
-    if (node.control) return;
-    const parts = (node.file?.path || node.path).split('/');
-    parts.pop(); if (!parts.length) return;
-    let parent = this.root;
-    for (const name of parts) parent = parent.children.get(name);
-    return parent;
-  }
-
   async fold(expand) {
-    this.folderState = expand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
-    this.foldRevision++;
-    this.events.fire();
-  }
-
-  getTreeItem(node) {
-    const item = new vscode.TreeItem(node.name, node.children ? this.folderState : vscode.TreeItemCollapsibleState.None);
-    if (node.control) {
-      item.id = `control:${node.control}`; item.contextValue = 'reviewControl';
-      if (node.control === 'target' && this.input?.mode === 'commit') item.contextValue = 'reviewCommitControl';
-      item.description = node.value;
-      if (node.control === 'target' && this.currentCommit) item.description += ' · ' + this.currentCommit.subject;
-      item.tooltip = node.control === 'repository' ? this.repo?.rootUri.fsPath || node.value : node.value;
-      if (node.control === 'base' && this.result) item.tooltip += '\n' + (this.result.leftHash || t('Empty tree'));
-      if (node.control === 'target' && this.result) item.tooltip += '\n' + this.result.rightHash + '\n' + (this.result.rightWorktree || t('No matching historical worktree; paths refer to the current workspace.'));
-      if (node.control === 'target' && this.currentCommit) item.tooltip += `\n${this.currentCommit.subject}\n${this.currentCommit.author} · ${this.currentCommit.date}`;
-      item.iconPath = new vscode.ThemeIcon(node.icon);
-      item.command = { command: `kianReview.${node.control}`, title: node.name };
-      return item;
-    }
-    if (node.children) {
-      item.id = `folder:${this.foldRevision}:${node.path}`;
-      item.description = t('{0} files · +{1} / −{2}', node.stats.count, node.stats.added, node.stats.removed);
-      if (node.stats.binary) item.description += ' · ' + t('{0} binary', node.stats.binary);
-      item.iconPath = new vscode.ThemeIcon('folder'); return item;
-    }
-    const f = node.file;
-    item.id = `${f.comparison.leftHash || 'empty'}:${f.comparison.rightHash}:${f.path}`;
-    item.resourceUri = vscode.Uri.file(path.join(f.comparison.rightWorktree || f.comparison.repo.rootUri.fsPath, f.path));
-    item.contextValue = 'reviewFile';
-    item.description = `${f.status} · ${f.added === null ? t('Binary') : `+${f.added ?? 0} / −${f.removed ?? 0}`}`;
-    item.tooltip = f.path + (f.oldPath !== f.path ? `\n${f.oldPath} → ${f.path}` : '');
-    item.tooltip += '\n' + item.resourceUri.fsPath;
-    if (!f.comparison.rightWorktree) item.tooltip += '\n' + t('No matching historical worktree; paths refer to the current workspace.');
-    item.command = { command: 'kianReview.open', title: t('Open diff'), arguments: [node] };
-    return item;
+    this.view.webviewView?.webview.postMessage({ type: 'fold', expand });
   }
 
   async open(node) {
@@ -286,9 +231,9 @@ async function activate(context) {
   const exports = await gitExtension.activate(); const api = exports.getAPI(1);
   const provider = new ReviewProvider(context, api);
   provider.output = vscode.window.createOutputChannel('Kian Review');
-  const view = vscode.window.createTreeView('kianReview.files', { treeDataProvider: provider });
-  provider.view = view; provider.updateMessage();
-  context.subscriptions.push(view, provider.events, provider.output,
+  const workbench = new ReviewWorkbench(context, provider);
+  provider.view = workbench; provider.updateMessage();
+  context.subscriptions.push(workbench, vscode.window.registerWebviewViewProvider('kianReview.files', workbench), provider.events, provider.output,
     vscode.workspace.registerTextDocumentContentProvider('kian-review-empty', { provideTextDocumentContent: () => '' }));
   const register = (name, fn) => context.subscriptions.push(vscode.commands.registerCommand(`kianReview.${name}`, async (...args) => {
     try {
@@ -314,7 +259,6 @@ async function activate(context) {
   register('nextCommit', () => provider.navigateCommit(-1));
   register('expand', () => provider.fold(true));
   register('collapse', () => provider.fold(false));
-  register('editControl', node => node?.control && vscode.commands.executeCommand(`kianReview.${node.control}`));
   register('open', node => provider.open(node));
   register('copyRelative', node => node?.file && vscode.env.clipboard.writeText(node.file.path));
   register('copyAbsolute', async node => {
@@ -349,7 +293,7 @@ async function activate(context) {
   };
   context.subscriptions.push(api.onDidOpenRepository(initialize));
   await initialize();
-  return { provider };
+  return { provider, workbench };
 }
 
 module.exports = { activate };

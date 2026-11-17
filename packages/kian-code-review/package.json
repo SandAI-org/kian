@@ -2,7 +2,7 @@
   "name": "kian-code-review",
   "displayName": "Kian Review",
   "description": "%description%",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "strivin0311",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -131,12 +131,6 @@
         "icon": "$(collapse-all)"
       },
       {
-        "command": "kianReview.editControl",
-        "title": "%editControl%",
-        "category": "Kian Review",
-        "icon": "$(edit)"
-      },
-      {
         "command": "kianReview.previousCommit",
         "title": "%previousCommit%",
         "category": "Kian Review",
@@ -157,7 +151,8 @@
           "id": "kianReview.files",
           "name": "Kian Review",
           "icon": "media/review.svg",
-          "contextualTitle": "Kian Review"
+          "contextualTitle": "Kian Review",
+          "type": "webview"
         }
       ]
     },
@@ -208,48 +203,6 @@
           "command": "kianReview.collapse",
           "when": "view == kianReview.files",
           "group": "navigation@5"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "kianReview.copyAbsolute",
-          "when": "view == kianReview.files && viewItem == reviewFile",
-          "group": "inline@1"
-        },
-        {
-          "command": "kianReview.open",
-          "when": "view == kianReview.files && viewItem == reviewFile",
-          "group": "review"
-        },
-        {
-          "command": "kianReview.copyRelative",
-          "when": "view == kianReview.files && viewItem == reviewFile",
-          "group": "review"
-        },
-        {
-          "command": "kianReview.copyAbsolute",
-          "when": "view == kianReview.files && viewItem == reviewFile",
-          "group": "review"
-        },
-        {
-          "command": "kianReview.openWorkingFile",
-          "when": "view == kianReview.files && viewItem == reviewFile",
-          "group": "review"
-        },
-        {
-          "command": "kianReview.editControl",
-          "when": "view == kianReview.files && viewItem =~ /^review(Control|CommitControl)$/",
-          "group": "inline@1"
-        },
-        {
-          "command": "kianReview.previousCommit",
-          "when": "view == kianReview.files && viewItem == reviewCommitControl",
-          "group": "inline@0"
-        },
-        {
-          "command": "kianReview.nextCommit",
-          "when": "view == kianReview.files && viewItem == reviewCommitControl",
-          "group": "inline@1"
         }
       ]
     }
