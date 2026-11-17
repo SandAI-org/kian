@@ -1,5 +1,7 @@
 # Kian Review
 
+模式名称统一使用简短英文：**PR**、**Branch Diff**、**Commit Diff**；悬停模式选择框查看比较口径。
+
 VS Code 分支／提交／PR审阅工作台。先只展示元数据，点击文件时才打开**一个原生只读 diff**。不用多文件长页面，不启动网页服务，不checkout／stage／commit；已阅状态和私有问题保存在仓库之外。
 
 ## 使用

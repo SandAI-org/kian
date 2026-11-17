@@ -255,9 +255,13 @@
       if (control) { control.label.textContent = c.name; control.value.textContent = c.value; control.node.title = c.control === 'repository' ? state.root || c.value : c.value; }
     }
     modeCaption.textContent = tr('Mode');
-    for (const [i, label] of ['PR / merge base', 'Branch tips', 'Commit · first parent'].entries()) mode.options[i].textContent = tr(label);
+    for (const [i, label] of ['PR', 'Branch Diff', 'Commit Diff'].entries()) {
+      mode.options[i].textContent = tr(label);
+      mode.options[i].title = tr(['PR / merge base', 'Branch tips', 'Commit · first parent'][i]);
+    }
     mode.value = state.mode || 'merge-base';
     mode.setAttribute('aria-label', tr('Mode'));
+    mode.title = mode.selectedOptions[0]?.title || tr('Mode');
     previous.disabled = !state.canPrevious; next.disabled = !state.canNext;
     previous.title = tr('Previous Commit (Older)'); next.title = tr('Next Commit (Newer)');
     previous.setAttribute('aria-label', previous.title); next.setAttribute('aria-label', next.title);

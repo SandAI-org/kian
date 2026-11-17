@@ -42,7 +42,7 @@ class ReviewWorkbench {
   async snapshot() {
     const p = this.provider, result = p.result;
     const labels = Object.fromEntries(['Repository', 'Mode', 'Base', 'Compare', 'Commit', 'Branch tips', 'PR / merge base',
-      'Commit · first parent', 'First parent (automatic)', 'History', 'Changed files', 'Details', 'Hide details', 'Show details',
+      'Commit · first parent', 'PR', 'Branch Diff', 'Commit Diff', 'First parent (automatic)', 'History', 'Changed files', 'Details', 'Hide details', 'Show details',
       'Search commits', 'Filter files', 'Load older commits…', 'Previous Commit (Older)', 'Next Commit (Newer)',
       'Expand All Folders', 'Collapse All Folders', 'Refresh Comparison', 'Swap Base and Compare', 'Copy Relative Path',
       'Copy Compare-side Absolute Path', 'Open Working File', 'Empty tree', 'No commits in this range.', 'No matching files.',

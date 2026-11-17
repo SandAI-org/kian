@@ -137,9 +137,9 @@ class ReviewProvider {
   async chooseMode() {
     if (!await this.selectRepository()) return;
     const item = await vscode.window.showQuickPick([
-      { label: t('Branch tips'), mode: 'direct' },
-      { label: t('PR / merge base'), mode: 'merge-base' },
-      { label: t('Commit · first parent'), mode: 'commit' },
+      { label: t('Branch Diff'), description: t('Branch tips'), mode: 'direct' },
+      { label: t('PR'), description: t('PR / merge base'), mode: 'merge-base' },
+      { label: t('Commit Diff'), description: t('Commit vs first parent (initial commits compare with empty)'), mode: 'commit' },
     ], { placeHolder: t('Comparison mode') });
     if (!item) return;
     await this.refresh(item.mode === 'commit' ? this.commitInput || { right: this.input?.right || 'HEAD', mode: 'commit' }
@@ -150,7 +150,7 @@ class ReviewProvider {
     const mode = this.input?.mode;
     return [
       { control: 'repository', name: t('Repository'), value: this.repo ? path.basename(this.repo.rootUri.fsPath) : t('Select repository'), icon: 'repo' },
-      { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit · first parent') : mode === 'direct' ? t('Branch tips') : t('PR / merge base'), icon: 'git-compare' },
+      { control: 'mode', name: t('Mode'), value: mode === 'commit' ? t('Commit Diff') : mode === 'direct' ? t('Branch Diff') : t('PR'), icon: 'git-compare' },
       { control: 'base', name: t('Base'), value: mode === 'commit' ? t('First parent (automatic)') : this.input?.pr?.baseRef || this.input?.left || 'main', icon: 'git-commit' },
       { control: 'target', name: mode === 'commit' ? t('Commit') : t('Compare'),
         value: mode === 'commit' && this.result ? this.result.rightHash.slice(0, 8) : this.input?.pr?.headRef || this.input?.right || this.repo?.state.HEAD?.name || 'HEAD', icon: mode === 'commit' ? 'git-commit' : 'git-branch' },
@@ -191,7 +191,7 @@ class ReviewProvider {
       else this.branchInput = { ...input };
       for (const file of result.files) file.comparison = { ...result, files: undefined, repo };
       this.rebuild();
-      this.view.description = input.mode === 'commit' ? t('Commit · first parent') : input.mode === 'merge-base' ? t('PR / merge base') : t('Branch tips');
+      this.view.description = input.mode === 'commit' ? t('Commit Diff') : input.mode === 'merge-base' ? t('PR') : t('Branch Diff');
       this.saved[repo.rootUri.toString()] = { input, branchInput: this.branchInput, commitInput: this.commitInput };
       await Promise.all([
         this.context.workspaceState.update('comparison', { root: repo.rootUri.toString(), input }),
