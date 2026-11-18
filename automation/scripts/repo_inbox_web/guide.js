@@ -1,6 +1,41 @@
-const words={zh:{back:'← 阅读室',title:'阅读导读',toc:'目录',source:'查看原文 ↗',read:'标为已读',unread:'标为未读',favorite:'收藏',unfavorite:'取消收藏',updated:'导读更新',missing:'导读不存在或暂时无法加载，请返回阅读室重试。',error:'保存失败，请重试。',empty:'请先将原文加入阅读室，再记录阅读状态。'},en:{back:'← Reading room',title:'Reading guide',toc:'Contents',source:'Read original ↗',read:'Mark read',unread:'Mark unread',favorite:'Save favorite',unfavorite:'Remove favorite',updated:'Guide updated',missing:'This guide is unavailable. Return to the reading room and retry.',error:'Could not save. Please retry.',empty:'Add the source to the reading room before tracking reading state.'}};
+const words={zh:{back:'← 阅读室',title:'阅读导读',toc:'目录',source:'查看原文 ↗',sourceLabel:'原文',copy:'复制 Markdown',copied:'已复制 Markdown',copyError:'复制失败，请重试。',read:'标为已读',unread:'标为未读',favorite:'收藏',unfavorite:'取消收藏',updated:'导读更新',missing:'导读不存在或暂时无法加载，请返回阅读室重试。',error:'保存失败，请重试。',empty:'请先将原文加入阅读室，再记录阅读状态。'},en:{back:'← Reading room',title:'Reading guide',toc:'Contents',source:'Read original ↗',sourceLabel:'Original source',copy:'Copy Markdown',copied:'Markdown copied',copyError:'Could not copy. Please retry.',read:'Mark read',unread:'Mark unread',favorite:'Save favorite',unfavorite:'Remove favorite',updated:'Guide updated',missing:'This guide is unavailable. Return to the reading room and retry.',error:'Could not save. Please retry.',empty:'Add the source to the reading room before tracking reading state.'}};
 let language=localStorage.getItem('repo-inbox-language')||'zh',data;
 const byId=id=>document.getElementById(id),node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e};
-function actions(){const t=words[language],container=byId('guideActions');container.replaceChildren();if(!data.events.length){container.append(node('p',t.empty));return}const event=data.events[0],link=node('a',t.source);link.href=event.url;link.target='_blank';link.rel='noopener noreferrer';container.append(link);for(const [field,route,label]of [['is_read','read',event.is_read?t.unread:t.read],['is_favorite','favorite',event.is_favorite?t.unfavorite:t.favorite]]){const b=node('button',label);b.type='button';b.setAttribute('aria-pressed',!!event[field]);b.onclick=async()=>{b.disabled=true;byId('guideError').textContent='';try{const r=await fetch('/api/'+route,{method:'POST',headers:{'Content-Type':'application/json','X-Inbox-Token':data.token},body:JSON.stringify({ids:[event.id],[field]:!event[field]})});if(!r.ok)throw Error('save');event[field]=!event[field];actions()}catch{byId('guideError').textContent=t.error;b.disabled=false}};container.append(b)}}
+function copyButton() {
+    const t = words[language];
+    const button = node('button', t.copy);
+    button.type = 'button';
+    button.onclick = async () => {
+        const status = byId('guideError');
+        status.textContent = '';
+        const source = data.events[0]?.url;
+        let markdown = data.markdown;
+        if (source && !/^https?:\/\/(?:127\.0\.0\.1|localhost)(?=[:/]|$)/i.test(source) && !markdown.includes(source)) {
+            markdown = markdown.trimEnd() + '\n\n[' + t.sourceLabel + '](' + source + ')\n';
+        }
+        try {
+            await navigator.clipboard.writeText(markdown);
+        } catch {
+            const field = node('textarea');
+            field.value = markdown;
+            field.readOnly = true;
+            field.style.cssText = 'position:fixed;left:-9999px;top:0';
+            document.body.append(field);
+            field.select();
+            try {
+                if (!document.execCommand('copy')) throw Error('copy');
+            } catch {
+                status.textContent = words[language].copyError;
+                return;
+            } finally {
+                field.remove();
+                button.focus({preventScroll:true});
+            }
+        }
+        status.textContent = words[language].copied;
+    };
+    return button;
+}
+function actions(){const t=words[language],container=byId('guideActions');container.replaceChildren();if(!data.events.length){container.append(copyButton(),node('p',t.empty));return}const event=data.events[0],link=node('a',t.source);link.href=event.url;link.target='_blank';link.rel='noopener noreferrer';container.append(link,copyButton());for(const [field,route,label]of [['is_read','read',event.is_read?t.unread:t.read],['is_favorite','favorite',event.is_favorite?t.unfavorite:t.favorite]]){const b=node('button',label);b.type='button';b.setAttribute('aria-pressed',!!event[field]);b.onclick=async()=>{b.disabled=true;byId('guideError').textContent='';try{const r=await fetch('/api/'+route,{method:'POST',headers:{'Content-Type':'application/json','X-Inbox-Token':data.token},body:JSON.stringify({ids:[event.id],[field]:!event[field]})});if(!r.ok)throw Error('save');event[field]=!event[field];actions()}catch{byId('guideError').textContent=t.error;b.disabled=false}};container.append(b)}}
 function render(){const t=words[language];document.documentElement.lang=language==='zh'?'zh-CN':'en';byId('back').textContent=t.back;byId('language').textContent=language==='zh'?'EN / 中文':'中文 / EN';byId('toc').setAttribute('aria-label',t.toc);if(!data)return;document.title=data.title+' · Kian';byId('guideTitle').textContent=data.title;byId('guideMeta').textContent=t.updated+' · '+new Date(data.updated_at).toLocaleDateString(language==='zh'?'zh-CN':'en-GB');actions();const md=window.markdownit({html:false,linkify:false,typographer:false});md.use(window.texmath,{engine:window.katex,delimiters:['dollars','brackets'],katexOptions:{throwOnError:false,strict:'ignore',trust:false,maxExpand:1000}});const originalImage=md.renderer.rules.image;md.renderer.rules.image=(tokens,index,options,env,self)=>{const src=tokens[index].attrGet('src')||'';return src.startsWith('/guide-assets/'+data.id+'/')?originalImage(tokens,index,options,env,self):md.utils.escapeHtml(tokens[index].content)};byId('document').innerHTML=md.render(data.markdown);byId('toc').replaceChildren(node('strong',t.toc));const headings=[...byId('document').querySelectorAll('h1,h2,h3')];headings.forEach((heading,index)=>{heading.id='section-'+index;const a=node('a',heading.textContent);a.href='#'+heading.id;a.className='toc-'+heading.tagName.toLowerCase();byId('toc').append(a)});for(const a of byId('document').querySelectorAll('a')){const href=a.getAttribute('href')||'';if(href.startsWith('http://')||href.startsWith('https://')){a.target='_blank';a.rel='noopener noreferrer'}else if(!href.startsWith('#')&&!/^\/(?:guide\/|guide-assets\/)/.test(href)){a.removeAttribute('href')}}if(location.hash)document.getElementById(location.hash.slice(1))?.scrollIntoView()}
 byId('language').onclick=()=>{language=language==='zh'?'en':'zh';localStorage.setItem('repo-inbox-language',language);render()};render();fetch('/api/guide/'+location.pathname.split('/').pop(),{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('load');return r.json()}).then(value=>{data=value;render()}).catch(()=>byId('guideError').textContent=words[language].missing);

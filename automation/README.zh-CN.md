@@ -282,7 +282,7 @@ Thinking Machines Connectionism（`https://thinkingmachines.ai/blog/`）作为�
 
 仅本地文档可显式运行 `python3 automation/scripts/reading_library.py document /absolute/path/document.pdf --title TITLE`（可选 `--favorite`）。将不超过10 MiB的指定PDF复制到私有SQLite，以内容SHA-256去重，通过`/library-document/<sha256>.pdf`提供本机原文入口，再用该URL登记导读。新条目默认未读、不进入提醒队列；重复导入相同内容保留个人状态，原文件移动不影响已登记副本，内容改变则是新来源。服务端不接受文件系统路径访问；原文PDF及全文提取不提交Context。
 
-阅读室同时管理手动收录的论文／书籍，以及文章、PR、issue 的导读。公开论文使用原文链接；明确导入的私有PDF可在本机保存。已读和收藏独立，打开导读不自动标记已读。同一原文的各次更新都显示 **阅读导读** 链接；独立导读页展示 Markdown 表格、代码、公式和登记配图，提供目录及明确的已读／收藏操作。原有折叠、历史与提醒规则保持不变。
+阅读室同时管理手动收录的论文／书籍，以及文章、PR、issue 的导读。公开论文使用原文链接；明确导入的私有PDF可在本机保存。已读和收藏独立，打开导读不自动标记已读。同一原文的各次更新都显示 **阅读导读** 链接；独立导读页展示 Markdown 表格、代码、公式和登记配图，提供目录、用于分享正文的 **复制 Markdown** 按钮，以及明确的已读／收藏操作。原有折叠、历史与提醒规则保持不变。
 
 Agent 使用 `automation/scripts/reading_library.py import manifest.json` 登记条目。JSON 数组必填 `title`、公开 HTTP(S) `url`、布尔 `is_read` 和 `is_favorite`；可选 `channel`（默认 `papers`）、`repo`、`source_name`、`kind`、`summary`、`categories`、`versions`、`provenance`，以及已确认的 `read_at`。按规范化原文链接匹配（arXiv 版本、PDF、HTML、papers.cool 入口共用身份），保留已有已读／收藏，初始化状态只应用一次。论文监控后来发现同一篇时复用导入条目及其已读提醒门控；PR 后续更新仍为独立事件。
 
