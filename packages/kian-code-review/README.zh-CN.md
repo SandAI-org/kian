@@ -16,7 +16,7 @@ VS Code 分支／提交／PR审阅工作台。先只展示元数据，点击文�
 
 ## 使用
 
-打开源代码管理（`Cmd+Shift+G`），找到 **Kian Review**；也可以从命令面板运行 **Kian Review：显示代码审阅**。默认自动选当前workspace仓库，只列Magi系列、Odin和Magicore；按目录名或Git remote识别，改名的worktree也支持，Quack/PyTorch/Contexts等不进入列表。
+打开源代码管理（`Cmd+Shift+G`），找到 **Kian Review**；也可以从命令面板运行 **Kian Review：显示代码审阅**。启动时会从 VS Code 已识别的仓库中自动选择 Magi 系列或 Odin，优先当前工作区文件夹。点仓库按钮可选所有已识别的仓库，Magi 和 Odin 排在前面。手动选中其他仓库或主动发起审阅时才运行比较。
 
 顶部改为横向的 **仓库／模式／Base／Compare（或Commit）** 控制栏。点击某个版本只更换这一项；模式菜单可以直接切换。左右版本选择包含分支、标签、近期commit和自定义版本，不重走整套向导；只有主动点仓库按钮才重新选仓库。
 

@@ -513,6 +513,28 @@ async function run() {
     review.github = githubForPicker; vscode.window.showQuickPick = pickerOriginal; vscode.window.showInputBox = inputOriginal;
     execFileSync('git', ['remote', 'remove', 'origin'], { cwd: root }); await provider.repo.status();
   }
+  const ordinaryRoot = require('node:path').join(require('node:path').dirname(root), 'ordinary-project');
+  execFileSync('git', ['clone', '-q', root, ordinaryRoot]);
+  const ordinary = await api.openRepository(vscode.Uri.file(ordinaryRoot));
+  assert.ok(ordinary);
+  assert.equal(provider.repo.rootUri.fsPath, root);
+  const magiInput = provider.input;
+  try {
+    vscode.window.showQuickPick = async items => {
+      assert.equal(items[0].repo.rootUri.fsPath, root);
+      return items.find(item => item.repo.rootUri.fsPath === ordinaryRoot);
+    };
+    await vscode.commands.executeCommand('kianReview.repository');
+    assert.equal(provider.repo.rootUri.fsPath, ordinaryRoot);
+    assert.equal(provider.reviewSession.root, ordinaryRoot);
+    assert.equal((await review.state(provider.reviewSession)).notes.length, 0);
+    assert.equal(await provider.selectRepository(), true);
+    assert.equal(provider.repo.rootUri.fsPath, ordinaryRoot);
+    vscode.window.showQuickPick = async items => items.find(item => item.repo.rootUri.fsPath === root);
+    await vscode.commands.executeCommand('kianReview.repository');
+    assert.equal(provider.repo.rootUri.fsPath, root);
+    assert.deepEqual(provider.input, magiInput);
+  } finally { vscode.window.showQuickPick = pickerOriginal; }
   console.log('KIAN_REVIEW_EXTENSION_HOST_PASSED');
 }
 

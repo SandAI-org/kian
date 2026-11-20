@@ -16,21 +16,24 @@ class ReviewProvider {
   }
 
   async selectRepository(force = false) {
-    const repos = this.gitApi.repositories.filter(isMagiRepository);
-    if (!repos.length) throw new Error(t('Open a Magi, Odin or Magicore repository first.'));
-    if (!force && this.repo && repos.includes(this.repo)) return true;
-    const primary = vscode.workspace.workspaceFolders?.map(folder =>
-      repos.filter(repo => folder.uri.fsPath === repo.rootUri.fsPath || folder.uri.fsPath.startsWith(repo.rootUri.fsPath + path.sep))
+    const repos = this.gitApi.repositories;
+    if (!repos.length) throw new Error(t('Open a Git repository first.'));
+    if (!force && this.repo && repos.some(repo => repo.rootUri.toString() === this.repo.rootUri.toString())) return true;
+    const preferred = repos.filter(isMagiRepository);
+    const pool = preferred.length ? preferred : repos;
+    const primary = !force && vscode.workspace.workspaceFolders?.map(folder =>
+      pool.filter(repo => folder.uri.fsPath === repo.rootUri.fsPath || folder.uri.fsPath.startsWith(repo.rootUri.fsPath + path.sep))
         .sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length)[0]).find(Boolean);
-    const automatic = !force && (primary || (repos.length === 1 ? repos[0] : undefined));
+    const automatic = !force && (primary || preferred[0] || (repos.length === 1 ? repos[0] : undefined));
     const item = automatic ? { repo: automatic } : await vscode.window.showQuickPick(
-      repos.map(repo => ({ label: path.basename(repo.rootUri.fsPath), description: repo.rootUri.fsPath, repo })),
-      { placeHolder: t('Select repository') });
+      [...preferred, ...repos.filter(repo => !preferred.includes(repo))]
+        .map(repo => ({ label: path.basename(repo.rootUri.fsPath), description: repo.rootUri.fsPath, repo })),
+      { placeHolder: t('Select repository'), matchOnDescription: true });
     if (!item) return false;
     if (this.repo?.rootUri.toString() !== item.repo.rootUri.toString()) {
       this.generation++; this.repo = item.repo;
       this.git = new GitRepository(this.repo.rootUri.fsPath, this.gitApi.git.path);
-      this.input = null; this.result = null; this.filter = '';
+      this.input = null; this.result = null; this.reviewSession = null; this.filter = '';
       this.commitHistory = null;
       const saved = this.saved[this.repo.rootUri.toString()];
       this.branchInput = saved?.branchInput;

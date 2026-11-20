@@ -1,6 +1,6 @@
 {
   "Open a trusted Git repository first.": "请先打开受信任的 Git 仓库。",
-  "Open a Magi, Odin or Magicore repository first.": "请先打开 Magi 系列、Odin 或 Magicore 仓库。",
+  "Open a Git repository first.": "请先打开一个 Git 仓库。",
   "Repository": "仓库",
   "PR": "PR",
   "Branch Diff": "Branch Diff",
