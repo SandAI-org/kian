@@ -138,5 +138,6 @@
   "Select PR · {0}": "选择PR · {0}",
   "Enter a github.com PR URL or a PR number for this repository.": "请输入github.com PR链接或当前仓库的PR编号。",
   "Select PR": "选择／切换PR",
-  "Repository changed; select the PR again.": "仓库已切换，请重新选择PR。"
+  "Repository changed; select the PR again.": "仓库已切换，请重新选择PR。",
+  "The original diff for this question is unavailable.": "此问题的原始差异视图不可用。"
 }

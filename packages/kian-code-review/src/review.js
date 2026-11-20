@@ -86,12 +86,46 @@ class ReviewService {
     const thread = this.controller.createCommentThread(editor.document.uri, editor.selection, []);
     await this.addReply({ thread, text });
   }
+  async openNoteDiff(note, session) {
+    const { anchor } = note;
+    const opened = this.documents.get(anchor.uri)?.anchor;
+    let diff = anchor.diff || (opened?.incremental === anchor.incremental && opened?.diff);
+    if (!diff) {
+      const comparison = session.result.leftHash === anchor.base && session.result.rightHash === anchor.head
+        ? session.result : await session.git.compare({ left: anchor.base, right: anchor.head });
+      const file = comparison.files.find(item => item.path === anchor.filePath);
+      if (!file) throw new Error(t('The original diff for this question is unavailable.'));
+      let baseline;
+      if (anchor.incremental && anchor.side === 'LEFT') {
+        baseline = { path: anchor.path, rightHash: anchor.ref, rightObject: anchor.object };
+      } else if (anchor.incremental) {
+        const scope = JSON.parse(vscode.Uri.parse(anchor.uri).query).kianReviewScope;
+        const record = await this.store.read(scope || session.scope, 'files', file.path)
+          || (file.oldPath !== file.path && await this.store.read(scope || session.scope, 'files', file.oldPath));
+        if (record?.reviewedAt && record.reviewedAt <= note.createdAt) baseline = record;
+      }
+      diff = this.diffInput(file, comparison, session.root, baseline,
+        JSON.parse(vscode.Uri.parse(anchor.uri).query).kianReviewScope || session.scope);
+      diff[anchor.side === 'LEFT' ? 'left' : 'right'] = anchor.uri;
+    }
+    const range = new vscode.Range(anchor.start, 0, anchor.end, 0);
+    await this.showDiff(diff);
+    await vscode.commands.executeCommand(anchor.side === 'LEFT'
+      ? 'workbench.action.compareEditor.focusSecondarySide' : 'workbench.action.compareEditor.focusPrimarySide');
+    const group = vscode.window.tabGroups.activeTabGroup;
+    const editor = vscode.window.visibleTextEditors.find(item =>
+      item.viewColumn === group.viewColumn && item.document.uri.toString() === anchor.uri);
+    if (editor) {
+      editor.selection = new vscode.Selection(range.start, range.end);
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+  }
   async noteAction(id, action, session = this.provider.reviewSession) {
     const note = await this.store.read(session.notesScope, 'notes', id);
     if (!note) return;
-    if (action === 'edit') {
-      await vscode.window.showTextDocument(vscode.Uri.parse(note.anchor.uri), { preview: true,
-        selection: new vscode.Range(note.anchor.start, 0, note.anchor.end, 0) });
+    if (action === 'edit' || action === 'open') {
+      await this.openNoteDiff(note, session);
+      if (action === 'open') return;
       const thread = this.threads.get(session.notesScope + ':' + id) || this.showThread(note, session);
       const comment = thread.comments[0];
       if (comment.mode !== vscode.CommentMode.Editing) {
@@ -102,11 +136,7 @@ class ReviewService {
       thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
       return;
     } else if (action === 'resolve' || action === 'reopen') note.resolved = action === 'resolve';
-    else if (action === 'open') {
-      const uri = vscode.Uri.parse(note.anchor.uri);
-      await vscode.window.showTextDocument(uri, { preview: true, selection: new vscode.Range(note.anchor.start, 0, note.anchor.end, 0) });
-      return;
-    } else return;
+    else return;
     await this.store.write(session.notesScope, 'notes', note.id, note);
     if (this.threads.has(session.notesScope + ':' + id)) this.showThread(note, session);
     await this.provider.view.update();
@@ -305,10 +335,26 @@ class ReviewService {
     if (this.threads.has(session.notesScope + ':' + id)) this.showThread(note, session);
     await p.view.update();
   }
+  diffInput(file, comparison, root, baseline, scope) {
+    const resource = name => vscode.Uri.joinPath(vscode.Uri.file(root), name);
+    const empty = name => resource(name).with({ scheme: 'kian-review-empty' });
+    const decorate = uri => uri.with({ query: JSON.stringify({ ...(uri.query ? JSON.parse(uri.query) : {}), kianReviewScope: scope, ...(baseline ? { kianReviewBaseline: baseline.rightHash } : {}) }) });
+    const leftRef = baseline ? baseline.rightHash : comparison.leftHash;
+    const leftPath = baseline ? baseline.path : file.oldPath;
+    const leftObject = baseline ? baseline.rightObject : file.leftObject;
+    const left = decorate(!leftObject ? empty(file.path) : baseline ? this.cachedUri(leftObject, leftPath)
+      : this.provider.gitApi.toGitUri(resource(leftPath), leftRef));
+    const right = decorate(!file.rightObject ? empty(file.path)
+      : this.provider.gitApi.toGitUri(resource(file.path), comparison.rightHash));
+    const title = `${file.path} · ${baseline ? t('Since last review') : t('Full comparison')} (${leftRef?.slice(0, 8) || '∅'} → ${comparison.rightHash.slice(0, 8)})`;
+    return { left: left.toString(), right: right.toString(), title };
+  }
+  async showDiff(diff) {
+    await vscode.commands.executeCommand('vscode.diff', vscode.Uri.parse(diff.left), vscode.Uri.parse(diff.right),
+      diff.title, { preview: true });
+  }
   async open(file, incremental = false) {
     const p = this.provider, c = file.comparison, session = p.reviewSession;
-    const resource = name => vscode.Uri.joinPath(c.repo.rootUri, name);
-    const empty = name => resource(name).with({ scheme: 'kian-review-empty', query: '' });
     let baseline;
     if (incremental) {
       baseline = (await this.state(session)).files[file.path]?.baseline;
@@ -318,15 +364,12 @@ class ReviewService {
     const leftRef = baseline ? baseline.rightHash : c.leftHash;
     const leftPath = baseline ? baseline.path : file.oldPath;
     const leftObject = baseline ? baseline.rightObject : file.leftObject;
-    const decorate = uri => uri.with({ query: JSON.stringify({ ...(uri.query ? JSON.parse(uri.query) : {}), kianReviewScope: session.scope }) });
-    const left = decorate(!leftObject ? empty(file.path) : baseline ? this.cachedUri(leftObject, leftPath) : p.gitApi.toGitUri(resource(leftPath), leftRef));
-    const right = decorate(!file.rightObject ? empty(file.path) : p.gitApi.toGitUri(resource(file.path), c.rightHash));
-    await this.registerDocument(left, { path: leftPath, filePath: file.path, side: 'LEFT', ref: leftRef, object: leftObject,
-      absolutePath: path.join(c.leftWorktree || session.root, leftPath), head: c.rightHash, base: c.leftHash, incremental }, session);
-    await this.registerDocument(right, { path: file.path, filePath: file.path, side: 'RIGHT', ref: c.rightHash, object: file.rightObject,
-      absolutePath: path.join(c.rightWorktree || session.root, file.path), head: c.rightHash, base: c.leftHash, incremental }, session);
-    await vscode.commands.executeCommand('vscode.diff', left, right,
-      `${file.path} · ${incremental ? t('Since last review') : t('Full comparison')} (${leftRef?.slice(0, 8) || '∅'} → ${c.rightHash.slice(0, 8)})`, { preview: true });
+    const diff = this.diffInput(file, c, c.repo.rootUri.fsPath, baseline, session.scope);
+    await this.registerDocument(vscode.Uri.parse(diff.left), { path: leftPath, filePath: file.path, side: 'LEFT', ref: leftRef, object: leftObject,
+      absolutePath: path.join(c.leftWorktree || session.root, leftPath), head: c.rightHash, base: c.leftHash, incremental, diff }, session);
+    await this.registerDocument(vscode.Uri.parse(diff.right), { path: file.path, filePath: file.path, side: 'RIGHT', ref: c.rightHash, object: file.rightObject,
+      absolutePath: path.join(c.rightWorktree || session.root, file.path), head: c.rightHash, base: c.leftHash, incremental, diff }, session);
+    await this.showDiff(diff);
   }
   dispose() { clearInterval(this.timer); this.editorListener.dispose(); this.controller.dispose(); this.fsRegistration.dispose(); }
 }

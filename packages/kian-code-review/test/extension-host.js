@@ -120,6 +120,10 @@ async function run() {
     assert.equal(noteThread.comments[0].body, note.text);
     assert.equal(noteThread.collapsibleState, vscode.CommentThreadCollapsibleState.Expanded);
     assert.equal(vscode.window.activeTextEditor.document.uri.toString(), note.anchor.uri);
+    const activeDiff = vscode.window.tabGroups.activeTabGroup.activeTab.input;
+    assert.ok(activeDiff instanceof vscode.TabInputTextDiff, 'Editing must keep the two-sided diff active');
+    assert.equal(activeDiff.original.toString(), note.anchor.diff.left);
+    assert.equal(activeDiff.modified.toString(), note.anchor.diff.right);
     let inlineEditor;
     for (let i = 0; i < 60; i++) {
       inlineEditor = vscode.workspace.textDocuments.find(doc => doc.uri.scheme === 'comment' && doc.getText() === note.text);
@@ -146,6 +150,26 @@ async function run() {
     assert.equal((await review.state(provider.reviewSession)).notes[0].updatedAt, editedAt);
     assert.equal(noteThread.comments[0].mode, vscode.CommentMode.Preview);
   } finally { vscode.window.showInputBox = inputBoxOriginal; }
+  // Emulate a stored pre-0.6.2 note after restarting with no open diff documents.
+  const stored = await review.store.read(provider.reviewSession.notesScope, 'notes', note.id);
+  const legacy = { ...stored, anchor: { ...stored.anchor } };
+  delete legacy.anchor.diff;
+  await review.store.write(provider.reviewSession.notesScope, 'notes', note.id, legacy);
+  review.documents.clear();
+  await review.noteAction(note.id, 'open');
+  assert.ok(vscode.window.tabGroups.activeTabGroup.activeTab.input instanceof vscode.TabInputTextDiff);
+  await review.store.write(provider.reviewSession.notesScope, 'notes', note.id, stored);
+  const leftSession = { ...provider.reviewSession, notesScope: 'left-side-fixture' };
+  const leftNote = await review.store.addNote(leftSession.notesScope, {
+    ...note.anchor, uri: note.anchor.diff.left, side: 'LEFT', ref: note.anchor.base,
+  }, 'Check the original line.');
+  await vscode.window.tabGroups.close(vscode.window.tabGroups.activeTabGroup.activeTab);
+  await review.noteAction(leftNote.id, 'open', leftSession);
+  assert.ok(vscode.window.tabGroups.activeTabGroup.activeTab.input instanceof vscode.TabInputTextDiff);
+  assert.equal(vscode.window.tabGroups.activeTabGroup.activeTab.input.original.toString(), leftNote.anchor.uri);
+  await review.noteAction(leftNote.id, 'edit', leftSession);
+  assert.ok(vscode.window.tabGroups.activeTabGroup.activeTab.input instanceof vscode.TabInputTextDiff);
+  assert.equal(review.threads.get(leftSession.notesScope + ':' + leftNote.id).comments[0].mode, vscode.CommentMode.Editing);
   const clipboardSaved = await vscode.env.clipboard.readText();
   try {
     await review.copyPrompts();
